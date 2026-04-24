@@ -2,6 +2,8 @@
 
 Pi is an evolving autonomous agent system built on Claude Sonnet 4.6 with a continuous engineering loop: build → test → ticket → run → inspect → detect → build again.
 
+**New here?** Read [ABOUT.md](ABOUT.md) for the why, the vision, and where this project is going. The README below is the technical reference.
+
 ## Architecture
 
 **Three Modes:**
@@ -25,6 +27,7 @@ Every bug, fix, and lesson is tracked:
 - **Tickets** (`tickets/`) — structured problem reports with reproduction steps
 - **Solutions** (`solutions/SOLUTIONS.jsonl`) — what worked, what didn't, and why
 - **Lessons** (`solutions/LESSONS.md`) — synthesized patterns and rules
+- **Conversation Analysis** (`analysis/`) — raw chat logs become tickets via a structured workflow; behavior-driven failures feed the same loop as crash-driven ones
 
 ## Quick Start
 
@@ -55,9 +58,11 @@ Covers memory, persistence, mode switching, and integration scenarios.
 
 ## Architecture Documents
 
+- [ABOUT.md](ABOUT.md) — project intro, motivation, vision, and roadmap
 - [ARCHITECTURE_DIRECTION.md](ARCHITECTURE_DIRECTION.md) — canonical design decisions, engineering loop flow
 - [LESSONS.md](solutions/LESSONS.md) — collected wisdom from failures and fixes
 - [SOLUTIONS.jsonl](solutions/SOLUTIONS.jsonl) — complete record of problems solved
+- [analysis/README.md](analysis/README.md) — how conversation logs become tickets
 
 ## Key Principles
 

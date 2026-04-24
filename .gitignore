@@ -10,6 +10,11 @@ data/
 logs/
 evolution.jsonl
 
+# Raw conversation transcripts — personal, never push
+# (the rest of analysis/ is public: README, WORKFLOW, SUMMARY, tickets.jsonl)
+analysis/chat_logs.txt
+analysis/chat_logs.*.txt
+
 # Cache and temp
 __pycache__/
 *.pyc

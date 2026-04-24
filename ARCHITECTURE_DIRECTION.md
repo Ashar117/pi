@@ -164,6 +164,29 @@ Every architectural decision must support this loop. If a new module doesn't fit
 
 ---
 
+### 6.5. Conversation Analysis Pipeline
+
+**Location:** `analysis/`
+**Files:** `chat_logs.txt`, `tickets.jsonl`, `SUMMARY.md`, `WORKFLOW.md`, `README.md`
+
+**Purpose:** Real conversations are the highest-signal failure source Pi has. Tests catch known bugs. Logs catch crashes. Conversations catch the silent failures: weak answers, lost continuity, hallucinated tool results, refusals, drift. None of those produce a stack trace, but all of them are bugs.
+
+This pipeline is the bridge from "Ash noticed Pi was off in a session" to a structured ticket in the engineering loop.
+
+**How it works:**
+1. Ash appends a raw conversation to `analysis/chat_logs.txt` under a `## Session YYYY-MM-DD HH:MM` heading.
+2. Claude (or a future automated analyzer) reads the entry and scans for the failure signals listed in `analysis/WORKFLOW.md` — memory failures, continuity gaps, hallucinations, mode drift, tool misuse, refusals, etc.
+3. Each finding becomes a candidate ticket in `analysis/tickets.jsonl`, using the same schema as `tickets/` and continuing the global T-XXX numbering.
+4. Validated candidates are promoted to `tickets/open/` as canonical tickets and flow through the normal `solutions/` → `LESSONS.md` loop.
+5. Recurring patterns (≥ 2 sessions) are tracked in `analysis/SUMMARY.md` and may warrant a lesson entry.
+
+**Why this is its own pipeline:** Crash-driven and behavior-driven failures have different evidence (stack trace vs. transcript) and different reasoning (what broke vs. what felt off). Keeping the source separate preserves that distinction when reviewing patterns later. The output — tickets — is unified.
+
+**Build now:** All files exist. Manual log paste, manual analysis trigger.
+**Build later:** Auto-ingest `logs/runs/{session_id}.jsonl` into `chat_logs.txt`. Auto-classify failure signals. Auto-promote tickets after N independent sightings.
+
+---
+
 ### 7. Architectural Self-Observation
 
 **Location:** `self/`  
@@ -209,7 +232,13 @@ Response Generated
 Evolution Log (logs/evolution.jsonl) ← aggregate analytics
     ↓
 [Failure Detector] ← on flag or error
-    ↓
+    ↓                       ↑
+    ↓        analysis/chat_logs.txt ← Ash pastes conversations
+    ↓                       ↓
+    ↓                [Conversation Analyzer]
+    ↓                       ↓
+    ↓                analysis/tickets.jsonl ← candidate tickets
+    ↓                       ↓ (promotion)
 Ticket Generator → tickets/queue.jsonl
     ↓
 Developer / Pi Review
@@ -241,6 +270,7 @@ Next Session → better behavior → logs → cycle continues
 - [ ] `diagnostics/health_reports/` — extend health check to write JSON
 - [ ] `self/operating_state.json` — written at every startup
 - [ ] Output flagging helper `pi_flag_output()`
+- [x] `analysis/` conversation analysis pipeline (chat_logs.txt, tickets.jsonl, SUMMARY.md, WORKFLOW.md)
 
 ### Build Later (Phase 4+)
 - Automated ticket generation from flagged logs
