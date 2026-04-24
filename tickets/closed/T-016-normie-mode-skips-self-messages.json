@@ -1,0 +1,18 @@
+{
+  "id": "T-016",
+  "source": "analysis/chat_logs.txt",
+  "title": "Normie mode does not append turns to self.messages — continuity broken on mode switch back to root",
+  "component": "pi_agent.py:_respond_normie",
+  "what_failed": "Normie mode wrote conversation turns only to self.history (a string-only research-mode helper) and skipped self.messages entirely. When mode flipped back to root, Claude received a message list missing every normie turn, so the session looked brand new from the API's perspective.",
+  "where_failed": "pi_agent.py _respond_normie() — only self.history.append(...) was called; self.messages was never updated.",
+  "why_likely": "Two parallel stores (self.messages for Claude, self.history for research-mode strings) drifted. Normie wrote to one, root read from the other.",
+  "severity": "P0",
+  "reproduction": "In normie mode, share several facts. Switch to root. Ask Pi to repeat one of the facts. Pi replies as if it had never been told.",
+  "expected": "Both modes write to a unified self.messages so the conversation reads as one thread regardless of which model produced any given turn.",
+  "actual": "Continuity hard-resets on mode switch. The L-001 invariant ('mode is not a session boundary') was violated indirectly by the divergence.",
+  "suggested_fix": "Append both user and assistant turns to self.messages in _respond_normie(). Reuse the safe truncation helper to keep history bounded.",
+  "status": "closed",
+  "created": "2026-04-24T22:00:00Z",
+  "closed": "2026-04-24T22:20:00Z",
+  "linked_solution": "S-011"
+}

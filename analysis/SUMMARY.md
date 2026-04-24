@@ -11,9 +11,29 @@ Running synthesis of patterns observed across `chat_logs.txt`. Updated whenever 
 
 ---
 
-## Pattern catalog (start empty, fills as logs come in)
+## Pattern catalog
 
-_No patterns observed yet. First entries will appear here once Ash adds a chat log and analysis runs._
+### P1 — Silent intent-parse failures cascading into hallucinated capabilities
+**Tickets:** T-015 (closed), T-019 (open)
+**First seen:** 2026-04-24 (session e9197064)
+**Status:** Root cause fixed (T-015). Secondary mitigation pending (T-019 — prompt hardening so normie refuses tool-shaped requests instead of miming).
+**Pattern:** When the agent cannot recognise a command or capability request, the underlying LLM does not refuse — it mimes the action in text, producing a fluent, structured, completely fake response. The user trusts the response and the system silently diverges from reality.
+**Where this shows up:** Mode switches (T-015), memory writes in normie (T-019). Likely also tool-shaped requests in normie generally.
+**Recurring:** Once. Watch for more sightings before declaring a class-wide fix.
+
+### P2 — Cross-mode continuity breaks
+**Tickets:** T-016 (closed)
+**First seen:** 2026-04-24 (session e9197064)
+**Status:** Fixed by S-011.
+**Pattern:** Behaviour that looks correct inside a single mode breaks at mode boundaries because the two paths share state through different stores. Diagnosable only by holding a real conversation across a switch.
+**Recurring:** Once.
+
+### P3 — Memory tier behaviour does not match documented contract
+**Tickets:** T-017 (open)
+**First seen:** 2026-04-24 (session e9197064)
+**Status:** Open. Conservative fix is a docstring correction; aggressive fix is including L1 in implicit searches.
+**Pattern:** Function contracts (docstrings, schemas) describe ideal behaviour; the code implements a subset. Pi reasons about its own capabilities from the contracts, so contract drift directly causes wrong self-descriptions.
+**Recurring:** Once.
 
 ---
 

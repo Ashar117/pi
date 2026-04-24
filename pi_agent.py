@@ -8,6 +8,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
@@ -318,15 +319,24 @@ You are NOT in root mode. You do NOT have tools. You cannot use tools.
 
         # Mode switches — never clear self.messages, session context must survive mode changes
         cmd = user_input.lower().strip()
-        if cmd in ("root mode", "switch to root mode", "go root"):
-            self.mode = "root"
-            return "Root mode active (Claude with tools)"
-        elif cmd in ("normie mode", "switch to normie mode", "go normie"):
-            self.mode = "normie"
-            return "Normie mode active (Groq, free)"
-        elif user_input.lower() == "analyze performance":
+        cmd_clean = re.sub(r"[?!.,;:]+", "", cmd).strip()
+        words = cmd_clean.split()
+
+        # T-015: Loose mode-switch detection. The previous strict matcher silently
+        # ignored natural variants like "can u switch to root mode ?", which left
+        # the agent in normie mode while the user believed they were in root.
+        # Match any short message (≤ 8 words) containing the mode phrase.
+        if len(words) <= 8:
+            if "root mode" in cmd_clean:
+                self.mode = "root"
+                return "Root mode active (Claude with tools)"
+            if "normie mode" in cmd_clean:
+                self.mode = "normie"
+                return "Normie mode active (Groq, free)"
+
+        if cmd == "analyze performance":
             return self._performance_report()
-        elif user_input.lower() == "research mode":
+        elif cmd == "research mode":
             print("\n" + "="*60)
             print("  PI RESEARCH MODE - 3-Agent Debate")
             print("="*60)
@@ -349,7 +359,7 @@ You are NOT in root mode. You do NOT have tools. You cannot use tools.
                     print("[Research] Results saved to memory")
                 return "[Research complete. Continue conversation or 'exit']"
             return "[No research question provided]"
-        elif user_input.lower() == "exit":
+        elif cmd == "exit":
             return "EXIT"
 
         # Daily budget enforcement
@@ -387,16 +397,7 @@ You are NOT in root mode. You do NOT have tools. You cannot use tools.
         # Append user message to persistent history
         self.messages.append({"role": "user", "content": user_input})
 
-        # T-012: Safe bounded truncation — never cut a tool_result from its tool_use.
-        # Walk forward from the naive slice point until we land on a plain user text message.
-        if len(self.messages) > 20:
-            start = len(self.messages) - 20
-            while start < len(self.messages):
-                msg = self.messages[start]
-                if msg["role"] == "user" and isinstance(msg.get("content"), str):
-                    break
-                start += 1
-            self.messages = self.messages[start:]
+        self._truncate_messages_safely(20)
 
         # Call Claude
         response = self.claude.messages.create(
@@ -469,6 +470,19 @@ You are NOT in root mode. You do NOT have tools. You cannot use tools.
 
         return final_text
 
+    def _truncate_messages_safely(self, max_messages: int = 20):
+        """T-012: Bound message history without orphaning tool_result blocks.
+        Walk forward from the naive slice point to a plain user text message."""
+        if len(self.messages) <= max_messages:
+            return
+        start = len(self.messages) - max_messages
+        while start < len(self.messages):
+            msg = self.messages[start]
+            if msg["role"] == "user" and isinstance(msg.get("content"), str):
+                break
+            start += 1
+        self.messages = self.messages[start:]
+
     def _extract_text_from_messages(self, n: int = 10) -> str:
         """Extract readable text from self.messages for Groq context"""
         lines = []
@@ -489,10 +503,17 @@ You are NOT in root mode. You do NOT have tools. You cannot use tools.
         """Normie mode: Groq, no tools"""
         system_prompt = self._get_system_prompt()
 
-        # Include recent session context (covers root→normie switch)
+        # T-016: Build session context from prior messages BEFORE appending the
+        # current turn, so it doesn't appear duplicated to Groq.
         session_ctx = self._extract_text_from_messages(n=10)
         if session_ctx:
             system_prompt += f"\n\nSESSION CONTEXT (read-only, from this conversation):\n{session_ctx}"
+
+        # T-016: Persist the user turn to the unified message store so a later
+        # mode switch (normie → root) sees the conversation as one thread.
+        # Previously normie wrote only to self.history, leaving self.messages
+        # empty and causing Claude to treat post-switch sessions as brand new.
+        self.messages.append({"role": "user", "content": user_input})
 
         groq_messages = [{"role": "system", "content": system_prompt}]
         groq_messages.append({"role": "user", "content": user_input})
@@ -506,6 +527,10 @@ You are NOT in root mode. You do NOT have tools. You cannot use tools.
             content = response.choices[0].message.content
         except Exception as e:
             content = f"[Pi] Groq error: {str(e)}"
+
+        # T-016: Persist assistant turn to unified store as well.
+        self.messages.append({"role": "assistant", "content": content})
+        self._truncate_messages_safely(20)
 
         self.history.append({"role": "user", "content": user_input})
         self.history.append({"role": "assistant", "content": content})

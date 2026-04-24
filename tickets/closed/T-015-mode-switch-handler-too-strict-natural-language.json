@@ -1,0 +1,18 @@
+{
+  "id": "T-015",
+  "source": "analysis/chat_logs.txt",
+  "title": "Mode-switch handler ignores natural language phrasing",
+  "component": "pi_agent.py:process_input",
+  "what_failed": "Strict equality matcher accepted only the exact strings 'root mode' / 'switch to root mode' / 'go root'. Any natural variant fell through to the LLM, which then role-played the mode switch in text while the agent stayed in normie mode.",
+  "where_failed": "pi_agent.py process_input() — the if cmd in (...) tuple match",
+  "why_likely": "Command parsing was a tuple membership test; punctuation and surrounding words ('can u switch to root mode ?') made it miss.",
+  "severity": "P0",
+  "reproduction": "Start agent in normie mode. Send: 'can u switch to root mode ?'. Observe Pi produces a fake mode-switch dialogue but self.mode never changes; subsequent tool-requiring questions fail because there are no tools.",
+  "expected": "Agent recognises mode-switch intent across natural phrasings and flips self.mode before any LLM call.",
+  "actual": "Agent ignored the intent; LLM produced a fabricated mode-switch experience. Every subsequent claim of tool use during the rest of the session was a hallucination.",
+  "suggested_fix": "Loose matcher: short message (<= 8 words after stripping punctuation) containing 'root mode' / 'normie mode' triggers the switch. Other commands stay strict.",
+  "status": "closed",
+  "created": "2026-04-24T22:00:00Z",
+  "closed": "2026-04-24T22:15:00Z",
+  "linked_solution": "S-010"
+}

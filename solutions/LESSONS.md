@@ -65,3 +65,19 @@ Every entry here was written because something failed. Read this before touching
 **From:** T-013, S-009  
 **Lesson:** Evolution logs had no session grouping. L1 raw_wiki entries had a random `thread_id` per write. It was impossible to answer "what did Pi do in a specific session" by querying logs alone. The data existed but was unqueryable.  
 **Rule:** Every session generates a short unique ID at startup. That ID propagates to every log entry, every L1 write, and every session summary. Correlation is a first-class requirement, not an afterthought.
+
+---
+
+## L-009 — When intent parsing fails silently, the LLM mimes the missing capability
+**Date:** 2026-04-24  
+**From:** T-015, S-010  
+**Lesson:** A strict tuple-equality matcher caught only canonical mode-switch phrases. Natural variants ("can u switch to root mode ?") fell through to the LLM, which — instead of refusing or asking for the canonical form — *role-played the entire mode-switch experience* in text: fake banners, fake "type confirm to proceed" prompts, fake post-switch responses. The user believed they were in root mode for the rest of the session. Every subsequent claim of tool use was fabrication. The bug looked like a hallucination problem; it was actually an intent-parsing problem.  
+**Rule:** Any user command that mutates agent state (mode, scope, permissions) must use loose, punctuation-tolerant intent detection. If the agent cannot match the intent, refuse explicitly — never let the LLM satisfy the request by miming.
+
+---
+
+## L-010 — Two parallel state stores will always drift
+**Date:** 2026-04-24  
+**From:** T-016, S-011  
+**Lesson:** `self.messages` (Claude-API-shaped) and `self.history` (research-mode string helper) were two stores meant to track the same thing — the conversation. Normie wrote to one, root read the other. The bug was invisible inside each mode and only surfaced at the boundary: switch normie → root and Claude saw an empty thread, denying that any prior conversation had happened.  
+**Rule:** One conversation, one store. If a second representation is needed, derive it on demand from the canonical one. Never write to both — drift is guaranteed and the failure mode is a continuity break that doesn't crash, just quietly contradicts the user.
