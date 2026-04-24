@@ -1,0 +1,7 @@
+Things Ash told Pi to remember (April 20, 2026):
+
+1. Ash tested Pi's memory system on April 20, 2026
+2. Favorite programming language: Python
+3. Working on a GNN project about graph coarsening
+4. Research deadline: March 15, 2026 (already passed - 36 days ago)
+5. Communication preference: direct, no fluff, no filler text

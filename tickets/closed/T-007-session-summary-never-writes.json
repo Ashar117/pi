@@ -1,0 +1,17 @@
+{
+  "id": "T-007",
+  "title": "Session summary never writes to memory on exit",
+  "component": "pi_agent.py:run(), _generate_session_summary()",
+  "what_failed": "On exit, '[Memory] Session summary saved' never printed. Session cost showed but no summary was written to Supabase.",
+  "where_failed": "pi_agent.py run() exit block: 'if self.messages:' guard. _generate_session_summary() had no fallback to self.history.",
+  "why_likely": "Dependent on T-006: self.messages was cleared on mode switch, so 'if self.messages:' was always False when last mode was normie. Also _generate_session_summary used _extract_text_from_messages only, with no fallback.",
+  "severity": "P0",
+  "reproduction": "1. Start Pi. 2. Switch to root, have conversation, switch to normie. 3. Type exit. 4. Observe no '[Memory] Session summary saved'.",
+  "expected": "Session summary written on every exit that had any conversation.",
+  "actual": "Summary silently skipped. Cost displayed, no summary.",
+  "suggested_fix": "Change guard to 'if self.messages or self.history:'. Add self.history fallback in _generate_session_summary().",
+  "status": "closed",
+  "created": "2026-04-21T03:00:00Z",
+  "closed": "2026-04-21T03:30:00Z",
+  "linked_solution": "S-006"
+}

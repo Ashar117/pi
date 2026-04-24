@@ -1,0 +1,17 @@
+{
+  "id": "T-008",
+  "title": "L1 memory tier returns 'Unknown tier' error",
+  "component": "tools/tools_memory.py:memory_write()",
+  "what_failed": "Writing to tier='l1' returned {\"success\": False, \"error\": \"Unknown tier\"}. L1 was architecturally defined but never implemented.",
+  "where_failed": "tools/tools_memory.py memory_write() — no elif for tier='l1', fell through to catch-all error return.",
+  "why_likely": "L1 (raw_wiki Supabase table) was defined in SUPABASE_SETUP.sql and the architecture doc but the memory_write implementation only handled l2 and l3.",
+  "severity": "P1",
+  "reproduction": "In root mode: ask Pi to test all memory tiers. L1 write returns Unknown tier.",
+  "expected": "tier='l1' writes to raw_wiki Supabase table with correct schema (thread_id, role, content, metadata).",
+  "actual": "Returns {\"success\": False, \"error\": \"Unknown tier\"}",
+  "suggested_fix": "Add elif tier == 'l1': block in memory_write() writing to raw_wiki. Add L1 read support in memory_read().",
+  "status": "closed",
+  "created": "2026-04-21T03:00:00Z",
+  "closed": "2026-04-21T03:30:00Z",
+  "linked_solution": "S-007"
+}

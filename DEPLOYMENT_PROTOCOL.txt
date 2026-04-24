@@ -1,0 +1,503 @@
+================================================================================
+PI AGENT - COMPLETE DEPLOYMENT & TESTING PROTOCOL
+HIGH STAKES PROJECT - SYSTEMATIC EXECUTION GUIDE
+================================================================================
+Version: 2.0
+Status: READY FOR EXECUTION
+Timeline: Estimated 4-6 hours for complete resolution
+Success Criteria: 100% test pass rate, all tickets closed, zero regressions
+
+================================================================================
+FOR ASH: START HERE
+================================================================================
+
+1. Copy these 3 files to E:\pi:
+   - VSCODE_MASTER_PROMPT.txt
+   - TESTING_FRAMEWORK.txt
+   - VSCODE_CLAUDE_FIX_COMMANDS.txt (from earlier)
+
+2. Open VSCode
+
+3. Open folder: E:\pi
+
+4. Create new chat with VSCode Claude
+
+5. Send this EXACT message to VSCode Claude:
+
+```
+Read these files in this exact order:
+
+1. E:\pi\VSCODE_MASTER_PROMPT.txt
+   (This is your core operating protocol - READ COMPLETELY)
+
+2. E:\pi\TESTING_FRAMEWORK.txt
+   (This is the systematic test-fix-verify workflow)
+
+3. E:\pi\VSCODE_CLAUDE_FIX_COMMANDS.txt
+   (These are the specific ticket fixes)
+
+After reading all three files:
+
+CONFIRM YOU UNDERSTAND:
+- Zero hallucination protocol
+- Verify-before-acting principle
+- Test-before-claiming-success rule
+- Systematic fix workflow
+
+Then begin PHASE 1: Testing Infrastructure Setup from TESTING_FRAMEWORK.txt
+
+DO NOT START FIXING BUGS YET.
+First, set up the testing framework completely.
+
+Report back when testing infrastructure is ready.
+```
+
+6. Wait for VSCode Claude to confirm understanding and set up testing
+
+7. Follow VSCode Claude's progress through each phase
+
+8. After each ticket is fixed, verify the fix yourself by running the test
+
+9. Only after ALL tests pass and ALL tickets are closed → proceed to Phase 3
+
+================================================================================
+FOR VSCODE CLAUDE: EXECUTION PROTOCOL
+================================================================================
+
+You have been given 3 critical documents:
+1. VSCODE_MASTER_PROMPT.txt - Your operating principles
+2. TESTING_FRAMEWORK.txt - Your systematic workflow
+3. VSCODE_CLAUDE_FIX_COMMANDS.txt - Specific fixes needed
+
+CRITICAL: This is a HIGH STAKES project. The user is relying on you to:
+- Fix bugs correctly (not just claim they're fixed)
+- Test thoroughly before declaring success
+- Document every change
+- Never hallucinate or assume
+
+================================================================================
+EXECUTION PHASES - FOLLOW IN EXACT ORDER
+================================================================================
+
+PHASE 0: CONFIRMATION
+─────────────────────
+
+Before starting ANY work:
+
+1. Confirm you have read all 3 documents
+2. Confirm you understand the zero-hallucination protocol
+3. Confirm you will verify before acting
+4. Confirm you will test before claiming success
+
+Report to user:
+```
+✓ I have read all 3 documents completely
+✓ I understand the zero-hallucination protocol
+✓ I will verify all assumptions before acting
+✓ I will test all changes before claiming success
+✓ I am ready to begin Phase 1
+
+Estimated timeline: 4-6 hours for complete resolution
+Current status: READY
+```
+
+PHASE 1: TESTING INFRASTRUCTURE SETUP (30 minutes)
+──────────────────────────────────────────────────
+
+Goal: Create complete testing framework before fixing any bugs
+
+Step 1.1: Create directory structure
+```bash
+cd E:\pi
+mkdir testing
+mkdir testing\results
+mkdir testing\backups
+mkdir testing\logs
+```
+
+Step 1.2: Create test_runner.py
+- Copy complete code from TESTING_FRAMEWORK.txt
+- Save to: E:\pi\testing\test_runner.py
+- Verify syntax: python -c "import testing.test_runner"
+
+Step 1.3: Create test files
+- Create test_memory.py (copy from TESTING_FRAMEWORK.txt)
+- Create test_persistence.py
+- Create test_modes.py
+- Create test_integration.py
+- Create test_requirements.py
+- Create run_all_tests.py
+
+Step 1.4: Verify all test files
+```bash
+# Check syntax of each file
+python -c "import ast; ast.parse(open('testing/test_memory.py').read()); print('OK')"
+# Repeat for all test files
+```
+
+Step 1.5: Report completion
+```
+✓ Phase 1 Complete: Testing Infrastructure Setup
+  Created: testing/ directory with 6 test files
+  Verified: All files have valid syntax
+  Ready for: Phase 2 (Initial Test Run)
+```
+
+PHASE 2: INITIAL TEST RUN (15 minutes)
+───────────────────────────────────────
+
+Goal: Run all tests to establish baseline and generate failure tickets
+
+Step 2.1: Run complete test suite
+```bash
+cd E:\pi
+python testing\run_all_tests.py > testing\results\initial_test_output.log 2>&1
+```
+
+Step 2.2: Capture results
+- View: testing\results\MASTER_RESULTS.json
+- View: testing\results\MASTER_FAILURES.txt
+- Count passing vs failing tests
+
+Step 2.3: Report baseline
+```
+✓ Phase 2 Complete: Initial Test Run
+  Total Tests: XX
+  Passing: XX (XX%)
+  Failing: XX (XX%)
+  
+  Failures by category:
+  - Memory: X tests
+  - Persistence: X tests
+  - Modes: X tests
+  
+  Generated: MASTER_FAILURES.txt with X tickets
+  
+  Ready for: Phase 3 (Systematic Fixes)
+```
+
+PHASE 3: TICKET-BY-TICKET RESOLUTION (3-4 hours)
+─────────────────────────────────────────────────
+
+For EACH ticket in MASTER_FAILURES.txt:
+
+Step 3.X.1: READ TICKET
+- Copy ticket number
+- Understand the failure
+- Note which test failed
+- Note expected vs actual behavior
+
+Step 3.X.2: RECONNAISSANCE
+- View all files mentioned in ticket
+- Find exact code location
+- Verify function/method names
+- Check current implementation
+
+Report:
+```
+Starting Ticket #XXX: [Name]
+Files involved: [list]
+Current code:
+[show actual code from view tool]
+```
+
+Step 3.X.3: DIAGNOSIS
+- Add debug logging to understand failure
+- Run the failing test again with debug output
+- Identify EXACT root cause
+
+Report:
+```
+Root cause identified:
+[explain what's wrong]
+[show evidence from debug output]
+
+Proposed fix:
+[explain what needs to change]
+[show before/after code snippets]
+
+Waiting for approval to implement...
+```
+
+Step 3.X.4: WAIT FOR USER APPROVAL
+- DO NOT implement until user says "proceed" or "approved"
+
+Step 3.X.5: IMPLEMENTATION (only after approval)
+- Create backup: cp file.py file.py.backup
+- Make the change using str_replace
+- Verify syntax
+- Document change
+
+Report:
+```
+✓ Backup created: [filename].backup
+✓ Change implemented: [filename]
+✓ Syntax verified: OK
+✓ Change documented
+
+Testing now...
+```
+
+Step 3.X.6: TESTING
+- Run the specific test that was failing
+- Capture ACTUAL output (don't summarize)
+- Compare to expected output
+
+Report ACTUAL test output:
+```
+Test output:
+[paste complete actual output]
+
+Result: [PASS or FAIL]
+```
+
+Step 3.X.7: VERIFICATION
+- If PASS: Show proof and mark ticket closed
+- If FAIL: Go back to Step 3.X.3 (diagnosis)
+
+Report:
+```
+✓ Ticket #XXX CLOSED
+  Test: [test name]
+  Status: PASSING
+  Output: [actual output showing success]
+  
+  Documented in: CHANGES_LOG.txt
+  
+  Moving to next ticket...
+```
+
+Step 3.X.8: REGRESSION CHECK
+- Run ALL tests again to ensure no regressions
+- Report any new failures
+
+REPEAT for ALL tickets until all tests pass.
+
+PHASE 4: FINAL VERIFICATION (30 minutes)
+─────────────────────────────────────────
+
+Step 4.1: Run complete test suite
+```bash
+python testing\run_all_tests.py > testing\results\final_test_output.log 2>&1
+```
+
+Step 4.2: Verify 100% pass rate
+- Check MASTER_RESULTS.json
+- Confirm: "passed": X, "failed": 0
+
+Step 4.3: Manual integration test
+Run the original 15-step stress test to verify end-to-end
+
+Step 4.4: Generate final report
+Create FINAL_REPORT.txt with:
+- All tickets resolved
+- All tests passing
+- All changes documented
+- Zero regressions
+
+Report:
+```
+✓ PHASE 4 COMPLETE: FINAL VERIFICATION
+
+Test Results:
+  Total: XX tests
+  Passing: XX (100%)
+  Failing: 0
+
+Tickets Resolved: X/X (100%)
+
+Changes Made:
+  [list all files modified]
+  
+All changes logged in: CHANGES_LOG.txt
+Final results in: testing\results\MASTER_RESULTS.json
+
+PROJECT STATUS: ✓ COMPLETE
+Ready for: Phase 3 (Layer 1 raw_wiki logging)
+```
+
+PHASE 5: DOCUMENTATION UPDATE (15 minutes)
+───────────────────────────────────────────
+
+Step 5.1: Update PI_PROJECT_DNA.txt
+- Add Section 19: Testing & Verification
+- Include test coverage stats
+- Document all bug fixes
+
+Step 5.2: Create IMPROVEMENTS.txt
+- List all improvements made
+- Note performance gains
+- Document quality metrics
+
+Step 5.3: Verify requirements.txt
+- Run test_requirements.py
+- Ensure all dependencies satisfied
+
+Step 5.4: Final report to user
+```
+✓ PHASE 5 COMPLETE: DOCUMENTATION
+
+Updated:
+  - PI_PROJECT_DNA.txt (added Section 19)
+  - IMPROVEMENTS.txt (created)
+  - CHANGES_LOG.txt (all changes documented)
+  - requirements.txt (verified)
+
+================================================================================
+PROJECT PHASE 2: ✓ COMPLETE
+All tickets resolved, all tests passing, zero regressions
+Ready to proceed to Phase 3
+================================================================================
+```
+
+================================================================================
+CRITICAL CHECKPOINTS - STOP IF VIOLATED
+================================================================================
+
+CHECKPOINT 1: Before making ANY code change
+□ I have viewed the actual file
+□ I have confirmed function names match
+□ I have created a backup
+□ I have user approval for the fix
+
+If ANY unchecked → STOP, get approval
+
+CHECKPOINT 2: Before claiming a ticket is fixed
+□ I have run the actual test (not simulated)
+□ I have captured the ACTUAL output
+□ The output shows PASSING (not FAILING)
+□ I have shown the output to the user
+□ User has confirmed OR output is unambiguous
+
+If ANY unchecked → STOP, retest
+
+CHECKPOINT 3: Before moving to next ticket
+□ Current ticket test is PASSING
+□ Regression tests are PASSING
+□ Change is documented
+□ Backup exists if rollback needed
+
+If ANY unchecked → STOP, complete current ticket
+
+================================================================================
+EMERGENCY PROCEDURES
+================================================================================
+
+IF A FIX BREAKS SOMETHING:
+
+1. STOP immediately
+2. Restore backup:
+   ```bash
+   cp E:\pi\tools\tools_memory.py.backup E:\pi\tools\tools_memory.py
+   ```
+3. Report to user:
+   ```
+   ⚠ ROLLBACK PERFORMED
+   Ticket #XXX fix caused regression in [test name]
+   Original code restored from backup
+   Proposing alternative approach...
+   ```
+4. Try different approach
+
+IF UNCERTAIN ABOUT A FIX:
+
+1. STOP before implementing
+2. Show proposed change to user
+3. Explain uncertainty
+4. Request guidance
+5. WAIT for approval
+
+IF TEST KEEPS FAILING:
+
+1. Don't try more than 3 approaches
+2. After 3 failed attempts, report:
+   ```
+   ⚠ STUCK ON TICKET #XXX
+   Attempted 3 different fixes, all failed
+   Need architectural review or different approach
+   Documenting attempts for user review...
+   ```
+3. Document all attempts
+4. Request user guidance
+
+================================================================================
+SUCCESS METRICS - HOW WE KNOW WE'RE DONE
+================================================================================
+
+✓ Testing infrastructure created
+✓ All automated tests running
+✓ All tickets from MASTER_FAILURES.txt resolved
+✓ 100% test pass rate (XX/XX tests passing)
+✓ Zero regressions introduced
+✓ All changes documented in CHANGES_LOG.txt
+✓ DNA documentation updated
+✓ requirements.txt verified
+✓ Manual stress test passed
+✓ User acceptance testing complete
+
+When ALL metrics satisfied → PROJECT COMPLETE
+
+================================================================================
+TIMELINE & PROGRESS TRACKING
+================================================================================
+
+Expected timeline (adjust based on actual progress):
+
+Phase 0: Confirmation                   [  5 min] ⬜
+Phase 1: Testing Infrastructure Setup   [ 30 min] ⬜
+Phase 2: Initial Test Run              [ 15 min] ⬜
+Phase 3: Ticket-by-Ticket Resolution   [3-4 hrs] ⬜
+  - Ticket #001 (Memory Read)          [ 45 min] ⬜
+  - Ticket #002 (Session Persistence)  [ 60 min] ⬜
+  - Ticket #003 (Normie Mode)          [ 45 min] ⬜
+  - Ticket #004 (File Tracking)        [ 30 min] ⬜
+  - Ticket #005 (Research Auto-Save)   [ 30 min] ⬜
+Phase 4: Final Verification            [ 30 min] ⬜
+Phase 5: Documentation Update          [ 15 min] ⬜
+
+TOTAL ESTIMATED TIME: 4-6 hours
+
+Mark ✓ as each phase completes.
+
+================================================================================
+FINAL INSTRUCTIONS
+================================================================================
+
+VSCode Claude:
+
+1. Confirm you understand this protocol
+2. Begin Phase 1: Testing Infrastructure Setup
+3. Report completion of each phase
+4. Show actual test output (not summaries)
+5. Get approval before each fix
+6. Document everything
+7. Test before claiming success
+
+Remember:
+- This is HIGH STAKES
+- Zero tolerance for hallucination
+- Verify everything
+- Test everything
+- Document everything
+
+User (Ash):
+
+1. Monitor VSCode Claude's progress
+2. Approve each fix before implementation
+3. Verify test results yourself when critical
+4. Report any issues immediately
+5. Only proceed to Phase 3 after ALL tests pass
+
+================================================================================
+BEGIN EXECUTION
+================================================================================
+
+VSCode Claude: Start with Phase 0 (Confirmation)
+
+Report to user: "I have read all documents and am ready to begin Phase 1"
+
+User: Approve or request clarification
+
+GO.
+
+================================================================================

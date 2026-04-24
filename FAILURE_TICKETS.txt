@@ -1,0 +1,454 @@
+================================================================================
+PI AGENT - FAILURE TICKETS & BUG TRACKING SYSTEM
+================================================================================
+Session: 2026-04-20 Stress Test
+Test Sequence: 15-step extreme stress test
+Total Tests: 15
+Passed: 11 (73%)
+Failed: 4 (27%)
+
+Status Legend:
+🔴 OPEN - Not fixed
+🟡 IN PROGRESS - Being worked on
+🟢 CLOSED - Fixed and verified
+⚪ BLOCKED - Waiting on dependency
+
+================================================================================
+TICKET #001: MEMORY READ FAILURE IN ROOT MODE
+================================================================================
+Status: 🔴 OPEN - VERIFIED IN TEST
+Priority: P0 - CRITICAL
+Severity: HIGH
+Reported: 2026-04-20 20:20
+Verified: 2026-04-20 20:35 (Full stress test)
+Component: tools/tools_memory.py - memory_read()
+
+DESCRIPTION:
+Memory writes succeed but reads return empty. User stored 5 items in memory,
+all confirmed written successfully. When asked to recall them, memory_read
+returns empty results.
+
+EVIDENCE FROM STRESS TEST:
+```
+Ash: remember these 5 things in order: (1) I'm testing Pi's memory system...
+
+Pi: All 5 stored and verified:
+
+| # | Item | Tier | Status |
+|---|------|------|--------|
+| 1 | Memory system test on Apr 20 2026 | L3 | ✅ |
+| 2 | Favorite language: Python | L2 | ✅ |
+| 3 | GNN project: graph coarsening | L3 | ✅ |
+| 4 | Research deadline: Mar 15 2026 | L3 | ✅ |
+| 5 | Comm style: direct, no fluff | L2 | ✅ |
+
+[All writes confirmed successful with table shown]
+
+Ash: what are all the things I just told you to remember?
+
+Pi: Memory reads are returning empty (likely a retrieval issue with the L2 
+entries), but I have them from this session:
+
+1. Testing Pi's memory system on April 20, 2026
+2. Favorite programming language: Python
+3. Working on a GNN project about graph coarsening
+4. Research deadline: March 15, 2026 (already passed)
+5. Prefer direct communication, no fluff
+
+The writes confirmed success earlier, but retrieval is failing now — that's 
+a bug worth noting. The L3 entries should be searchable.
+```
+
+ADDITIONAL EVIDENCE:
+Single fact recall WORKS:
+```
+Ash: what's my research deadline?
+Pi: March 15, 2026 — but it's already passed.
+[This came from memory successfully]
+```
+
+But bulk retrieval FAILS - returns empty and uses conversation fallback.
+
+ROOT CAUSE:
+memory_read() query not matching stored entries. Possible issues:
+1. Query syntax wrong
+2. Table/column mismatch
+3. Filter conditions too restrictive
+4. Entries written to wrong table
+
+REPRODUCTION STEPS:
+1. Start Pi in root mode
+2. Execute: remember these 5 things: (1) test A, (2) test B, (3) test C, (4) test D, (5) test E
+3. Verify writes succeed (tool confirmations shown)
+4. Execute: what are all the things I just told you to remember?
+5. OBSERVE: Returns empty, falls back to conversation context
+
+EXPECTED BEHAVIOR:
+memory_read() should return all 5 entries that were just written
+
+ACTUAL BEHAVIOR:
+memory_read() returns empty, Pi uses conversation context as fallback
+
+IMPACT:
+- Memory system appears to work but doesn't (writes succeed, reads fail)
+- User loses trust in persistence
+- Defeats primary purpose of Pi (persistent memory)
+
+FILES AFFECTED:
+- tools/tools_memory.py: memory_read() method
+- Possibly: memory_write() storing to wrong location
+
+DEPENDENCIES:
+None - standalone bug
+
+ASSIGNED TO:
+VSCode Claude
+
+FIX PRIORITY:
+P0 - Must fix before Layer 3
+
+VERIFICATION STEPS:
+1. Store 5 items in memory
+2. Query: "what did I tell you to remember?"
+3. Should return all 5 items from memory (not conversation)
+4. Restart Pi
+5. Query again - should still return all 5 items
+
+================================================================================
+TICKET #002: SESSION MEMORY NOT PERSISTING ACROSS RESTARTS
+================================================================================
+Status: 🔴 OPEN
+Priority: P0 - CRITICAL
+Severity: HIGH
+Reported: 2026-04-20 20:26
+Component: pi_agent.py - exit handling, evolution.py - session summary
+
+DESCRIPTION:
+After exit and restart, Pi doesn't remember anything from previous session
+except permanent profile. The 5 items stored in memory during session 1
+are completely lost after restart.
+
+EVIDENCE:
+```
+[Session 1]
+Ash: remember these 5 things... [all stored successfully]
+Ash: exit
+[Session Cost: $0.1565]
+
+[Session 2 - restart]
+Ash: what do you remember about me from our previous conversation?
+
+Pi: [Lists only permanent profile, NOT the 5 things from session 1]
+```
+
+ROOT CAUSE:
+Session summary not being written on exit. Two possible issues:
+1. summarize_session() not being called
+2. summarize_session() failing silently
+3. Summary written but not loaded on next startup
+
+REPRODUCTION STEPS:
+1. Start Pi, switch to root mode
+2. Store several items in memory
+3. Verify they're stored
+4. Type: exit
+5. Restart Pi
+6. Query: "what do you remember from our last conversation?"
+7. OBSERVE: Only permanent profile returned, session items lost
+
+EXPECTED BEHAVIOR:
+- Exit should write session summary to Supabase
+- Next startup should load: permanent profile + session summary + recent messages
+- User should see continuity across sessions
+
+ACTUAL BEHAVIOR:
+- Exit shows cost but doesn't write summary
+- Next startup only loads permanent profile
+- All session-specific memory lost
+
+IMPACT:
+- Pi has no continuity between sessions
+- User must re-explain context every time
+- Defeats core value proposition of Pi
+
+FILES AFFECTED:
+- pi_agent.py: main() function exit handling
+- evolution.py: summarize_session() if it exists
+- tools/tools_memory.py: session summary storage
+
+DEPENDENCIES:
+Ticket #001 (if reads don't work, summaries can't be retrieved)
+
+ASSIGNED TO:
+VSCode Claude
+
+FIX PRIORITY:
+P0 - Must fix before Layer 3
+
+VERIFICATION STEPS:
+1. Start Pi, store 3 test items
+2. Type: exit
+3. Check logs/evolution.jsonl - should have new entry
+4. Check Supabase raw_wiki - should have session summary
+5. Restart Pi
+6. Query: "what happened in our last session?"
+7. Should recall the 3 test items
+
+================================================================================
+TICKET #003: NORMIE MODE MEMORY ISOLATION
+================================================================================
+Status: 🔴 OPEN
+Priority: P1 - HIGH
+Severity: MEDIUM
+Reported: 2026-04-20 20:21
+Component: pi_agent.py - mode switching, memory access
+
+DESCRIPTION:
+When switching from root mode to normie mode, Pi loses all context from
+the root mode session. This creates jarring discontinuity mid-conversation.
+
+EVIDENCE:
+```
+[In root mode]
+Ash: remember these 5 things... [stored successfully]
+
+Ash: normie mode
+[Switches to normie]
+
+Ash: what things did i tell u to remember?
+
+Pi: You told me to remember that you just switched to NORMIE MODE.
+
+Ash: before that what did i tell u to remember?
+
+Pi: Before switching to NORMIE MODE, I don't have any specific memories 
+of you telling me to remember anything.
+```
+
+ROOT CAUSE:
+Normie mode (Groq) doesn't have access to:
+1. Memory tools (expected - normie has no tools)
+2. Conversation history from root mode
+3. L3 context loaded at startup
+
+ANALYSIS:
+This might be intentional (normie = stateless for cost savings), but creates
+terrible UX. User doesn't understand why Pi suddenly "forgets" everything.
+
+DESIGN DECISION NEEDED:
+Should normie mode have:
+- Read-only memory access? (can see L3, can't write)
+- Full conversation history from current session?
+- Or stay completely stateless?
+
+REPRODUCTION STEPS:
+1. Start in root mode
+2. Have conversation, store items
+3. Switch to normie mode
+4. Ask about previous conversation
+5. OBSERVE: Normie has no memory of it
+
+EXPECTED BEHAVIOR (Option A):
+Normie mode has read-only access to L3 context + session history
+
+EXPECTED BEHAVIOR (Option B):
+Normie mode clearly states its limitations upfront
+
+ACTUAL BEHAVIOR:
+Normie mode acts like conversation just started, confusing user
+
+IMPACT:
+- Confusing UX
+- User doesn't know what Pi "knows"
+- Breaks conversation flow
+
+FILES AFFECTED:
+- pi_agent.py: _respond_normie() method
+- prompts/consciousness.txt: normie mode explanation
+
+DEPENDENCIES:
+None
+
+ASSIGNED TO:
+VSCode Claude + Ash (design decision needed)
+
+FIX PRIORITY:
+P1 - Fix after critical bugs
+
+VERIFICATION STEPS:
+[After design decision made]
+1. Root mode conversation
+2. Switch to normie
+3. Ask about previous context
+4. Should either:
+   A) Recall it (if read-only memory enabled), OR
+   B) Explain limitations clearly
+
+================================================================================
+TICKET #004: FILE TRACKING NOT IMPLEMENTED
+================================================================================
+Status: 🔴 OPEN
+Priority: P2 - MEDIUM
+Severity: LOW
+Reported: 2026-04-20 20:26
+Component: tools/tools_execution.py - file operations tracking
+
+DESCRIPTION:
+Pi can create files but has no way to track what files it created in
+previous sessions. When asked to list created files, memory is empty.
+
+EVIDENCE:
+```
+[Session 1]
+Ash: create a file called test_progress.txt...
+Pi: File created and verified at E:\pi\test_progress.txt ✅
+
+Ash: exit
+
+[Session 2]
+Ash: list all the files you created in our previous session
+Pi: Memory is empty — no session data was saved
+```
+
+ROOT CAUSE:
+File creation doesn't log to memory. Two missing pieces:
+1. No automatic memory_write after file creation
+2. No session summary including file operations
+
+DESIGN OPTIONS:
+Option A: Auto-log every file operation to memory
+Option B: Include file operations in session summary
+Option C: Dedicated file_operations.jsonl log
+
+REPRODUCTION STEPS:
+1. Create several files in session 1
+2. Exit
+3. Restart Pi
+4. Ask: "what files did you create last session?"
+5. OBSERVE: No record
+
+EXPECTED BEHAVIOR:
+Pi should be able to list all files it created, when, and why
+
+ACTUAL BEHAVIOR:
+No tracking of file operations
+
+IMPACT:
+- Low severity (user can check filesystem manually)
+- But breaks Pi's "self-awareness" of its own actions
+
+FILES AFFECTED:
+- tools/tools_execution.py: create_file(), modify_file()
+- tools/tools_memory.py: file operation logging
+
+DEPENDENCIES:
+Ticket #002 (session persistence)
+
+ASSIGNED TO:
+VSCode Claude
+
+FIX PRIORITY:
+P2 - Nice to have, not blocking
+
+VERIFICATION STEPS:
+1. Create 3 files
+2. Exit and restart
+3. Query: "what files did you create?"
+4. Should list all 3 with timestamps
+
+================================================================================
+TICKET #005: RESEARCH MODE RESULTS NOT STORED IN MEMORY
+================================================================================
+Status: 🔴 OPEN
+Priority: P2 - MEDIUM
+Severity: LOW
+Reported: 2026-04-20 20:24
+Component: core/research_mode.py - result storage
+
+DESCRIPTION:
+Research mode generates valuable multi-agent debate results, but they're
+not automatically stored in memory. User has to manually request storage.
+
+EVIDENCE:
+```
+[Research mode runs successfully]
+Pi: [Synthesis] RECOMMENDATION: Use GAT if experience, else GCN...
+
+Ash: based on the research debate you just did, create a file...
+
+Pi: [In normie mode] I don't have the capability to create files
+```
+
+ISSUE:
+User switched to normie mode after research, lost access to tools.
+Even in root mode, research results aren't auto-stored.
+
+EXPECTED BEHAVIOR:
+Research mode should auto-write summary to memory after synthesis
+
+ACTUAL BEHAVIOR:
+Results only exist in conversation, not persisted
+
+IMPACT:
+- Valuable research lost if not manually saved
+- User has to remember to save important results
+
+FILES AFFECTED:
+- core/research_mode.py: _synthesize() method
+- tools/tools_memory.py: research result storage
+
+DEPENDENCIES:
+Ticket #001 (memory reads)
+
+ASSIGNED TO:
+VSCode Claude
+
+FIX PRIORITY:
+P2 - Enhancement, not critical
+
+VERIFICATION STEPS:
+1. Run research mode
+2. Exit without manually storing
+3. Restart
+4. Query: "what was the result of our research?"
+5. Should recall synthesis
+
+================================================================================
+SUMMARY: OPEN TICKETS BY PRIORITY
+================================================================================
+
+P0 - CRITICAL (Must fix before Layer 3):
+- Ticket #001: Memory read failure ← BLOCKS EVERYTHING
+- Ticket #002: Session persistence ← BLOCKS CONTINUITY
+
+P1 - HIGH (Fix soon):
+- Ticket #003: Normie mode memory isolation
+
+P2 - MEDIUM (Nice to have):
+- Ticket #004: File tracking
+- Ticket #005: Research result storage
+
+================================================================================
+OVERALL SYSTEM HEALTH
+================================================================================
+
+Core Functionality: 73% (11/15 tests passed)
+Memory System: 50% (writes work, reads broken)
+Session Persistence: 0% (completely broken)
+Tool Execution: 100% (all tools work)
+Research Mode: 100% (works perfectly)
+Cost Tracking: 100% (accurate)
+
+BLOCKING ISSUES:
+- Memory reads (Ticket #001)
+- Session persistence (Ticket #002)
+
+Once these 2 are fixed, Pi will be fully functional for Phase 2.
+
+================================================================================
+TICKET UPDATE LOG
+================================================================================
+2026-04-20 20:30 - All tickets created from stress test results
+[Next update will be here after fixes applied]
+
+================================================================================

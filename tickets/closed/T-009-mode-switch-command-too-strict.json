@@ -1,0 +1,17 @@
+{
+  "id": "T-009",
+  "title": "Mode switch commands require exact string match — natural language ignored",
+  "component": "pi_agent.py:process_input()",
+  "what_failed": "'switch to normie mode' did not trigger mode switch. Claude responded as if it switched but self.mode was unchanged. Only exact 'normie mode' worked.",
+  "where_failed": "pi_agent.py process_input() — 'if user_input.lower() == \"normie mode\"' exact equality check.",
+  "why_likely": "String equality instead of flexible matching. Users naturally say 'switch to X mode' or 'go normie'.",
+  "severity": "P2",
+  "reproduction": "Type 'switch to normie mode' instead of 'normie mode'. Pi (Claude in root mode) responds as if switched but mode is unchanged.",
+  "expected": "Common natural variants trigger the mode switch.",
+  "actual": "Only exact 'normie mode' / 'root mode' strings work.",
+  "suggested_fix": "Change equality check to set membership: cmd in ('normie mode', 'switch to normie mode', 'go normie').",
+  "status": "closed",
+  "created": "2026-04-21T03:00:00Z",
+  "closed": "2026-04-21T03:30:00Z",
+  "linked_solution": "S-007"
+}

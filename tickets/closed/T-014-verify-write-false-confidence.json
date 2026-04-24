@@ -1,0 +1,17 @@
+{
+  "id": "T-014",
+  "title": "_verify_write() only checks SQLite — Supabase failures return verified=True",
+  "component": "tools/tools_memory.py:_verify_write()",
+  "what_failed": "memory_write() for L3 writes to Supabase first (in try/except that swallows exceptions), then writes to SQLite, then calls _verify_write() which only checks SQLite. If Supabase write fails silently, the SQLite write still succeeds, and _verify_write() returns {verified: True}. Pi believes the memory is saved across sessions when it was actually only saved in the local cache. On next startup, _sync_l3() wipes SQLite and repopulates from Supabase — the entry disappears.",
+  "where_failed": "tools/tools_memory.py _verify_write() lines 393-406 — only queries l3_cache (SQLite), not l3_active_memory (Supabase).",
+  "why_likely": "Verification was added for quick local confirmation but was never extended to check the durable store.",
+  "severity": "P1",
+  "reproduction": "Simulate Supabase failure (revoke key). Write to L3. Verify returns True. Restart Pi. Memory is gone because _sync_l3 overwrites SQLite from empty Supabase.",
+  "expected": "verified=True only if BOTH SQLite cache AND Supabase contain the entry.",
+  "actual": "verified=True if SQLite has the entry, regardless of Supabase state.",
+  "suggested_fix": "In _verify_write() for tier=l3, also query Supabase: self.supabase.table('l3_active_memory').select('id').eq('id', entry_id).execute(). Only return verified=True if both checks pass.",
+  "status": "closed",
+  "created": "2026-04-22T00:00:00Z",
+  "closed": "2026-04-22T01:00:00Z",
+  "linked_solution": "S-008"
+}

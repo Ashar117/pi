@@ -1,0 +1,17 @@
+{
+  "id": "T-012",
+  "title": "self.messages[-20:] truncation can orphan tool_result blocks — API crash risk",
+  "component": "pi_agent.py:_respond_root()",
+  "what_failed": "When self.messages exceeds 20 entries, _respond_root() truncates with self.messages = self.messages[-20:]. The Anthropic API requires that every tool_result message is immediately preceded by an assistant message containing the matching tool_use block. If truncation cuts the assistant tool_use message but leaves the tool_result user message, the API will return a 400 error. This is a latent crash that only triggers after a long multi-tool session.",
+  "where_failed": "pi_agent.py _respond_root() lines 385-386",
+  "why_likely": "Naive slice doesn't account for the paired structure of tool_use/tool_result messages.",
+  "severity": "P1",
+  "reproduction": "Have a root mode conversation with many tool calls until self.messages reaches ~22 entries. The 400 API error will fire on the next call.",
+  "expected": "Truncation never cuts a tool_result from its preceding tool_use. Safe truncation point is always a user text message.",
+  "actual": "Simple [-20:] slice can land inside a tool_use/tool_result pair.",
+  "suggested_fix": "Before truncating, walk forward from the truncation point to find the first index where messages[i] is a user message with string content (not tool_result). Start the slice from there.",
+  "status": "closed",
+  "created": "2026-04-22T00:00:00Z",
+  "closed": "2026-04-22T01:00:00Z",
+  "linked_solution": "S-009"
+}

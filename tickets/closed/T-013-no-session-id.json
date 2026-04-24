@@ -1,0 +1,17 @@
+{
+  "id": "T-013",
+  "title": "No session_id — tool calls, evolution logs, L1 writes can't be correlated within a session",
+  "component": "pi_agent.py:__init__()",
+  "what_failed": "PiAgent has no session_id. Evolution log entries have no session grouping field. L1 raw_wiki writes generate a new random thread_id per write. This means there is no way to reconstruct what happened in a single session from logs — you can't answer 'what did Pi do in the 3pm session yesterday?' without guessing from timestamps.",
+  "where_failed": "pi_agent.py __init__() — no session_id created. evolution.py log_interaction() — no session_id field. tools_memory.py memory_write() tier=l1 — random uuid per write.",
+  "why_likely": "session_id was not in the original design. L1 was only recently implemented and used a random thread_id as a placeholder.",
+  "severity": "P2",
+  "reproduction": "Check evolution.jsonl — no session grouping field. Check raw_wiki entries — every thread_id is different even within the same session.",
+  "expected": "PiAgent generates a session_id (short UUID) at startup. All evolution log entries include session_id. L1 writes use the session's thread_id.",
+  "actual": "No session_id exists anywhere in the system.",
+  "suggested_fix": "Add self.session_id = str(uuid.uuid4())[:8] in __init__(). Pass session_id to evolution.log_interaction() metadata. Pass to memory_write() as L1 thread_id via the MemoryTools constructor or as a method arg.",
+  "status": "closed",
+  "created": "2026-04-22T00:00:00Z",
+  "closed": "2026-04-22T01:00:00Z",
+  "linked_solution": "S-009"
+}

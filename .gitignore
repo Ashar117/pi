@@ -1,0 +1,27 @@
+# API keys and credentials — NEVER COMMIT
+app/config.py
+.env
+.env.local
+*.env
+
+# Personal data and session logs — NEVER COMMIT
+.claude/
+data/
+logs/
+evolution.jsonl
+
+# Cache and temp
+__pycache__/
+*.pyc
+*.cache
+.pytest_cache/
+pi_env/
+*.backup.*
+temp_exec.py
+
+# OS and IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

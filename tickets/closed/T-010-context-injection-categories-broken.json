@@ -1,0 +1,17 @@
+{
+  "id": "T-010",
+  "title": "get_l3_context() silently drops session_history, research_results, file_operations, note",
+  "component": "tools/tools_memory.py:get_l3_context()",
+  "what_failed": "Session summaries, research results, and file operation logs are written to L3 with categories session_history, research_results, file_operations, and note. get_l3_context() has a hardcoded sections dict with only 5 keys: permanent_profile, active_project, current_priority, timed_reminder, temporary_note. Any memory entry not in those 5 categories is silently ignored at context injection time. Pi writes these memories but they never appear in the next session's context. Session continuity is completely broken.",
+  "where_failed": "tools/tools_memory.py get_l3_context() — hardcoded sections dict lines 313-319",
+  "why_likely": "categories dict was written for a specific set of category names but the rest of the system writes different category strings. No error is raised — entries just fall off the floor silently.",
+  "severity": "P0",
+  "reproduction": "1. Write memory with category='session_history'. 2. Call get_l3_context(). 3. Observe the session_history entry is absent from the returned string.",
+  "expected": "All written L3 memory entries appear in get_l3_context() output regardless of category name.",
+  "actual": "Only entries with category in {permanent_profile, active_project, current_priority, timed_reminder, temporary_note} appear. All others silently dropped.",
+  "suggested_fix": "Replace hardcoded sections dict with dynamic grouping: group all rows by category, format each group as a section. This ensures any category written anywhere in the system is always returned.",
+  "status": "closed",
+  "created": "2026-04-22T00:00:00Z",
+  "closed": "2026-04-22T01:00:00Z",
+  "linked_solution": "S-008"
+}

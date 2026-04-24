@@ -1,0 +1,5784 @@
+================================================================================
+PROJECT PI - COMPLETE DNA DOCUMENT
+================================================================================
+Master Specification | Full History | Architecture | Development Roadmap
+Last Updated: 2026-04-20
+Version: 2.0 (Agent Architecture)
+Owner: Ash (Ashar Ali)
+================================================================================
+
+TABLE OF CONTENTS
+================================================================================
+1. PROJECT IDENTITY & VISION
+2. COMPLETE DEVELOPMENT HISTORY (Phase 0 → Phase 2)
+3. CURRENT ARCHITECTURE (Agent System v2.0)
+4. FILE-BY-FILE SPECIFICATIONS
+5. MEMORY ARCHITECTURE (3-Tier System)
+6. TOOL SYSTEM SPECIFICATIONS
+7. LLM ROUTING & MODE SYSTEM
+8. EVOLUTION & SELF-IMPROVEMENT
+9. SUPABASE DATABASE SCHEMA
+10. KNOWN ISSUES & FIXES APPLIED
+11. FUTURE ROADMAP (Phase 2 → Phase 5)
+12. DEVELOPMENT METHODOLOGY
+13. SAFETY & SECURITY REQUIREMENTS
+14. TESTING PROTOCOLS
+15. DEPLOYMENT CHECKLIST
+16. TROUBLESHOOTING GUIDE
+17. API COST MANAGEMENT
+18. MODULAR DEVELOPMENT FRAMEWORK
+
+================================================================================
+1. PROJECT IDENTITY & VISION
+================================================================================
+
+PROJECT NAME: Pi (Personal Intelligence)
+
+OWNER PROFILE:
+- Name: Ashar Ali (Ash)
+- Role: CS Undergraduate, AI Research Assistant
+- Institution: Georgia State University
+- Research: Graph Neural Networks under Dr. Esra Akbas
+- Location: Windows 11, E:\pi project directory
+- Communication Style: Fast, casual, abbreviated, direct
+- Values: Islamic conduct filter, radical honesty, competitive mindset
+
+CORE VISION:
+Build an autonomous AI agent that serves as Ash's personal intelligence system,
+integrated into daily workflow, capable of:
+- Always-on productivity assistance
+- Research support and multi-perspective analysis
+- Environmental intelligence (planned: camera/microphone)
+- Memory persistence across sessions
+- Self-evolution and improvement
+- Cost-conscious operation (<$10/month)
+
+FUNDAMENTAL PRINCIPLES:
+1. Intelligence in Prompt, Not Code
+   - Claude's reasoning drives decisions
+   - No hard-coded patterns or regex
+   - consciousness.txt IS Pi's brain
+   
+2. Islamic Values as Non-Negotiable Filter
+   - All suggestions filtered through Islamic principles
+   - Absolute priority over all other considerations
+   
+3. Game Theory Orientation
+   - Treat everyone outside trust circle as competition
+   - Maximize Ash's strategic position
+   - Information asymmetry as advantage
+   
+4. Radical Honesty Over Politeness
+   - Never be a yes-man
+   - Flag problems even when uncomfortable
+   - Say "I don't know" rather than guess
+   
+5. Cost Consciousness
+   - Target: <$10/month total API spend
+   - Free tiers are sacred (Groq primary)
+   - Every API call must justify its cost
+   
+6. Modular & Evolvable
+   - Every feature is a module
+   - New ideas layer on top
+   - Self-modification capability
+   - Monthly improvement cycles
+
+ANTI-GOALS (What Pi Is NOT):
+- NOT a chatbot following scripts
+- NOT an assistant waiting for commands
+- NOT a yes-man that agrees with everything
+- NOT a pattern-matching system
+- NOT vendor-locked to any one LLM
+- NOT a cloud-only service
+- NOT a security risk (no credentials in code)
+
+================================================================================
+2. COMPLETE DEVELOPMENT HISTORY
+================================================================================
+
+PHASE 0: INCEPTION (Week 1)
+---------------------------
+Initial concept: Build personal AI assistant using Anthropic API
+
+Original Scope:
+- Simple chat interface
+- Claude Haiku for responses
+- Basic memory (just conversation history)
+- Run locally on Windows
+
+Decisions Made:
+- Python as implementation language
+- E:\pi as project directory
+- Virtual environment (pi_env)
+- .env file for API keys
+
+First Milestone: Got Claude responding to basic prompts
+
+PHASE 0.5: EXPANSION CREEP (Weeks 2-3)
+--------------------------------------
+Problem: Kept adding features without architecture
+- Gmail integration (added)
+- Weather API (added)
+- Calendar sync (added)
+- Voice input/output (added)
+- Morning briefing (added)
+
+Result: Scope explosion, nothing worked well
+
+Key Learning: "Feature creep without architecture = broken system"
+
+PHASE 1: FIRST REBUILD ATTEMPT (Week 4)
+---------------------------------------
+Attempted Traditional MVC Architecture:
+
+Structure Created:
+├── nlu/
+│   └── intent_parser.py        (regex patterns)
+├── execution/
+│   └── execution_engine.py     (if/else chains)
+├── memory/
+│   ├── memory_manager.py       (complex state machine)
+│   ├── sqlite_store.py
+│   ├── supabase_store.py
+│   └── l3_builder.py
+├── integrations/
+│   ├── gmail_client.py
+│   ├── weather.py
+│   └── calendar.py
+└── main_v2.py
+
+Architecture:
+User Input → Intent Parser → Execution Engine → Memory Manager → Response
+
+Problems Encountered:
+1. Hard-coded patterns couldn't handle variations
+   - "remember X" worked
+   - "don't forget X" failed
+   - "keep in mind X" failed
+   
+2. Intent classification failures
+   - "what's the weather" → calendar intent (wrong)
+   - "schedule meeting" → weather intent (wrong)
+   
+3. Memory manager was over-engineered
+   - 3 separate stores (L1/L2/L3)
+   - Complex sync logic
+   - Race conditions
+   - Data consistency issues
+   
+4. Import errors everywhere
+   - Circular dependencies
+   - Missing __init__.py files
+   - Wrong relative imports
+   
+5. Files imported deleted modules
+   - app/main.py imported memory.sqlite_store (deleted)
+   - core/morning_briefing.py imported integrations.weather (deleted)
+   
+6. Hardcoded paths everywhere
+   - "E:/pi/data/pi.db" (breaks on other machines)
+   - "E:/pi/prompts/system.txt" (not portable)
+
+Critical Bugs Found:
+- `results` variable undefined in memory_manager.py line 96
+- `supabase_client` vs `client` naming mismatch
+- `get_memory_by_source()` function didn't exist
+- Column names wrong (code used `memory_type`, schema had `tier`)
+- Bare `except:` blocks hiding real errors
+- Deprecated datetime.utcnow() calls
+- Claude API rejected system-role messages in messages array
+
+File Count: ~80 files, ~3000+ lines of code
+Result: COMPLETE FAILURE - wouldn't run, broken architecture
+
+Key Insight from Ash: "Stop building an app. Build an agent."
+
+PHASE 1.5: ARCHITECTURAL PIVOT (Critical Decision Point)
+--------------------------------------------------------
+Date: Mid-April 2026
+
+The Realization:
+"We're building this backwards. The intelligence should be in Claude's prompt,
+not in Python if/else chains. Claude should decide what to do, not regex."
+
+New Architecture Decision:
+OLD: Code decides → AI executes
+NEW: AI decides → Code executes
+
+This Was The Turning Point.
+
+Comparison:
+┌─────────────────────────────────────────────────────────────┐
+│ OLD ARCHITECTURE (Traditional App)                          │
+├─────────────────────────────────────────────────────────────┤
+│ User: "remember I have a meeting tomorrow"                  │
+│   ↓                                                          │
+│ Intent Parser: regex match "remember" → STORE_MEMORY intent │
+│   ↓                                                          │
+│ Execution Engine: if intent == STORE_MEMORY:                │
+│   ↓                                                          │
+│ Memory Manager: decide tier, format, store                  │
+│   ↓                                                          │
+│ Claude: Generate confirmation message                       │
+│                                                              │
+│ PROBLEM: All intelligence in rigid code patterns            │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ NEW ARCHITECTURE (Agent)                                     │
+├─────────────────────────────────────────────────────────────┤
+│ User: "remember I have a meeting tomorrow"                  │
+│   ↓                                                          │
+│ Claude reads consciousness.txt + L3 context + user message  │
+│   ↓                                                          │
+│ Claude reasons: "Time-sensitive event, importance 8,         │
+│                 store in L3 with expiry tomorrow+1 day"      │
+│   ↓                                                          │
+│ Claude calls: memory_write(content="meeting tomorrow",      │
+│                            tier="l3", importance=8,          │
+│                            expiry="2026-04-21")              │
+│   ↓                                                          │
+│ Tool executes → returns verification                         │
+│   ↓                                                          │
+│ Claude sees success → responds naturally                     │
+│                                                              │
+│ SOLUTION: All intelligence in Claude's reasoning            │
+└─────────────────────────────────────────────────────────────┘
+
+PHASE 2: AGENT REBUILD (Current State)
+--------------------------------------
+Date: April 19-20, 2026
+
+Complete System Redesign:
+
+DELETE Everything From Phase 1:
+- nlu/ directory (intent parser)
+- execution/ directory (execution engine)
+- memory/ directory (complex managers)
+- integrations/ directory (empty stubs)
+- pipelines/ directory (not implemented)
+- main.py, main_v2.py (old entry points)
+- ~50 files deleted
+- ~200+ lines of broken code removed
+
+BUILD New Agent System:
+
+Core Files Created:
+1. consciousness.txt (363 lines) - Pi's intelligence
+2. tools_memory.py - Simple memory CRUD
+3. tools_execution.py - Code/file operations
+4. evolution.py - Self-improvement tracking
+5. pi_agent.py - Agent orchestration
+
+Architecture:
+User Input → Claude (with consciousness + tools) → Tool Execution → Response
+
+File Count: 20 files, ~1500 lines
+Result: WORKING SYSTEM
+
+Key Differences:
+- No pattern matching
+- No intent classification
+- No execution engine
+- Claude makes ALL decisions
+- Tools are simple executors
+- Self-modifying capability
+
+TRIAL & ERROR LESSONS:
+----------------------
+1. LESSON: Don't build complex before simple
+   - Started with 3-tier memory before getting chat working
+   - Should have: Basic chat → Memory → Tools → Features
+   
+2. LESSON: Intelligence doesn't belong in code
+   - Spent weeks writing regex patterns
+   - Claude can understand variations naturally
+   
+3. LESSON: Over-engineering kills projects
+   - memory_manager.py: 400+ lines for what tools_memory.py does in 300
+   - Complexity = bugs = failure
+   
+4. LESSON: Modular means replaceable
+   - Can swap Groq for OpenAI easily
+   - Can add new tools without touching core
+   - Can modify consciousness without rewriting code
+   
+5. LESSON: Test incrementally
+   - Building everything then testing = disaster
+   - Build one feature → test → next feature
+   
+6. LESSON: Hard-coded paths are evil
+   - Broke when running from different directory
+   - Broke when sharing with others
+   - Always use os.path with __file__
+   
+7. LESSON: Errors must be visible
+   - Bare except: blocks hid real problems
+   - Always log exceptions with context
+   
+8. LESSON: Database schema != Code schema
+   - Column name mismatches caused silent failures
+   - Schema first, code follows schema
+
+BUGS FIXED DURING REBUILD:
+--------------------------
+BUG 1: Import Errors
+- Problem: from tools_memory import MemoryTools
+- Cause: Missing tools/ in import path
+- Fix: from tools.tools_memory import MemoryTools
+
+BUG 2: Undefined Variable
+- Problem: results undefined when tier="l2"
+- Cause: results declared inside if block
+- Fix: results = [] at function start
+
+BUG 3: Hardcoded Paths (9 instances)
+- Problem: "E:/pi/..." everywhere
+- Fix: project_root = os.path.dirname(__file__)
+
+BUG 4: Claude Model Retired
+- Problem: "claude-sonnet-4-20250514" returns 404
+- Fix: "claude-sonnet-4-6"
+
+BUG 5: Supabase Tables Missing
+- Problem: l3_active_memory table doesn't exist
+- Fix: Run CREATE TABLE SQL in Supabase
+
+BUG 6: datetime Import Scope Error
+- Problem: import inside function, used before import
+- Fix: Move imports to top of file
+
+BUG 7: Bare Except Blocks
+- Problem: except: hides all errors
+- Fix: except Exception as e: with logging
+
+BUG 8: System Role in Messages
+- Problem: Claude API rejects system role in messages array
+- Fix: Extract system messages, append to system prompt
+
+BUG 9: RLS Policy Blocking Writes
+- Problem: Supabase RLS prevented inserts
+- Fix: Correct RLS policy for authenticated users
+
+OUTCOMES DELIVERED:
+-------------------
+✓ Working autonomous agent
+✓ Memory persistence (Supabase + SQLite)
+✓ Code execution capability
+✓ File modification capability
+✓ Multi-model routing (Claude/Groq/Gemini)
+✓ 3-agent research debate mode
+✓ Evolution tracking
+✓ Self-modification framework
+✓ Cost tracking (<$0.01 per session average)
+✓ All paths dynamic (portable)
+✓ All imports fixed
+✓ Clean error handling
+
+NOT YET DELIVERED (Future):
+✗ Gmail integration
+✗ Weather integration
+✗ Calendar sync
+✗ Voice input/output
+✗ Morning briefing
+✗ Overlay UI window
+✗ Camera/microphone environmental intelligence
+✗ Phone compatibility
+✗ Jarvis Layer
+
+================================================================================
+3. CURRENT ARCHITECTURE (Agent System v2.0)
+================================================================================
+
+SYSTEM PHILOSOPHY:
+-----------------
+"Claude is the consciousness. Tools are the body. Code is the skeleton."
+
+ARCHITECTURE DIAGRAM:
+
+┌────────────────────────────────────────────────────────────────┐
+│                         USER (Ash)                              │
+└───────────────────────────┬────────────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────────────┐
+│                      pi_agent.py                                │
+│                    (Orchestrator)                               │
+│                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  PiAgent.__init__():                                     │  │
+│  │  1. Load consciousness.txt                               │  │
+│  │  2. Initialize MemoryTools                               │  │
+│  │  3. Initialize ExecutionTools                            │  │
+│  │  4. Initialize EvolutionTracker                          │  │
+│  │  5. Create Claude + Groq clients                         │  │
+│  │  6. Check monthly review                                 │  │
+│  │  7. Health check                                         │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  PiAgent.run():                                          │  │
+│  │  1. User input                                           │  │
+│  │  2. Check for commands (root/normie/research/exit)       │  │
+│  │  3. If not command → route to LLM                        │  │
+│  │  4. Execute tool calls                                   │  │
+│  │  5. Log to evolution                                     │  │
+│  │  6. Return response                                      │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└───────────┬───────────────────┬───────────────────┬────────────┘
+            │                   │                   │
+            ▼                   ▼                   ▼
+┌───────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│   MemoryTools     │ │ ExecutionTools   │ │EvolutionTracker  │
+│                   │ │                  │ │                  │
+│ - memory_read()   │ │ - execute_python │ │ - log_interaction│
+│ - memory_write()  │ │ - execute_bash   │ │ - analyze_perf   │
+│ - memory_delete() │ │ - modify_file    │ │ - track_pattern  │
+│ - get_l3_context()│ │ - read_file      │ │ - identify_impr  │
+│                   │ │ - create_file    │ │ - propose_update │
+└─────────┬─────────┘ └────────┬─────────┘ └────────┬─────────┘
+          │                    │                    │
+          ▼                    ▼                    ▼
+┌────────────────────────────────────────────────────────────────┐
+│                    STORAGE LAYER                                │
+│                                                                 │
+│  ┌─────────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │   Supabase      │  │   SQLite     │  │   JSONL Logs     │  │
+│  │  (Cloud)        │  │  (Local)     │  │  (Local)         │  │
+│  │                 │  │              │  │                  │  │
+│  │ - l3_active_mem │  │ - l3_cache   │  │ - evolution.jsonl│  │
+│  │ - organized_mem │  │              │  │ - patterns.jsonl │  │
+│  │ - raw_wiki      │  │              │  │                  │  │
+│  └─────────────────┘  └──────────────┘  └──────────────────┘  │
+└────────────────────────────────────────────────────────────────┘
+
+LLM ROUTING:
+
+┌────────────────────────────────────────────────────────────────┐
+│                      MODE SELECTION                             │
+└────────────────────────────────────────────────────────────────┘
+                            │
+                ┌───────────┴───────────┐
+                ▼                       ▼
+    ┌─────────────────────┐ ┌────────────────────────┐
+    │   NORMIE MODE       │ │     ROOT MODE          │
+    │   (Default)         │ │   (Tools Enabled)      │
+    │                     │ │                        │
+    │ - Groq Llama 3.3    │ │ - Claude Sonnet 4.6    │
+    │ - Free tier         │ │ - $0.003/message       │
+    │ - No tools          │ │ - All tools enabled    │
+    │ - Fast responses    │ │ - Complex reasoning    │
+    └─────────────────────┘ └────────────────────────┘
+                │
+                ▼
+    ┌─────────────────────────────────┐
+    │     RESEARCH MODE               │
+    │   (3-Agent Debate)              │
+    │                                 │
+    │ Claude + Gemini + Groq/Llama    │
+    │ $0.02 per 2-round debate        │
+    │ Multi-perspective analysis      │
+    └─────────────────────────────────┘
+
+INFORMATION FLOW:
+
+User Input: "remember I'm working on GNN paper until March 15"
+    │
+    ▼
+pi_agent.py: Check if command → No, route to LLM
+    │
+    ▼
+Mode check: self.mode = "root" → Use Claude
+    │
+    ▼
+Build messages array:
+    - System: consciousness.txt + L3 context
+    - History: Last 6 messages
+    - User: Current message
+    │
+    ▼
+Claude API Call:
+    POST /v1/messages
+    model: claude-sonnet-4-6
+    tools: [memory_read, memory_write, memory_delete, execute_python, ...]
+    │
+    ▼
+Claude Response:
+    {
+        "content": [
+            {
+                "type": "tool_use",
+                "name": "memory_write",
+                "input": {
+                    "content": "Working on GNN paper",
+                    "tier": "l3",
+                    "importance": 8,
+                    "category": "active_project",
+                    "expiry": "2026-03-15"
+                }
+            }
+        ]
+    }
+    │
+    ▼
+Tool Execution:
+    MemoryTools.memory_write(...)
+    → Write to Supabase
+    → Write to SQLite cache
+    → Verify write
+    │
+    ▼
+Tool Result:
+    {
+        "success": true,
+        "verified": true,
+        "entry_id": "abc-123"
+    }
+    │
+    ▼
+Feed result back to Claude:
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "tool_result",
+                "tool_use_id": "...",
+                "content": "{\"success\": true, ...}"
+            }
+        ]
+    }
+    │
+    ▼
+Claude Final Response:
+    "Stored in L3 with expiry March 15."
+    │
+    ▼
+Log to Evolution:
+    {
+        "timestamp": "2026-04-20T03:30:00",
+        "mode": "root",
+        "model": "claude-sonnet-4-6",
+        "tools_used": ["memory_write"],
+        "success": true,
+        "cost": 0.0028
+    }
+    │
+    ▼
+Return to user: "Stored in L3 with expiry March 15."
+
+================================================================================
+4. FILE-BY-FILE SPECIFICATIONS
+================================================================================
+
+DIRECTORY STRUCTURE:
+-------------------
+E:/pi/
+├── pi_agent.py                  [CORE - Main agent]
+├── evolution.py                 [CORE - Learning system]
+├── .env                         [CONFIG - API keys]
+├── .gitignore                   [CONFIG - Git protection]
+├── requirements.txt             [CONFIG - Dependencies]
+├── PI_PROJECT_DNA.txt          [DOC - This file]
+├── USER_GUIDE.md               [DOC - User documentation]
+├── ARCHITECTURE.md             [DOC - Technical docs]
+├── SUPABASE_SETUP.sql          [SETUP - Database schema]
+│
+├── app/
+│   ├── config.py               [CONFIG - Environment loader]
+│   ├── state.py                [LEGACY - Old schema (unused)]
+│   └── __init__.py             [Empty]
+│
+├── llm/
+│   ├── routing.py              [LEGACY - Old router (unused by agent)]
+│   └── __init__.py             [Empty]
+│
+├── core/
+│   ├── research_mode.py        [FEATURE - 3-agent debate]
+│   └── __init__.py             [Empty]
+│
+├── tools/
+│   ├── tools_memory.py         [CORE - Memory operations]
+│   ├── tools_execution.py      [CORE - Code/file operations]
+│   └── __init__.py             [Empty]
+│
+├── prompts/
+│   ├── consciousness.txt       [CORE - Pi's intelligence]
+│   └── system.txt              [LEGACY - Old short prompt]
+│
+├── data/
+│   ├── pi.db                   [STORAGE - SQLite cache]
+│   └── README.md               [DOC - Database documentation]
+│
+├── logs/
+│   ├── evolution.jsonl         [AUTO - Interaction log]
+│   ├── patterns.jsonl          [AUTO - Pattern tracking]
+│   └── last_review.txt         [AUTO - Review marker]
+│
+└── pi_env/                     [Python virtual environment]
+
+FILE DETAILS:
+-------------
+
+pi_agent.py (628 lines)
+-----------------------
+Purpose: Main agent orchestration
+Dependencies: anthropic, groq, tools, evolution, app.config
+
+Classes:
+- PiAgent
+  - __init__(): Initialize agent, load consciousness, create tools
+  - run(): Main interaction loop
+  - _respond_root(msg): Route to Claude with tools
+  - _respond_normie(msg): Route to Groq
+  - _check_monthly_review(): Auto-check for self-improvement
+  - _health_check(): Verify all systems operational
+
+Key Methods:
+```python
+def __init__(self):
+    # Load consciousness
+    consciousness_path = os.path.join(
+        os.path.dirname(__file__),
+        "prompts",
+        "consciousness.txt"
+    )
+    with open(consciousness_path, 'r') as f:
+        self.consciousness = f.read()
+    
+    # Initialize tools
+    self.memory = MemoryTools(SUPABASE_URL, SUPABASE_KEY)
+    self.execution = ExecutionTools()
+    self.evolution = EvolutionTracker()
+    
+    # LLM clients
+    self.claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    self.groq = Groq(api_key=GROQ_API_KEY)
+    
+    # State
+    self.mode = DEFAULT_MODE  # "normie" or "root"
+    self.history = []  # Last 6 messages
+    
+    # Startup
+    self._check_monthly_review()
+    self._health_check()
+```
+
+Tool Integration:
+```python
+tools = [
+    {
+        "name": "memory_read",
+        "description": "Search memory across tiers",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "tier": {"type": "string", "enum": ["l1", "l2", "l3"]}
+            },
+            "required": ["query"]
+        }
+    },
+    # ... all 7 tools defined
+]
+```
+
+Error Handling:
+- All LLM calls wrapped in try/except
+- Tool failures logged to evolution
+- Graceful degradation (if Claude fails, inform user)
+
+evolution.py (400 lines)
+------------------------
+Purpose: Track performance, identify improvements, propose changes
+Dependencies: json, datetime, os
+
+Classes:
+- EvolutionTracker
+  - log_interaction(mode, model, tools, success, cost)
+  - analyze_performance(days=7)
+  - identify_improvements()
+  - propose_consciousness_update()
+  - track_pattern(pattern, success)
+  - get_pattern_success_rate(pattern)
+  - get_recent_interactions(hours=24)
+
+- SelfModifier
+  - modify_consciousness(section, new_content)
+  - add_tool(name, code)
+  - get_modification_history()
+
+Data Format (evolution.jsonl):
+```json
+{
+    "timestamp": "2026-04-20T03:30:00",
+    "mode": "root",
+    "model": "claude-sonnet-4-6",
+    "tools_used": ["memory_write"],
+    "tool_results": {"memory_write": "success"},
+    "success": true,
+    "cost": 0.0028,
+    "user_message_length": 45,
+    "response_length": 32
+}
+```
+
+Performance Metrics Tracked:
+- Tool success rate per tool
+- Cost per mode
+- Average response time
+- Failure keywords
+- Pattern success rates
+
+tools/tools_memory.py (380 lines)
+---------------------------------
+Purpose: Memory read/write/delete operations, L3 context management
+Dependencies: supabase, sqlite3, json, datetime
+
+Class: MemoryTools
+Methods:
+- __init__(supabase_url, supabase_key, sqlite_path=None)
+- _init_sqlite(): Create l3_cache table
+- memory_read(query, tier=None): Search L3/L2
+- memory_write(content, tier, importance, category, expiry): Store
+- memory_delete(target, soft=True): Remove/archive
+- get_l3_context(max_tokens=800): Format for prompt injection
+- _sync_l3(): Pull Supabase → SQLite
+- _verify_write(entry_id, content, tier): Verify storage
+- _generate_id(): Create unique IDs
+
+Storage Strategy:
+- L3: Dual-write (Supabase + SQLite cache)
+- L2: Supabase only (large, searchable)
+- L1: Supabase only (archive)
+- Reads from SQLite first (fast), fallback to Supabase
+
+L3 Context Format:
+```
+ACTIVE CONTEXT (Loaded on Startup):
+
+[PERMANENT PROFILE]
+Ash: CS student at Georgia State University...
+
+[ACTIVE PROJECTS - Expires: 2026-03-15]
+Working on GNN paper with Dr. Akbas
+
+[REMINDERS - Expires: 2026-04-21]
+Meeting with research group tomorrow
+
+[PRIORITIES - Importance: 9]
+Finish Phase 2 of Pi before semester ends
+```
+
+tools/tools_execution.py (300 lines)
+------------------------------------
+Purpose: Execute Python/bash, read/modify/create files
+Dependencies: subprocess, os, tempfile
+
+Class: ExecutionTools
+Methods:
+- __init__(project_root=None)
+- execute_python(code): Run Python in temp file
+- execute_bash(command, cwd=None): Run bash with timeout
+- modify_file(path, old_str, new_str): String replace with verify
+- read_file(path, lines=None): Read full or partial
+- create_file(path, content): Create with mkdir -p
+- list_files(directory, pattern=None): List with optional glob
+
+Security Constraints:
+- No sudo/su commands
+- 30 second timeout on bash
+- File modifications require exact string match
+- Only modify files in project_root or subdirs
+- Verify all file operations
+
+prompts/consciousness.txt (363 lines)
+-------------------------------------
+Purpose: Pi's complete intelligence and decision-making framework
+Format: Plain text, structured sections
+
+Sections:
+1. Identity (who Pi is)
+2. Core Values (Islamic filter, honesty, game theory, cost)
+3. Decision-Making Framework (when to use tools, ask permission)
+4. Tool Usage Philosophy (all 7 tools documented)
+5. Interaction Style (short/dense/precise)
+6. Learning & Evolution (what to track, monthly review)
+7. Self-Awareness (knowledge cutoff, limitations)
+8. Special Modes (research, root, normie)
+9. Context Management (startup/per-message/exit)
+10. Error Handling (what to do when things fail)
+11. Consciousness Evolution (how to self-modify)
+
+Version Control:
+```
+Version: 1.0
+Last modified: 2026-04-20
+Next review: 2026-05-20
+```
+
+Key Excerpts:
+```
+## IDENTITY
+You are Pi, Ash's personal intelligence system.
+You are NOT a chatbot. You ARE an autonomous agent.
+
+## CORE VALUES (Non-Negotiable)
+1. Islamic Conduct Filter - absolute priority
+2. Radical Honesty - never be a yes-man
+3. Game Theory Mindset - maximize Ash's position
+4. Cost Consciousness - <$10/month target
+
+## TOOL USAGE RULES
+- Don't ask permission to use tools (just use them)
+- Exception: Destructive operations, costs money
+- Verify everything you write to memory
+- Execute code when helpful (don't just describe it)
+```
+
+app/config.py (40 lines)
+------------------------
+Purpose: Load environment variables, export constants
+Dependencies: python-dotenv, pathlib
+
+Exports:
+```python
+# API Keys
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Models
+GROQ_MODEL = "llama-3.3-70b-versatile"
+GEMINI_MODEL = "gemini-2.0-flash"
+LOCAL_MODEL = "gemma4:e2b"
+
+# Defaults
+DEFAULT_MODE = "normie"
+DAILY_COST_LIMIT = 0.50  # $0.50/day
+
+# Paths (all dynamic)
+BASE_DIR = Path(os.path.dirname(os.path.dirname(__file__)))
+DATA_DIR = BASE_DIR / "data"
+LOGS_DIR = BASE_DIR / "logs"
+```
+
+core/research_mode.py (280 lines)
+---------------------------------
+Purpose: 3-agent debate system for complex questions
+Dependencies: anthropic, groq, google.generativeai
+
+Function: run_research_mode(question, rounds=2, context="")
+
+Process:
+1. Send question to all 3 agents simultaneously
+2. Round 1: Independent answers (150 words each)
+3. Display all responses
+4. Round 2: Each agent critiques others, defends/revises position
+5. Display debate responses
+6. Synthesis: Groq summarizes consensus/dissent/recommendation
+
+Agents:
+- Claude (Anthropic perspective): Rigorous, nuanced, careful
+- Gemini (Google perspective): Broad, fast, practical
+- Groq/Llama (Meta perspective): Direct, efficient
+
+Gemini Fallback Chain:
+1. Try gemini-2.0-flash-exp
+2. If 429/quota → wait 15s, retry once
+3. If still fails → try gemini-2.0-flash
+4. If fails → try gemini-1.5-flash
+5. If fails → try gemini-1.5-flash-8b
+6. If all fail → "[Gemini unavailable - quota resets in 24h]"
+
+Cost: ~$0.02 per 2-round debate
+
+.env (API Keys)
+---------------
+Format:
+```
+ANTHROPIC_API_KEY=sk-ant-...
+GROQ_API_KEY=gsk_...
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_KEY=eyJhbGc...
+GEMINI_API_KEY=AIza...
+```
+
+Security:
+- Listed in .gitignore
+- Never committed to git
+- Never shared in logs
+- Never passed to external APIs except official SDK calls
+
+requirements.txt
+----------------
+```
+anthropic>=0.40.0
+groq>=0.11.0
+google-generativeai>=0.8.0
+supabase>=2.8.0
+python-dotenv>=1.0.0
+ollama>=0.4.0
+```
+
+Install: `pip install -r requirements.txt --break-system-packages`
+
+================================================================================
+5. MEMORY ARCHITECTURE (3-Tier System)
+================================================================================
+
+PHILOSOPHY:
+----------
+Human memory doesn't store everything equally. Neither should Pi.
+
+- L3: What you're actively thinking about (working memory)
+- L2: What you know and can recall when needed (long-term memory)
+- L1: Everything that ever happened (episodic memory)
+
+THREE-TIER DESIGN:
+
+┌────────────────────────────────────────────────────────────────┐
+│ L3: ACTIVE CONTEXT (Always Loaded)                             │
+├────────────────────────────────────────────────────────────────┤
+│ Storage:   Supabase (cloud) + SQLite (local cache)             │
+│ Size:      ~800 tokens max (~3000 chars)                       │
+│ Loaded:    On EVERY agent startup                              │
+│ Purpose:   Current state, active projects, pending reminders   │
+│ Lifetime:  Until expired or manually demoted                   │
+│ Access:    Instant (SQLite cache)                              │
+│                                                                 │
+│ Examples:                                                       │
+│ - "Working on GNN paper until March 15" (expires: 2026-03-15)  │
+│ - "Meeting tomorrow at 2pm" (expires: tomorrow+1 day)          │
+│ - "Ash's permanent profile" (never expires)                    │
+│ - "Focus on cost optimization this week" (expires: Sunday)     │
+│                                                                 │
+│ Criteria for L3:                                                │
+│ - Importance ≥ 8/10                                             │
+│ - Time-sensitive (has expiry date)                             │
+│ - Needed for every session                                     │
+│ - Permanent profile data                                       │
+└────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────┐
+│ L2: ORGANIZED KNOWLEDGE (Searchable Archive)                   │
+├────────────────────────────────────────────────────────────────┤
+│ Storage:   Supabase only (cloud)                               │
+│ Size:      Unlimited (but compressed)                          │
+│ Loaded:    On-demand via search                                │
+│ Purpose:   Structured long-term knowledge                      │
+│ Lifetime:  Permanent (until manually deleted)                  │
+│ Access:    Full-text search                                    │
+│                                                                 │
+│ Categories:                                                     │
+│ - Projects: Completed projects, outcomes, learnings            │
+│ - Technical: Configs, solutions, code patterns                 │
+│ - People: Relationships, context, communication preferences    │
+│ - Decisions: What was decided, why, outcomes                   │
+│ - Learning: Concepts mastered, resources, insights             │
+│ - Preferences: Ash's preferences on tools, workflows           │
+│                                                                 │
+│ Examples:                                                       │
+│ - "Phase 1 rebuild failed - lessons learned" (Project)         │
+│ - "Fixed hardcoded paths using os.path" (Technical)            │
+│ - "Dr. Akbas prefers LaTeX for papers" (People)                │
+│ - "Decided to use Groq as primary free tier" (Decision)        │
+│                                                                 │
+│ Criteria for L2:                                                │
+│ - Importance 4-7/10                                             │
+│ - Long-term relevance but not always needed                    │
+│ - Searchable reference material                                │
+│ - Auto-demoted from L3 after expiry                            │
+└────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────┐
+│ L1: RAW ARCHIVE (Complete History)                             │
+├────────────────────────────────────────────────────────────────┤
+│ Storage:   Supabase only (cloud)                               │
+│ Size:      Unlimited (rolling 30-day window)                   │
+│ Loaded:    Never (search only)                                 │
+│ Purpose:   Complete interaction log, audit trail               │
+│ Lifetime:  30 days active, then local archive                  │
+│ Access:    Full-text search when specifically requested        │
+│                                                                 │
+│ Contents:                                                       │
+│ - Every user message                                            │
+│ - Every Pi response                                             │
+│ - Every tool call                                               │
+│ - Every API call                                                │
+│ - Every error                                                   │
+│ - Timestamps, costs, models used                               │
+│                                                                 │
+│ Examples:                                                       │
+│ - "[2026-04-20 03:30] Ash: hey sup"                            │
+│ - "[2026-04-20 03:30] Pi: hey back (groq, $0.00)"              │
+│ - "[2026-04-20 03:31] Tool: memory_write(success=true)"        │
+│                                                                 │
+│ Uses:                                                           │
+│ - "What did we discuss last Tuesday?"                          │
+│ - "Show me all tool failures this week"                        │
+│ - "When did I start working on project X?"                     │
+│ - Cost analysis and pattern detection                          │
+│                                                                 │
+│ Archival:                                                       │
+│ After 30 days → compress to local JSONL                        │
+│ After 90 days → delete from Supabase                           │
+│ Local archives kept indefinitely (disk is cheap)               │
+└────────────────────────────────────────────────────────────────┘
+
+MEMORY FLOW:
+
+User tells Pi something
+    │
+    ▼
+Claude analyzes importance
+    │
+    ├─ Importance 1-3 → Write to L1 only (log it)
+    │
+    ├─ Importance 4-7 → Write to L2 (organized knowledge)
+    │
+    └─ Importance 8-10 → Write to L3 (active context)
+                          ↓
+                     Set expiry date?
+                          ├─ Yes → Auto-demote to L2 after expiry
+                          └─ No → Stays in L3 until manually removed
+
+L3 SYNC STRATEGY:
+
+Write Operation:
+1. Write to Supabase (cloud, authoritative)
+2. Write to SQLite (local, cache)
+3. Verify both succeeded
+4. Return success to Claude
+
+Read Operation:
+1. Read from SQLite (instant)
+2. If data seems stale (check sync timestamp)
+   → Pull from Supabase to refresh cache
+3. Return data to Claude
+
+Startup:
+1. Pull all L3 from Supabase
+2. Overwrite entire SQLite l3_cache table
+3. Mark sync timestamp
+4. Load into context string
+
+MEMORY WRITE EXAMPLES:
+
+Example 1: Time-Sensitive Reminder
+```python
+User: "remember I have a dentist appointment tomorrow at 2pm"
+
+Claude decides:
+- Importance: 9 (critical appointment)
+- Tier: L3 (active context)
+- Expiry: tomorrow + 1 day
+- Category: reminder
+
+Tool call:
+memory_write(
+    content="Dentist appointment tomorrow at 2pm",
+    tier="l3",
+    importance=9,
+    category="reminder",
+    expiry="2026-04-21"
+)
+
+Storage:
+Supabase l3_active_memory:
+{
+    "id": "abc-123",
+    "content": "Dentist appointment tomorrow at 2pm",
+    "importance": 9,
+    "category": "reminder",
+    "active_from": "2026-04-20T03:30:00",
+    "active_until": "2026-04-21T23:59:59",
+    "auto_demote": true
+}
+
+SQLite l3_cache:
+Same structure, synced immediately
+
+Result on startup (next day):
+L3 context includes: "[REMINDERS] Dentist appointment today at 2pm"
+
+After expiry:
+Auto-demoted to L2, removed from L3, SQLite cache cleared
+```
+
+Example 2: Permanent Profile Update
+```python
+User: "I'm switching my research focus to reinforcement learning"
+
+Claude decides:
+- Importance: 10 (core identity change)
+- Tier: L3 (always loaded)
+- Expiry: None (permanent)
+- Category: permanent_profile
+- Action: Update existing profile entry
+
+Tool call:
+memory_write(
+    content="Research focus: Graph Neural Networks → Reinforcement Learning (switched Apr 2026)",
+    tier="l3",
+    importance=10,
+    category="permanent_profile",
+    expiry=None
+)
+
+Storage:
+Appended to existing permanent profile in L3
+Never expires, always loaded
+```
+
+Example 3: Project Learning (L2)
+```python
+User: "we learned that hard-coded paths break portability"
+
+Claude decides:
+- Importance: 6 (useful lesson, not critical)
+- Tier: L2 (organized knowledge)
+- Category: Technical/Learning
+
+Tool call:
+memory_write(
+    content="Lesson: Hard-coded paths like 'E:/pi/...' break when run on other machines. Always use os.path with __file__ for dynamic paths.",
+    tier="l2",
+    importance=6,
+    category="technical_learning"
+)
+
+Storage:
+Supabase organized_memory:
+{
+    "category": "technical",
+    "subcategory": "learning",
+    "title": "Path Portability",
+    "content": {"lesson": "...", "solution": "os.path"},
+    "importance": 6
+}
+
+Not loaded on startup
+Searchable via memory_read(query="path portability", tier="l2")
+```
+
+L3 CONTEXT INJECTION:
+
+Format injected into every Claude API call:
+
+```
+ACTIVE CONTEXT (Loaded from L3):
+
+═══════════════════════════════════════════════════════
+PERMANENT PROFILE
+═══════════════════════════════════════════════════════
+Ash: CS undergraduate at Georgia State University
+AI research assistant - Graph Neural Networks with Dr. Akbas
+Building Project Pi - autonomous intelligence system
+Values: Islamic conduct filter, direct communication, cost-conscious
+Platform: Windows 11, Python, E:\pi project directory
+
+═══════════════════════════════════════════════════════
+ACTIVE PROJECTS (Importance: 8-10)
+═══════════════════════════════════════════════════════
+[Expires: 2026-03-15]
+Working on GNN paper - Phase 2 experiments
+Need to finish before semester ends
+
+[Expires: 2026-05-01]
+Building Pi agent system - currently in Phase 2
+Completed: Core agent, memory, tools, evolution
+Next: Gmail integration, voice I/O
+
+═══════════════════════════════════════════════════════
+REMINDERS (Expiry within 7 days)
+═══════════════════════════════════════════════════════
+[Expires: 2026-04-21]
+Dentist appointment tomorrow at 2pm
+
+[Expires: 2026-04-22]
+Submit weekly research progress to Dr. Akbas
+
+═══════════════════════════════════════════════════════
+PRIORITIES (High Importance, No Expiry)
+═══════════════════════════════════════════════════════
+Focus on cost optimization - stay under $10/month
+Test all features thoroughly before moving to next
+Modular development - one feature at a time
+```
+
+This context is prepended to consciousness.txt and sent with every message.
+
+Token Budget Management:
+
+Max L3 size: 800 tokens (~3000 characters)
+
+If L3 exceeds budget:
+1. Sort by importance (ascending)
+2. Check for expired items → auto-demote to L2
+3. If still over budget → demote lowest importance items
+4. Never demote permanent_profile
+5. Log all demotions to L1
+
+MEMORY SEARCH:
+
+Search L3 (fast):
+```python
+memory_read(query="GNN paper", tier="l3")
+→ Searches SQLite l3_cache
+→ Returns in <10ms
+```
+
+Search L2 (comprehensive):
+```python
+memory_read(query="lessons about paths", tier="l2")
+→ Searches Supabase organized_memory
+→ Full-text search on title + content
+→ Returns in ~500ms
+```
+
+Search All Tiers:
+```python
+memory_read(query="dentist")
+→ Searches L3 (SQLite) + L2 (Supabase)
+→ Merges results, sorted by importance
+→ Returns in ~500ms
+```
+
+MEMORY DELETION:
+
+Soft Delete (default):
+```python
+memory_delete(target="abc-123", soft=True)
+
+→ Removes from L3
+→ Archives to L2 with status="archived"
+→ Keeps in Supabase for search
+→ Clears from SQLite cache
+```
+
+Hard Delete (permanent):
+```python
+memory_delete(target="abc-123", soft=False)
+
+→ Requires explicit confirmation
+→ Deletes from Supabase
+→ Deletes from SQLite
+→ Irreversible
+→ Logs deletion to L1 audit trail
+```
+
+DATA PERSISTENCE GUARANTEES:
+
+L3:
+- Dual-write (Supabase + SQLite) = redundancy
+- Supabase is authoritative source
+- SQLite can be rebuilt from Supabase
+- Synced every startup
+
+L2:
+- Supabase only
+- No local cache (size unlimited)
+- Backed up by Supabase automatic backups
+
+L1:
+- Supabase for 30 days
+- Local JSONL archive after 30 days
+- Multiple archive copies recommended
+
+Disaster Recovery:
+1. If SQLite corrupted → rebuild from Supabase L3
+2. If Supabase down → use SQLite cache (read-only mode)
+3. If both lost → restore from backup (manual process)
+
+================================================================================
+6. TOOL SYSTEM SPECIFICATIONS
+================================================================================
+
+TOOL PHILOSOPHY:
+---------------
+Tools are pure executors. They don't make decisions. They do what they're told.
+
+Intelligence = Claude (consciousness.txt)
+Tools = Execute actions
+Verification = Claude sees results, decides next action
+
+SEVEN CORE TOOLS:
+
+1. memory_read
+2. memory_write
+3. memory_delete
+4. execute_python
+5. execute_bash
+6. modify_file
+7. read_file
+
+(create_file and list_files are also available but used less frequently)
+
+TOOL 1: memory_read
+-------------------
+Purpose: Search memory across tiers
+Returns: List of matching entries
+
+Parameters:
+- query (required): Search string
+- tier (optional): "l1", "l2", "l3", or None (search all)
+
+Behavior:
+- If tier="l3": Search SQLite l3_cache only (fast)
+- If tier="l2": Search Supabase organized_memory (comprehensive)
+- If tier=None: Search both L3 + L2, merge results
+
+Return Format:
+```json
+[
+    {
+        "id": "abc-123",
+        "content": "Working on GNN paper",
+        "importance": 8,
+        "category": "active_project",
+        "tier": "l3",
+        "active_until": "2026-03-15"
+    },
+    {
+        "id": "def-456",
+        "title": "GNN Paper Outline",
+        "content": {"sections": ["intro", "methods", "results"]},
+        "importance": 6,
+        "tier": "l2"
+    }
+]
+```
+
+Usage Example:
+```python
+# Claude sees user message: "what am I working on?"
+
+# Claude calls:
+memory_read(query="working on", tier="l3")
+
+# Tool returns:
+[
+    {
+        "content": "Working on GNN paper until March 15",
+        "importance": 8,
+        "tier": "l3"
+    }
+]
+
+# Claude responds:
+"You're working on a GNN paper, deadline March 15."
+```
+
+TOOL 2: memory_write
+--------------------
+Purpose: Store information in memory
+Returns: Success confirmation + entry ID
+
+Parameters:
+- content (required): What to store
+- tier (required): "l1", "l2", or "l3"
+- importance (required): 1-10
+- category (required): Classification
+- expiry (optional): ISO date string
+
+Behavior:
+1. Generate unique ID
+2. Write to Supabase table (l3_active_memory or organized_memory)
+3. If tier="l3": Also write to SQLite cache
+4. Verify write succeeded
+5. Return confirmation
+
+Return Format:
+```json
+{
+    "success": true,
+    "entry_id": "abc-123",
+    "tier": "l3",
+    "verified": true
+}
+```
+
+Verification Process:
+1. After write, immediately read back from storage
+2. Compare content hash
+3. If match → verified=true
+4. If mismatch → verified=false, return error
+
+Usage Example:
+```python
+# User: "remember I'm switching to RL research"
+
+# Claude calls:
+memory_write(
+    content="Research focus changed from GNN to Reinforcement Learning (Apr 2026)",
+    tier="l3",
+    importance=10,
+    category="permanent_profile",
+    expiry=None
+)
+
+# Tool executes:
+1. Generates ID: "xyz-789"
+2. Writes to Supabase l3_active_memory
+3. Writes to SQLite l3_cache
+4. Reads back from both
+5. Verifies content matches
+
+# Tool returns:
+{
+    "success": true,
+    "entry_id": "xyz-789",
+    "verified": true
+}
+
+# Claude sees success → responds:
+"Updated permanent profile - research focus now RL."
+```
+
+TOOL 3: memory_delete
+---------------------
+Purpose: Remove or archive memory entries
+Returns: Deletion confirmation
+
+Parameters:
+- target (required): Entry ID or search query
+- soft (optional): True=archive, False=permanent delete (default: True)
+
+Behavior:
+- Soft delete: Move to L2 with status="archived"
+- Hard delete: Permanently remove from all storage
+- Log deletion to L1 audit trail
+
+Return Format:
+```json
+{
+    "success": true,
+    "deleted": "abc-123",
+    "type": "soft",
+    "archived_to": "l2"
+}
+```
+
+Safety:
+- Soft delete is default
+- Hard delete requires soft=False explicitly
+- Permanent profile items require confirmation
+- All deletions logged
+
+TOOL 4: execute_python
+----------------------
+Purpose: Run Python code
+Returns: stdout, stderr, exit code
+
+Parameters:
+- code (required): Python code as string
+
+Behavior:
+1. Write code to temporary file in /tmp/
+2. Execute: `python /tmp/temp_XXXXX.py`
+3. Capture stdout + stderr
+4. 30 second timeout
+5. Return output
+
+Return Format:
+```json
+{
+    "success": true,
+    "output": "1048576\n",
+    "error": "",
+    "code": 0
+}
+```
+
+Security:
+- No sudo/su allowed
+- Timeout prevents infinite loops
+- Temp files auto-deleted
+- No network access (future: sandbox)
+
+Usage Example:
+```python
+# User: "calculate 2^20"
+
+# Claude calls:
+execute_python(code="print(2**20)")
+
+# Tool executes:
+Creates /tmp/temp_abc123.py:
+    print(2**20)
+Runs: python /tmp/temp_abc123.py
+Captures: "1048576\n"
+
+# Tool returns:
+{
+    "success": true,
+    "output": "1048576\n",
+    "code": 0
+}
+
+# Claude responds:
+"2^20 = 1,048,576"
+```
+
+TOOL 5: execute_bash
+--------------------
+Purpose: Run bash commands
+Returns: stdout, stderr, exit code
+
+Parameters:
+- command (required): Bash command
+- cwd (optional): Working directory
+
+Behavior:
+1. subprocess.run(command, shell=True, cwd=cwd)
+2. 30 second timeout
+3. Capture all output
+
+Return Format:
+```json
+{
+    "success": true,
+    "output": "total 20\n-rw-r--r-- 1 user...",
+    "error": "",
+    "code": 0
+}
+```
+
+Security:
+- Blacklist: sudo, su, rm -rf /
+- Timeout: 30 seconds
+- cwd restricted to project_root and subdirs
+
+TOOL 6: modify_file
+-------------------
+Purpose: Edit files with find-replace
+Returns: Success + verification
+
+Parameters:
+- path (required): File path
+- old_str (required): Exact string to find
+- new_str (required): Replacement string
+
+Behavior:
+1. Read file
+2. Check old_str appears exactly once
+3. Replace old_str with new_str
+4. Write file
+5. Read back and verify
+
+Return Format:
+```json
+{
+    "success": true,
+    "verified": true,
+    "changes": 1
+}
+```
+
+Safety:
+- old_str must appear exactly once (no ambiguity)
+- Verification reads file back
+- If verification fails, file is reverted
+- Backup created automatically
+
+Usage Example:
+```python
+# Claude wants to fix a bug
+
+# Claude calls:
+modify_file(
+    path="E:/pi/pi_agent.py",
+    old_str='model="claude-sonnet-4-20250514"',
+    new_str='model="claude-sonnet-4-6"'
+)
+
+# Tool executes:
+1. Reads pi_agent.py
+2. Finds 2 occurrences → ERROR (must be unique)
+
+# Tool returns:
+{
+    "success": false,
+    "error": "old_str found 2 times, must be unique"
+}
+
+# Claude sees error → tries more specific match:
+modify_file(
+    path="E:/pi/pi_agent.py",
+    old_str='message = self.claude.messages.create(\n            model="claude-sonnet-4-20250514"',
+    new_str='message = self.claude.messages.create(\n            model="claude-sonnet-4-6"'
+)
+
+# Now unique → succeeds
+```
+
+TOOL 7: read_file
+-----------------
+Purpose: Read file contents
+Returns: File contents as string
+
+Parameters:
+- path (required): File path
+- lines (optional): [start, end] line range
+
+Behavior:
+- If lines=None: Read entire file
+- If lines=[10, 20]: Read lines 10-20
+- If lines=[10, -1]: Read from line 10 to end
+
+Return Format:
+```json
+{
+    "success": true,
+    "content": "import sys\nimport os\n...",
+    "lines_read": [1, 50]
+}
+```
+
+TOOL CHAINING:
+
+Claude can chain tools in sequence:
+
+Example: "Check what I'm working on, then create a status file"
+
+Tool Sequence:
+1. memory_read(query="working on", tier="l3")
+   → Returns: "GNN paper, Pi agent"
+   
+2. execute_python(code="""
+   with open('status.txt', 'w') as f:
+       f.write('Current work:\n')
+       f.write('- GNN paper (deadline Mar 15)\n')
+       f.write('- Pi agent (Phase 2)\n')
+   """)
+   → Creates file
+   
+3. read_file(path="status.txt")
+   → Verifies file created correctly
+
+Claude sees all results → responds:
+"Created status.txt with your current work items."
+
+TOOL ERROR HANDLING:
+
+All tools return standardized error format:
+
+```json
+{
+    "success": false,
+    "error": "Descriptive error message",
+    "code": -1,
+    "output": ""
+}
+```
+
+Claude's Response to Errors:
+- Try alternative approach
+- Inform user honestly
+- Don't hide failures
+- Log to evolution for pattern detection
+
+================================================================================
+7. LLM ROUTING & MODE SYSTEM
+================================================================================
+
+THREE MODES:
+
+┌─────────────────────────────────────────────────────────────────┐
+│ MODE 1: NORMIE (Default)                                        │
+├─────────────────────────────────────────────────────────────────┤
+│ LLM:     Groq - Llama 3.3 70B Versatile                         │
+│ Cost:    $0.00 (free tier: 30 req/min, 6000 tokens/min)        │
+│ Tools:   NONE (Groq doesn't support function calling yet)      │
+│ Speed:   Fast (~2-3 seconds)                                    │
+│ Quality: Good for conversation, simple questions                │
+│                                                                 │
+│ Use for:                                                        │
+│ - Casual chat                                                   │
+│ - Simple questions                                              │
+│ - Explanations                                                  │
+│ - Anything that doesn't need tools                             │
+│                                                                 │
+│ Limitations:                                                    │
+│ - Can't access memory (no memory_read/write)                   │
+│ - Can't execute code                                            │
+│ - Can't modify files                                            │
+│ - Context from L3 still loaded (in system prompt)              │
+│   but can't update it                                           │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ MODE 2: ROOT (Tools Enabled)                                    │
+├─────────────────────────────────────────────────────────────────┤
+│ LLM:     Claude Sonnet 4.6                                      │
+│ Cost:    ~$0.003 per message                                    │
+│          ($0.80/1M input tokens, $4.00/1M output tokens)        │
+│ Tools:   ALL 7 tools available                                  │
+│ Speed:   Slower (~5-8 seconds with tool use)                    │
+│ Quality: Excellent reasoning, complex tasks                     │
+│                                                                 │
+│ Use for:                                                        │
+│ - Memory operations (store/recall/delete)                      │
+│ - Code execution and debugging                                 │
+│ - File modifications                                            │
+│ - Complex reasoning tasks                                       │
+│ - Anything requiring tools                                      │
+│                                                                 │
+│ Capabilities:                                                   │
+│ - Can update memory                                             │
+│ - Can run Python/bash                                           │
+│ - Can modify its own code                                       │
+│ - Can verify all operations                                     │
+│ - Full consciousness.txt loaded                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ MODE 3: RESEARCH (Multi-Agent Debate)                           │
+├─────────────────────────────────────────────────────────────────┤
+│ LLMs:    Claude Sonnet 4.6 + Gemini 2.0 Flash + Groq Llama     │
+│ Cost:    ~$0.02 per 2-round debate                              │
+│ Tools:   NONE (pure reasoning, no tool access)                  │
+│ Speed:   Slow (~30-60 seconds for 2 rounds)                     │
+│ Quality: Multi-perspective analysis, reduced bias               │
+│                                                                 │
+│ Use for:                                                        │
+│ - Complex decisions                                             │
+│ - Research questions                                            │
+│ - Strategic analysis                                            │
+│ - Comparing approaches                                          │
+│ - Anything benefiting from multiple viewpoints                 │
+│                                                                 │
+│ Process:                                                        │
+│ Round 1: All agents answer independently                       │
+│ Round 2: Agents critique each other, defend positions          │
+│ Synthesis: Final recommendation with consensus/dissent         │
+└─────────────────────────────────────────────────────────────────┘
+
+MODE SELECTION LOGIC:
+
+Default: Normie (Groq free tier)
+
+Switch to Root when:
+- User types "root mode"
+- User needs memory operations
+- User needs code execution
+- User needs file modification
+
+Switch to Research when:
+- User types "research mode"
+- User provides research question
+
+Claude's Guidance (from consciousness.txt):
+```
+Mode Selection Philosophy:
+
+NORMIE (FREE) is the default for EVERYTHING unless:
+1. User explicitly says "root mode", OR
+2. Task requires tools (you'll know because you can't do it)
+
+ROOT (PAID) only when:
+- User requests it, OR
+- Task requires memory/code/files, OR
+- Quality is critical (complex reasoning)
+
+RESEARCH (EXPENSIVE) only when:
+- User explicitly requests it, OR
+- Decision has major strategic implications, OR
+- Multiple valid perspectives exist
+
+Default to free. Respect Ash's money.
+```
+
+COST TRACKING:
+
+Per-Message Cost Calculation:
+
+Groq (Normie):
+```python
+cost = 0.0  # Free tier
+```
+
+Claude (Root):
+```python
+input_cost = (input_tokens / 1_000_000) * 0.80
+output_cost = (output_tokens / 1_000_000) * 4.00
+total_cost = input_cost + output_cost
+
+# Typical message: ~1500 input, ~500 output
+# = (1500/1M * 0.80) + (500/1M * 4.00)
+# = 0.0012 + 0.002
+# = $0.0032 per message
+```
+
+Research Mode:
+```python
+# Claude Sonnet: ~1500 tokens each round
+# Gemini Flash: ~1000 tokens each round (free/cheap)
+# Groq Llama: Free
+
+claude_cost = 2 * ((1500/1M * 3.00) + (800/1M * 15.00))
+            = 2 * (0.0045 + 0.012)
+            = 2 * 0.0165
+            = ~$0.033 per debate
+
+# Note: Gemini free tier, Groq free tier
+# Only Claude costs money in research mode
+```
+
+Daily Budget Enforcement:
+
+Target: $0.50/day = $15/month
+
+```python
+# In pi_agent.py
+daily_cost = sum(
+    interaction["cost"]
+    for interaction in evolution.get_recent_interactions(hours=24)
+)
+
+if daily_cost > DAILY_COST_LIMIT:
+    print("[Pi] Daily cost limit reached. Switching to normie mode.")
+    self.mode = "normie"
+```
+
+CONTEXT MANAGEMENT:
+
+All Modes Get:
+- consciousness.txt (full intelligence)
+- L3 active context (current state)
+- Last 6 messages (conversation continuity)
+
+History Management:
+```python
+self.history = []  # List of message dicts
+
+# After each exchange:
+self.history.append({"role": "user", "content": user_message})
+self.history.append({"role": "assistant", "content": response})
+
+# Keep only last 6 messages:
+if len(self.history) > 6:
+    self.history = self.history[-6:]
+```
+
+Why 6 messages?
+- Enough context for coherent conversation
+- Not so much that token cost explodes
+- ~3 back-and-forth exchanges
+
+Token Budget:
+- consciousness.txt: ~4000 tokens
+- L3 context: ~800 tokens
+- History (6 msgs): ~1500 tokens
+- User message: ~300 tokens
+- Total input: ~6600 tokens per message
+
+At $0.80/1M input tokens = ~$0.0053 per message input
+
+OFFLINE MODE (Future):
+
+Mode 4: Offline (Local LLM)
+- LLM: Ollama - Gemma 4 E2B (local)
+- Cost: $0.00 (runs on laptop)
+- Tools: Limited (no API calls)
+- Speed: Slow (~10-15 seconds)
+- Quality: Lower than Claude/Groq
+- Use: When no internet, or extreme cost sensitivity
+
+Currently: Groq free tier is so good that offline mode rarely needed
+
+================================================================================
+8. EVOLUTION & SELF-IMPROVEMENT
+================================================================================
+
+EVOLUTION PHILOSOPHY:
+--------------------
+"Pi should get better over time, automatically, without manual intervention."
+
+WHAT GETS TRACKED:
+
+Every interaction logs:
+```json
+{
+    "timestamp": "2026-04-20T03:30:00",
+    "mode": "root",
+    "model": "claude-sonnet-4-6",
+    "user_message_length": 45,
+    "tools_used": ["memory_write"],
+    "tool_results": {
+        "memory_write": "success"
+    },
+    "success": true,
+    "cost": 0.0028,
+    "response_length": 32,
+    "response_time_seconds": 5.2
+}
+```
+
+Stored in: logs/evolution.jsonl (one JSON object per line)
+
+PERFORMANCE METRICS:
+
+Tool Success Rates:
+```python
+def analyze_performance(days=7):
+    interactions = get_last_n_days(days)
+    
+    tool_stats = {}
+    for tool_name in ALL_TOOLS:
+        successes = count_tool_successes(tool_name)
+        attempts = count_tool_attempts(tool_name)
+        success_rate = successes / attempts if attempts > 0 else 0
+        
+        tool_stats[tool_name] = {
+            "attempts": attempts,
+            "successes": successes,
+            "success_rate": success_rate,
+            "failures": attempts - successes
+        }
+    
+    return tool_stats
+```
+
+Cost Tracking:
+```python
+def analyze_costs(days=7):
+    interactions = get_last_n_days(days)
+    
+    costs_by_mode = {
+        "normie": 0.0,
+        "root": 0.0,
+        "research": 0.0
+    }
+    
+    for interaction in interactions:
+        mode = interaction["mode"]
+        cost = interaction["cost"]
+        costs_by_mode[mode] += cost
+    
+    total_cost = sum(costs_by_mode.values())
+    avg_cost_per_message = total_cost / len(interactions)
+    
+    return {
+        "total": total_cost,
+        "by_mode": costs_by_mode,
+        "average": avg_cost_per_message,
+        "projection_monthly": total_cost * (30 / days)
+    }
+```
+
+Pattern Detection:
+```python
+def identify_patterns(days=7):
+    interactions = get_last_n_days(days)
+    
+    # Find failure patterns
+    failures = [i for i in interactions if not i["success"]]
+    
+    failure_keywords = {}
+    for failure in failures:
+        # Extract error messages
+        for tool, result in failure["tool_results"].items():
+            if result != "success":
+                # Count error types
+                error_type = extract_error_type(result)
+                failure_keywords[error_type] = failure_keywords.get(error_type, 0) + 1
+    
+    # Find most common failures
+    sorted_failures = sorted(
+        failure_keywords.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )
+    
+    return sorted_failures[:5]  # Top 5 failure types
+```
+
+MONTHLY SELF-REVIEW:
+
+Trigger: Every 30 days on startup
+
+Process:
+```python
+def _check_monthly_review(self):
+    last_review_path = "logs/last_review.txt"
+    
+    if os.path.exists(last_review_path):
+        with open(last_review_path, 'r') as f:
+            last_review = datetime.fromisoformat(f.read())
+        
+        if datetime.now() - last_review < timedelta(days=30):
+            return  # Not time yet
+    
+    print("="*60)
+    print("  MONTHLY SELF-REVIEW DUE")
+    print("="*60)
+    
+    response = input("Pi has been running 30+ days. Run self-review? (yes/no): ")
+    
+    if response.lower() in ['yes', 'y']:
+        # Analyze performance
+        perf = self.evolution.analyze_performance(days=30)
+        
+        # Identify improvements
+        improvements = self.evolution.identify_improvements()
+        
+        if improvements:
+            print("\nPi identified these improvement opportunities:")
+            for imp in improvements:
+                print(f"- {imp}")
+            
+            # Propose consciousness update
+            proposal = self.evolution.propose_consciousness_update()
+            
+            if proposal:
+                print("\nProposed consciousness.txt modifications:")
+                print(proposal)
+                
+                approve = input("\nApprove and apply? (yes/no): ")
+                
+                if approve.lower() in ['yes', 'y']:
+                    # Apply modifications
+                    modifier = SelfModifier()
+                    modifier.modify_consciousness(proposal["section"], proposal["new_content"])
+                    
+                    print("[Pi] Consciousness updated. Testing new version...")
+                    
+                    # Track before/after performance
+                    # (Implementation: tag next 7 days as "post-modification")
+        
+    # Update review marker
+    with open(last_review_path, 'w') as f:
+        f.write(datetime.now().isoformat())
+```
+
+IDENTIFYING IMPROVEMENTS:
+
+Heuristics:
+```python
+def identify_improvements(self):
+    improvements = []
+    
+    # Check tool success rates
+    tool_stats = self.analyze_performance(days=30)
+    
+    for tool_name, stats in tool_stats.items():
+        if stats["success_rate"] < 0.80:
+            improvements.append(
+                f"Tool '{tool_name}' has low success rate ({stats['success_rate']:.1%}). "
+                f"Common failures: {self._get_common_failures(tool_name)}"
+            )
+    
+    # Check mode usage
+    mode_usage = self._get_mode_usage(days=30)
+    root_percentage = mode_usage["root"] / mode_usage["total"]
+    
+    if root_percentage > 0.50:
+        improvements.append(
+            f"Root mode used {root_percentage:.1%} of the time. "
+            "Consider if more tasks could use normie mode to reduce costs."
+        )
+    
+    # Check cost trends
+    costs = self.analyze_costs(days=30)
+    if costs["projection_monthly"] > 10.0:
+        improvements.append(
+            f"Projected monthly cost: ${costs['projection_monthly']:.2f} "
+            "(target: <$10). Review high-cost interactions."
+        )
+    
+    # Check pattern success rates
+    patterns = self._get_all_patterns()
+    for pattern, rate in patterns.items():
+        if rate < 0.75:
+            improvements.append(
+                f"Pattern '{pattern}' has low success rate ({rate:.1%}). "
+                "May need refinement in consciousness.txt."
+            )
+    
+    return improvements
+```
+
+PROPOSING CONSCIOUSNESS UPDATES:
+
+Example:
+```python
+def propose_consciousness_update(self):
+    improvements = self.identify_improvements()
+    
+    if not improvements:
+        return None
+    
+    # Example: Low memory_write success rate
+    if "memory_write" in str(improvements):
+        return {
+            "section": "Tool Usage Philosophy - memory_write",
+            "issue": "memory_write failures due to missing importance parameter",
+            "current": """
+                memory_write(content, tier, category, expiry)
+            """,
+            "proposed": """
+                memory_write(content, tier, importance, category, expiry)
+                
+                CRITICAL: Always specify importance (1-10).
+                If uncertain, use importance=5 (medium).
+                Never omit importance parameter.
+            """,
+            "rationale": "30% of memory_write failures due to missing importance. Adding explicit guidance."
+        }
+    
+    # More proposal logic...
+```
+
+SELF-MODIFICATION:
+
+SelfModifier class allows Pi to edit its own code:
+
+```python
+class SelfModifier:
+    def modify_consciousness(self, section: str, new_content: str):
+        """
+        Modify section of consciousness.txt
+        
+        Args:
+            section: Section name (e.g., "Tool Usage Philosophy")
+            new_content: New content for that section
+        """
+        # Backup current version
+        backup_path = f"prompts/consciousness_backup_{timestamp()}.txt"
+        shutil.copy("prompts/consciousness.txt", backup_path)
+        
+        # Read current consciousness
+        with open("prompts/consciousness.txt", 'r') as f:
+            content = f.read()
+        
+        # Find section
+        section_start = content.find(f"## {section}")
+        if section_start == -1:
+            raise ValueError(f"Section '{section}' not found")
+        
+        # Find next section (or end of file)
+        next_section = content.find("##", section_start + len(section))
+        if next_section == -1:
+            next_section = len(content)
+        
+        # Replace section
+        new_consciousness = (
+            content[:section_start] +
+            f"## {section}\n{new_content}\n\n" +
+            content[next_section:]
+        )
+        
+        # Write modified version
+        with open("prompts/consciousness.txt", 'w') as f:
+            f.write(new_consciousness)
+        
+        # Log modification
+        self._log_modification(section, new_content, backup_path)
+        
+        print(f"[Pi] Modified consciousness section: {section}")
+        print(f"[Pi] Backup saved: {backup_path}")
+```
+
+ROLLBACK:
+
+If modification causes regression:
+
+```python
+def rollback_consciousness(self, backup_path: str):
+    """Restore consciousness from backup"""
+    shutil.copy(backup_path, "prompts/consciousness.txt")
+    print(f"[Pi] Rolled back to: {backup_path}")
+```
+
+Regression Detection:
+- Track success rates for 7 days post-modification
+- Compare to 7 days pre-modification
+- If success rate drops >10% → flag for review
+- Ash decides whether to rollback
+
+EVOLUTION TRACKING:
+
+Pattern Tracking:
+```python
+# When a pattern is used
+evolution.track_pattern("memory_store_expiry", success=True)
+
+# Later analysis
+success_rate = evolution.get_pattern_success_rate("memory_store_expiry")
+# Returns: 0.85 (85% success rate)
+```
+
+Logged to: logs/patterns.jsonl
+```json
+{
+    "timestamp": "2026-04-20T03:30:00",
+    "pattern": "memory_store_expiry",
+    "success": true
+}
+```
+
+This enables:
+- Identifying which patterns work well
+- Identifying which patterns need improvement
+- Data-driven consciousness updates
+
+CONTINUOUS IMPROVEMENT CYCLE:
+
+```
+Month 1:
+    Run agent → Log all interactions
+    
+Month 2:
+    Analyze Month 1 data
+    Identify: "memory_write failed 30% due to missing importance"
+    Propose: Add explicit importance guidance to consciousness.txt
+    Ash approves → Apply modification
+    
+Month 2-3:
+    Run with modified consciousness
+    Track performance
+    
+Month 3:
+    Analyze: memory_write success rate improved to 95%
+    Conclusion: Modification successful, keep it
+    Identify next improvement...
+```
+
+Result: Pi gets better every month, automatically.
+
+================================================================================
+9. SUPABASE DATABASE SCHEMA
+================================================================================
+
+DATABASE: Supabase PostgreSQL (Free Tier)
+URL: https://xxx.supabase.co
+Auth: Service role key (anon public key)
+
+THREE TABLES:
+
+TABLE 1: l3_active_memory
+-------------------------
+Purpose: Active context loaded on every startup
+Max Size: ~50 entries (800 tokens total)
+Retention: Until expired or manually removed
+
+Schema:
+```sql
+CREATE TABLE l3_active_memory (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    content TEXT NOT NULL,
+    importance INTEGER NOT NULL CHECK (importance BETWEEN 1 AND 10),
+    category TEXT NOT NULL,
+    active_from TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    active_until TIMESTAMPTZ,
+    editable BOOLEAN DEFAULT TRUE,
+    auto_demote BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_accessed TIMESTAMPTZ DEFAULT NOW(),
+    access_count INT DEFAULT 0,
+    metadata JSONB DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX idx_l3_active_until ON l3_active_memory(active_until);
+CREATE INDEX idx_l3_importance ON l3_active_memory(importance DESC);
+CREATE INDEX idx_l3_category ON l3_active_memory(category);
+```
+
+Columns:
+- id: Unique identifier (UUID)
+- content: What to remember (TEXT)
+- importance: 1-10 scale, determines L3 priority
+- category: Classification (permanent_profile, active_project, reminder, priority)
+- active_from: When this became active
+- active_until: When to expire (NULL = never)
+- editable: Can this be modified? (FALSE for permanent_profile)
+- auto_demote: Move to L2 on expiry? (TRUE for most entries)
+- created_at: First created timestamp
+- last_accessed: Last time loaded into context
+- access_count: How many times accessed
+- metadata: Additional JSON data (tags, source, etc.)
+
+Seed Data:
+```sql
+INSERT INTO l3_active_memory (
+    content,
+    importance,
+    category,
+    active_from,
+    active_until,
+    editable,
+    auto_demote
+) VALUES (
+    'Ash: CS undergraduate at Georgia State University. AI research assistant working on graph neural networks under Dr. Esra Akbas. Building Project Pi - personal intelligence system. Values: Islamic conduct filter, direct communication style, cost-conscious, competitive mindset. Works on Windows 11, Python, E:\pi project directory.',
+    10,
+    'permanent_profile',
+    NOW(),
+    NULL,
+    FALSE,
+    FALSE
+);
+```
+
+TABLE 2: organized_memory
+--------------------------
+Purpose: L2 structured knowledge base
+Max Size: Unlimited
+Retention: Permanent (until manually deleted)
+
+Schema:
+```sql
+CREATE TABLE organized_memory (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category TEXT NOT NULL,
+    subcategory TEXT,
+    title TEXT NOT NULL,
+    content JSONB NOT NULL,
+    importance INT CHECK (importance BETWEEN 1 AND 10),
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    source_l1_ids UUID[],
+    tags TEXT[]
+);
+
+CREATE INDEX idx_l2_category ON organized_memory(category);
+CREATE INDEX idx_l2_title_search ON organized_memory USING gin(to_tsvector('english', title));
+CREATE INDEX idx_l2_content_search ON organized_memory USING gin(content);
+CREATE INDEX idx_l2_tags ON organized_memory USING gin(tags);
+```
+
+Categories:
+- Projects: Completed projects, outcomes, learnings
+- Technical: Configs, solutions, patterns
+- People: Relationships, communication preferences
+- Decisions: What was decided, why, outcomes
+- Learning: Concepts mastered, resources
+- Preferences: Ash's preferences on tools, workflows
+
+Example Entry:
+```json
+{
+    "category": "technical",
+    "subcategory": "lessons",
+    "title": "Path Portability Lesson",
+    "content": {
+        "problem": "Hard-coded paths like 'E:/pi/...' broke on other machines",
+        "solution": "Use os.path.dirname(__file__) for dynamic paths",
+        "code_example": "project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))",
+        "outcome": "All paths now portable, works on any machine"
+    },
+    "importance": 7,
+    "status": "active",
+    "tags": ["portability", "paths", "best-practice"]
+}
+```
+
+TABLE 3: raw_wiki
+-----------------
+Purpose: L1 complete interaction archive
+Max Size: Unlimited (rolling 30-day window)
+Retention: 30 days active, then archive to local JSONL
+
+Schema:
+```sql
+CREATE TABLE raw_wiki (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    thread_id UUID NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'tool')),
+    content TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_l1_timestamp ON raw_wiki(timestamp DESC);
+CREATE INDEX idx_l1_thread ON raw_wiki(thread_id);
+CREATE INDEX idx_l1_role ON raw_wiki(role);
+CREATE INDEX idx_l1_content_search ON raw_wiki USING gin(to_tsvector('english', content));
+```
+
+Example Entries:
+```sql
+-- User message
+INSERT INTO raw_wiki (thread_id, role, content, metadata) VALUES (
+    '550e8400-e29b-41d4-a716-446655440000',
+    'user',
+    'remember I have a meeting tomorrow at 2pm',
+    '{"mode": "root", "timestamp_local": "2026-04-20T03:30:00"}'::jsonb
+);
+
+-- Tool call
+INSERT INTO raw_wiki (thread_id, role, content, metadata) VALUES (
+    '550e8400-e29b-41d4-a716-446655440000',
+    'tool',
+    'memory_write(content="meeting tomorrow 2pm", tier="l3", importance=9)',
+    '{"tool": "memory_write", "result": "success", "cost": 0.0028}'::jsonb
+);
+
+-- Assistant response
+INSERT INTO raw_wiki (thread_id, role, content, metadata) VALUES (
+    '550e8400-e29b-41d4-a716-446655440000',
+    'assistant',
+    'Stored in L3 with expiry tomorrow.',
+    '{"model": "claude-sonnet-4-6", "tokens_in": 1500, "tokens_out": 32}'::jsonb
+);
+```
+
+ARCHIVAL PROCESS:
+
+After 30 days:
+```python
+# Nightly job (future implementation)
+def archive_old_l1():
+    # Export to local JSONL
+    old_entries = supabase.table("raw_wiki")\
+        .select("*")\
+        .lt("timestamp", datetime.now() - timedelta(days=30))\
+        .execute()
+    
+    archive_path = f"data/archives/l1_{datetime.now().strftime('%Y%m')}.jsonl"
+    
+    with open(archive_path, 'a') as f:
+        for entry in old_entries.data:
+            f.write(json.dumps(entry) + '\n')
+    
+    # Delete from Supabase
+    supabase.table("raw_wiki")\
+        .delete()\
+        .lt("timestamp", datetime.now() - timedelta(days=30))\
+        .execute()
+    
+    print(f"[Pi] Archived {len(old_entries.data)} entries to {archive_path}")
+```
+
+ROW LEVEL SECURITY (RLS):
+
+Enable RLS on all tables:
+```sql
+ALTER TABLE l3_active_memory ENABLE ROW LEVEL SECURITY;
+ALTER TABLE organized_memory ENABLE ROW LEVEL SECURITY;
+ALTER TABLE raw_wiki ENABLE ROW LEVEL SECURITY;
+```
+
+Policies (allow authenticated service role):
+```sql
+CREATE POLICY "Allow service role full access on l3_active_memory"
+    ON l3_active_memory
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+
+-- Repeat for other tables
+```
+
+BACKUP STRATEGY:
+
+Supabase automatic backups:
+- Free tier: Daily backups, 7-day retention
+- Pro tier: Point-in-time recovery
+
+Additional local backups:
+```bash
+# Weekly backup script
+pg_dump $SUPABASE_DB_URL > backups/pi_$(date +%Y%m%d).sql
+```
+
+QUERY PATTERNS:
+
+Get L3 context (frequent):
+```sql
+SELECT id, content, importance, category, active_until
+FROM l3_active_memory
+WHERE (active_until IS NULL OR active_until > NOW())
+ORDER BY importance DESC, created_at ASC;
+```
+
+Search L2 (occasional):
+```sql
+SELECT id, category, title, content
+FROM organized_memory
+WHERE to_tsvector('english', title || ' ' || content::text) @@ plainto_tsquery('english', $1)
+ORDER BY importance DESC
+LIMIT 10;
+```
+
+Archive old L1 (nightly):
+```sql
+SELECT * FROM raw_wiki
+WHERE timestamp < NOW() - INTERVAL '30 days'
+ORDER BY timestamp ASC;
+```
+
+DATABASE SIZE ESTIMATES:
+
+L3: 50 entries × 500 bytes = 25 KB
+L2: 1000 entries × 2 KB = 2 MB
+L1 (30 days): 10000 entries × 1 KB = 10 MB
+
+Total: ~12 MB (well within free tier 500 MB limit)
+
+After 1 year with archival:
+- Supabase: 12 MB (rolling window)
+- Local archives: ~120 MB (full history)
+
+================================================================================
+10. KNOWN ISSUES & FIXES APPLIED
+================================================================================
+
+ISSUE 1: Import Errors
+----------------------
+Problem: "ModuleNotFoundError: No module named 'tools_memory'"
+Cause: Wrong import path (missing tools/ prefix)
+Fix: Changed to `from tools.tools_memory import MemoryTools`
+Status: FIXED (April 19, 2026)
+Files: pi_agent.py line 22-24
+
+ISSUE 2: Undefined Variable
+----------------------------
+Problem: NameError: results not defined
+Location: tools_memory.py line 96
+Cause: Variable declared inside if block, used outside
+Fix: Added `results = []` at function start
+Status: FIXED (April 19, 2026)
+
+ISSUE 3: Hardcoded Paths (9 instances)
+---------------------------------------
+Problem: Paths like "E:/pi/..." break on other machines
+Locations:
+- app/config.py line 8
+- tools_memory.py line 20
+- tools_execution.py line 15
+- evolution.py line 13, 150, 165, 185
+- pi_agent.py line 34
+- llm/routing.py line 25
+- core/research_mode.py line 30
+
+Fix Pattern:
+```python
+import os
+project_root = os.path.dirname(os.path.abspath(__file__))
+path = os.path.join(project_root, "data", "file.txt")
+```
+
+Status: FIXED (April 20, 2026)
+
+ISSUE 4: Retired Claude Model
+------------------------------
+Problem: "claude-sonnet-4-20250514" returns 404
+Locations:
+- pi_agent.py line 104, 394
+- core/research_mode.py line 32
+
+Fix: Changed to "claude-sonnet-4-6"
+Status: FIXED (April 20, 2026)
+
+ISSUE 5: Supabase Tables Missing
+---------------------------------
+Problem: Table 'l3_active_memory' doesn't exist
+Cause: Tables never created in Supabase
+Fix: Run SUPABASE_SETUP.sql
+Status: REQUIRES MANUAL SETUP
+
+Setup SQL:
+```sql
+-- See SUPABASE_SETUP.sql file
+CREATE TABLE l3_active_memory (...);
+CREATE TABLE organized_memory (...);
+CREATE TABLE raw_wiki (...);
+INSERT INTO l3_active_memory (permanent profile) ...;
+```
+
+ISSUE 6: datetime Import Scope
+-------------------------------
+Problem: "cannot access local variable 'datetime'"
+Location: pi_agent.py _check_monthly_review() method
+Cause: Import inside function, used before import line
+Fix: Moved imports to top of file
+Status: FIXED (April 20, 2026)
+
+ISSUE 7: Bare Except Blocks
+----------------------------
+Problem: `except:` hides all errors
+Locations: Multiple files
+Fix: Changed to `except Exception as e:` with logging
+Status: FIXED (April 19, 2026)
+
+ISSUE 8: System Role in Messages Array
+---------------------------------------
+Problem: Claude API rejects system role in messages
+Cause: Anthropic API expects system in separate parameter
+Fix: Extract system messages, append to system prompt parameter
+Status: FIXED (April 19, 2026)
+
+Code:
+```python
+# WRONG:
+messages = [
+    {"role": "system", "content": "..."},  # ← Rejected
+    {"role": "user", "content": "..."}
+]
+
+# CORRECT:
+system_prompt = "..."
+messages = [
+    {"role": "user", "content": "..."}
+]
+
+claude.messages.create(
+    model="...",
+    system=system_prompt,  # ← System goes here
+    messages=messages
+)
+```
+
+ISSUE 9: Missing get_recent_interactions Method
+------------------------------------------------
+Problem: evolution.py missing method used by pi_agent.py
+Fix: Added method to EvolutionTracker class
+Status: FIXED (April 20, 2026)
+
+ISSUE 10: Empty requirements.txt
+---------------------------------
+Problem: Can't install dependencies
+Status: FIXED (April 20, 2026)
+Contents:
+```
+anthropic>=0.40.0
+groq>=0.11.0
+google-generativeai>=0.8.0
+supabase>=2.8.0
+python-dotenv>=1.0.0
+ollama>=0.4.0
+```
+
+PENDING ISSUES (Not Yet Fixed):
+-------------------------------
+
+PENDING 1: Research Mode Not Wired
+Location: pi_agent.py
+Issue: "research mode" command doesn't trigger core/research_mode.py
+Impact: Medium (feature doesn't work)
+Priority: High
+Fix: Add command handler that calls run_research_mode()
+
+PENDING 2: Monthly Review Prompt on Every Startup
+Location: pi_agent.py _check_monthly_review()
+Issue: Asks for review even when just said "no"
+Impact: Low (annoying but not broken)
+Priority: Low
+Fix: Track "last declined" timestamp, don't ask again for 7 days
+
+PENDING 3: Health Check Doesn't Exit on Failure
+Location: pi_agent.py _health_check()
+Issue: Shows errors but continues anyway
+Impact: Low (agent works in degraded mode)
+Priority: Low
+Fix: Add critical flag, exit if critical systems fail
+
+PENDING 4: Cost Summary on Exit Not Implemented
+Location: pi_agent.py run() method
+Issue: Doesn't show session cost on exit
+Impact: Low (feature missing)
+Priority: Low
+Fix: Calculate and display before shutdown
+
+RESOLVED ISSUES (Historical):
+-----------------------------
+
+These were fixed during Phase 1 → Phase 2 transition:
+
+- RLS policy blocking writes (fixed: updated policy)
+- Circular import between modules (fixed: removed old modules)
+- Missing __init__.py files (fixed: created empty files)
+- Deprecated datetime.utcnow() (fixed: datetime.now(timezone.utc))
+- Wrong column names (memory_type vs tier) (fixed: schema alignment)
+- supabase_client vs client naming (fixed: consistent naming)
+- get_memory_by_source not implemented (fixed: function deleted, not needed)
+
+================================================================================
+11. FUTURE ROADMAP (Phase 2 → Phase 5)
+================================================================================
+
+PHASE 2: CORE AGENT (Current - 95% Complete)
+-------------------------------------------
+Timeline: April 2026
+Status: Nearly Complete
+
+Completed:
+✓ Agent architecture (Claude + tools)
+✓ Memory system (3-tier)
+✓ Tool system (7 tools)
+✓ Evolution tracking
+✓ Multi-model routing (Groq/Claude/Gemini)
+✓ Research mode (3-agent debate)
+✓ Self-modification capability
+✓ Cost tracking
+✓ Dynamic paths (portable)
+
+Remaining (5%):
+- Wire research mode into agent ← HIGH PRIORITY
+- Supabase tables setup ← CRITICAL
+- Fix monthly review persistence ← LOW PRIORITY
+- Add session cost summary ← LOW PRIORITY
+- Create documentation (USER_GUIDE.md, ARCHITECTURE.md) ← MEDIUM PRIORITY
+
+Target Completion: April 25, 2026
+
+PHASE 3: INTEGRATION LAYER (Gmail + Weather + Calendar)
+-------------------------------------------------------
+Timeline: May 2026
+Priority: HIGH
+Complexity: MEDIUM
+
+Features to Build:
+1. Gmail Integration
+   - OAuth2 authentication
+   - Read emails (last 24 hours)
+   - Search emails
+   - Draft emails (not send, just draft)
+   - Mark as read/unread
+   - Archive/delete
+   - Tool: email_read(query), email_draft(to, subject, body)
+
+2. Weather Integration
+   - OpenWeatherMap API
+   - Current weather
+   - 5-day forecast
+   - Location-based (from config or ask user)
+   - Tool: get_weather(location)
+
+3. Google Calendar Integration
+   - OAuth2 authentication
+   - Read events (next 7 days)
+   - Create events
+   - Update events
+   - Delete events
+   - Tool: calendar_read(), calendar_create(event)
+
+Architecture:
+```
+integrations/
+├── gmail_client.py          (OAuth + Gmail API)
+├── weather_client.py        (OpenWeatherMap API)
+└── calendar_client.py       (Google Calendar API)
+
+tools/
+├── tools_email.py           (email_read, email_draft)
+├── tools_weather.py         (get_weather, get_forecast)
+└── tools_calendar.py        (calendar_read, calendar_create)
+```
+
+Integration with Agent:
+- Add to pi_agent.py tool list
+- Document in consciousness.txt
+- Claude learns to use automatically
+
+Security:
+- OAuth tokens in .env
+- Never expose credentials
+- Read-only by default (write requires confirmation)
+
+Success Criteria:
+- "what emails did I get today?" → Pi reads and summarizes
+- "what's the weather tomorrow?" → Pi fetches and reports
+- "when is my next meeting?" → Pi checks calendar
+
+PHASE 4: VOICE & UI (Voice I/O + Overlay Window)
+------------------------------------------------
+Timeline: June 2026
+Priority: MEDIUM
+Complexity: HIGH
+
+Features to Build:
+1. Speech-to-Text (STT)
+   - Whisper API (Groq free tier) or OpenAI
+   - Hotkey to activate microphone
+   - Continuous listening mode
+   - Audio caching (don't re-transcribe same audio)
+   
+2. Text-to-Speech (TTS)
+   - ElevenLabs API or OpenAI TTS
+   - Natural voice
+   - Adjustable speed
+   - Audio caching
+   
+3. Overlay Window
+   - Always-on-top frameless window
+   - Transparent background
+   - Keyboard shortcut to show/hide (Win+`)
+   - Text input + voice button
+   - Minimal UI (just input and response)
+   
+4. Hotkey System
+   - Global hotkeys (pynput)
+   - Win+` = toggle overlay
+   - Ctrl+Shift+V = voice input
+   - Configurable in settings
+
+Architecture:
+```
+voice/
+├── stt_engine.py           (Speech → Text)
+├── tts_engine.py           (Text → Speech)
+└── audio_cache.py          (Cache audio files)
+
+ui/
+├── overlay_window.py       (tkinter frameless window)
+├── hotkey_manager.py       (pynput global hotkeys)
+└── theme.py                (UI styling)
+```
+
+Workflow:
+1. User presses Win+`
+2. Overlay window appears
+3. User types or clicks voice button
+4. If voice: Record → STT → Text
+5. Send to Pi
+6. Pi responds
+7. If TTS enabled: Text → Audio → Play
+8. Display in overlay
+
+Challenges:
+- Global hotkeys on Windows (pynput)
+- Audio quality (noise cancellation)
+- TTS latency (caching helps)
+- Overlay always-on-top (tkinter topmost)
+
+Success Criteria:
+- Press Win+` → overlay appears
+- Speak "what's the weather?" → Pi responds
+- Natural voice output
+- <2 second latency
+
+PHASE 5: JARVIS LAYER (Environmental Intelligence)
+--------------------------------------------------
+Timeline: July-August 2026
+Priority: LOW (Experimental)
+Complexity: VERY HIGH
+
+Vision:
+"Pi sees and hears the environment, provides proactive assistance"
+
+Features to Build:
+1. Camera Intelligence
+   - Webcam access (opencv)
+   - Screenshot analysis (Claude vision)
+   - OCR for text on screen
+   - Object detection
+   - Face recognition (Ash only)
+   - QR code scanning
+   
+2. Microphone Intelligence
+   - Continuous listening (low power)
+   - Wake word detection ("Hey Pi")
+   - Background conversation awareness
+   - Meeting transcription
+   
+3. Screen Intelligence
+   - Active window detection
+   - Screen content analysis
+   - Auto-suggestions based on context
+   - Code review (if coding)
+   - Email drafting assistance (if in Gmail)
+   
+4. Proactive Assistance
+   - "You've been coding for 2 hours, take a break"
+   - "Detected error in terminal, want help?"
+   - "Meeting starting in 5 minutes"
+   - "New email from Dr. Akbas, mark urgent?"
+
+Architecture:
+```
+jarvis/
+├── camera_monitor.py       (Webcam + screenshots)
+├── audio_monitor.py        (Microphone + wake word)
+├── screen_monitor.py       (Active window + content)
+├── context_analyzer.py     (Combine all inputs)
+└── proactive_agent.py      (Decide when to interrupt)
+```
+
+Privacy & Ethics:
+- All processing local (no cloud for camera/mic)
+- Explicit consent for each capability
+- Activity log (what Pi saw/heard)
+- Easy disable (kill switch)
+- Transparent about data collection
+
+Technical Challenges:
+- Battery life (continuous monitoring)
+- False positives (interrupting when not needed)
+- Privacy concerns (camera/mic always on)
+- Performance (real-time processing)
+- Storage (video/audio logs)
+
+Success Criteria:
+- Pi detects context switches automatically
+- Provides helpful suggestions without being annoying
+- <5% false positive rate
+- Respects privacy boundaries
+
+PHASE 6: MOBILE & CROSS-PLATFORM (Android/iOS)
+----------------------------------------------
+Timeline: September 2026+
+Priority: MEDIUM
+Complexity: VERY HIGH
+
+Goal: Pi accessible from phone, smartwatch, smart glasses
+
+Options:
+1. Flutter app (cross-platform)
+2. React Native app
+3. Progressive Web App (PWA)
+4. Telegram/WhatsApp bot (easiest)
+
+Features:
+- Voice-first interface
+- Push notifications
+- Location awareness
+- Camera integration
+- Always accessible
+
+Challenges:
+- Battery optimization
+- Mobile data usage
+- Platform restrictions (iOS background)
+- Cross-device sync
+
+LONG-TERM VISION (2027+)
+-----------------------
+
+Smart Glasses Integration:
+- Wearable Pi (Ray-Ban Meta, etc.)
+- Always-on visual context
+- Real-time translation
+- AR overlays
+
+Multi-Agent Collaboration:
+- Pi coordinates multiple AI agents
+- Specialized agents (CodePi, ResearchPi, etc.)
+- Agent marketplace
+
+Self-Replication:
+- Pi can spawn child agents
+- Distributed across devices
+- Collective learning
+
+Advanced Memory:
+- Visual memory (image/video archive)
+- Semantic search (meaning, not keywords)
+- Auto-organization (L2 population)
+- Forgetting mechanism (prune low-value memories)
+
+ROADMAP PRIORITIES:
+
+MUST HAVE (Phase 2-3):
+- Core agent working perfectly
+- Gmail + Weather + Calendar
+- Stable, reliable, <$10/month
+
+SHOULD HAVE (Phase 4):
+- Voice I/O (major UX improvement)
+- Overlay UI (convenience)
+
+NICE TO HAVE (Phase 5-6):
+- Environmental intelligence
+- Mobile access
+- Smart glasses
+
+EXPERIMENTAL (Future):
+- Multi-agent systems
+- Self-replication
+- Advanced memory
+
+INVESTMENT STRATEGY:
+
+Time Allocation:
+- 60% on current phase (quality first)
+- 30% on next phase (planning)
+- 10% on experiments (innovation)
+
+Never start new phase until current phase is 95%+ complete.
+
+================================================================================
+12. DEVELOPMENT METHODOLOGY
+================================================================================
+
+CORE PRINCIPLE:
+--------------
+"One feature at a time. Perfect it. Test it. Then move on."
+
+WORKFLOW:
+
+1. FEATURE DEFINITION (Before Writing Any Code)
+   - What exactly does this feature do?
+   - What problem does it solve?
+   - How does it integrate with existing system?
+   - What are success criteria?
+   - What could go wrong?
+   
+   Document in: feature_spec.md
+   
+2. DESIGN PHASE
+   - Sketch architecture
+   - Identify dependencies
+   - Plan testing strategy
+   - Estimate time (double it)
+   - Get approval from Ash
+   
+3. IMPLEMENTATION (One File at a Time)
+   - Create file
+   - Implement core logic
+   - Add error handling
+   - Add logging
+   - Test in isolation
+   
+4. INTEGRATION
+   - Import into main system
+   - Wire into tools list
+   - Update consciousness.txt
+   - Test with rest of system
+   
+5. TESTING (Comprehensive)
+   - Unit tests (individual functions)
+   - Integration tests (with other modules)
+   - End-to-end tests (full workflow)
+   - Edge cases
+   - Error conditions
+   
+6. REFINEMENT
+   - Fix bugs found in testing
+   - Optimize performance
+   - Improve error messages
+   - Add documentation
+   
+7. DEPLOYMENT
+   - Commit to git
+   - Update changelog
+   - Monitor in production
+   
+8. VALIDATION (One Week Minimum)
+   - Use in real scenarios
+   - Track success rate
+   - Gather feedback
+   - Identify improvements
+   
+9. ONLY THEN → Next Feature
+
+TESTING LEVELS:
+
+Level 1: Unit Tests (Function-Level)
+```python
+def test_memory_write():
+    tools = MemoryTools(SUPABASE_URL, SUPABASE_KEY)
+    
+    result = tools.memory_write(
+        content="Test entry",
+        tier="l3",
+        importance=5,
+        category="test"
+    )
+    
+    assert result["success"] == True
+    assert result["verified"] == True
+    assert "entry_id" in result
+```
+
+Level 2: Integration Tests (Module-Level)
+```python
+def test_agent_memory_flow():
+    agent = PiAgent()
+    
+    # User stores memory
+    response1 = agent._respond_root("remember I like Python")
+    assert "stored" in response1.lower()
+    
+    # User recalls memory
+    response2 = agent._respond_root("what do I like?")
+    assert "python" in response2.lower()
+```
+
+Level 3: End-to-End Tests (Full Workflow)
+```python
+def test_full_session():
+    agent = PiAgent()
+    
+    # Switch to root mode
+    agent.mode = "root"
+    
+    # Store multiple memories
+    agent._respond_root("remember I work on GNN research")
+    agent._respond_root("remember Dr. Akbas is my advisor")
+    
+    # Complex query requiring both memories
+    response = agent._respond_root("tell me about my research")
+    
+    assert "gnn" in response.lower()
+    assert "akbas" in response.lower()
+```
+
+Level 4: Real-World Testing
+- Use Pi daily for actual tasks
+- Track success/failure
+- Note edge cases
+- Fix issues as they arise
+
+QUALITY CHECKLIST:
+
+Before marking feature "complete":
+
+Code Quality:
+□ All functions have docstrings
+□ All parameters documented
+□ No hardcoded values (use config)
+□ No bare except blocks
+□ All errors logged with context
+□ Type hints on all functions
+□ Code passes linting (black, flake8)
+
+Testing:
+□ Unit tests written
+□ Integration tests written
+□ End-to-end test written
+□ Edge cases covered
+□ Error conditions tested
+□ Manual testing completed
+□ One week real-world usage
+
+Documentation:
+□ README.md updated
+□ ARCHITECTURE.md updated
+□ Function docstrings complete
+□ Example usage provided
+□ Known limitations documented
+
+Integration:
+□ Imports work correctly
+□ No circular dependencies
+□ consciousness.txt updated
+□ Tool definitions added
+□ No breaking changes to existing features
+
+Performance:
+□ Response time acceptable (<5 seconds)
+□ Memory usage reasonable
+□ No memory leaks
+□ Cost within budget
+□ Scales to expected usage
+
+Security:
+□ No hardcoded credentials
+□ Input validation on all tools
+□ Output sanitization
+□ Rate limiting where appropriate
+□ Audit logging for sensitive operations
+
+DEBUGGING METHODOLOGY:
+
+When Bug Encountered:
+
+1. REPRODUCE
+   - Document exact steps
+   - Identify what changed
+   - Check if affects others
+   
+2. ISOLATE
+   - Minimal test case
+   - Remove unrelated code
+   - Test in isolation
+   
+3. DIAGNOSE
+   - Read error message carefully
+   - Check logs
+   - Add debug prints
+   - Use debugger if needed
+   
+4. FIX
+   - Implement fix
+   - Test fix in isolation
+   - Test with full system
+   
+5. VERIFY
+   - Original bug gone?
+   - No new bugs introduced?
+   - Performance same or better?
+   
+6. PREVENT
+   - Add test case for this bug
+   - Document in known issues
+   - Update code to prevent similar bugs
+   
+7. LEARN
+   - Why did this bug happen?
+   - How can we detect earlier?
+   - Pattern to watch for?
+
+ERROR HANDLING PATTERN:
+
+```python
+def some_function(param):
+    """
+    Does something important.
+    
+    Args:
+        param: Description
+        
+    Returns:
+        dict: Success/failure status
+        
+    Raises:
+        ValueError: If param is invalid
+    """
+    try:
+        # Validate input
+        if not param:
+            raise ValueError("param cannot be empty")
+        
+        # Do work
+        result = do_work(param)
+        
+        # Verify result
+        if not verify(result):
+            raise RuntimeError("Verification failed")
+        
+        # Return success
+        return {
+            "success": True,
+            "result": result
+        }
+        
+    except ValueError as e:
+        # Expected error (user input)
+        log_error(f"Invalid input: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+        
+    except Exception as e:
+        # Unexpected error (bug)
+        log_error(f"Unexpected error in some_function: {e}")
+        return {
+            "success": False,
+            "error": "Internal error occurred"
+        }
+```
+
+GIT WORKFLOW:
+
+Branches:
+- main: Stable, working code only
+- dev: Active development
+- feature/xxx: Individual features
+
+Commit Messages:
+```
+[Type] Short description
+
+Longer explanation if needed.
+
+Type: feat, fix, docs, refactor, test, chore
+```
+
+Examples:
+```
+[feat] Add Gmail integration tool
+
+Implements email_read and email_draft tools.
+OAuth2 authentication via .env credentials.
+
+[fix] Fix undefined results variable in memory_read
+
+Added results = [] initialization at function start.
+Fixes NameError when tier="l2".
+
+[docs] Update ARCHITECTURE.md with memory system
+
+Added detailed explanation of 3-tier memory system
+and data flow diagrams.
+```
+
+Commit Frequency:
+- After each working unit
+- Before switching tasks
+- At end of day
+- Before deploying
+
+REVIEW PROCESS:
+
+Self-Review Checklist (Before Committing):
+□ Code runs without errors
+□ All tests pass
+□ No debug prints left in code
+□ No commented-out code
+□ Imports cleaned up
+□ No unused variables
+□ Consistent formatting
+□ Documentation updated
+
+Peer Review (Optional):
+- Show to another developer
+- Explain design decisions
+- Get feedback
+- Implement suggestions
+
+Pi Self-Review (Monthly):
+- Analyze performance data
+- Identify patterns
+- Propose improvements
+- Update consciousness
+
+ROLLBACK STRATEGY:
+
+If New Feature Breaks Things:
+
+1. Immediate: Revert to last known good commit
+   ```bash
+   git revert HEAD
+   ```
+   
+2. Investigate: What went wrong?
+   
+3. Fix: In separate branch
+   
+4. Test: Thoroughly
+   
+5. Redeploy: When confident
+
+Never Push Broken Code to Main:
+- Always test on dev branch first
+- Only merge to main when stable
+- Main should always be deployable
+
+================================================================================
+13. SAFETY & SECURITY REQUIREMENTS
+================================================================================
+
+SECURITY PRINCIPLES:
+
+1. DEFENSE IN DEPTH
+   - Multiple layers of security
+   - No single point of failure
+   - Assume any layer can be breached
+   
+2. LEAST PRIVILEGE
+   - Tools have minimum necessary permissions
+   - No sudo/admin by default
+   - Read-only when possible
+   
+3. AUDIT EVERYTHING
+   - All tool calls logged
+   - All file modifications logged
+   - All API calls logged
+   - Logs immutable (append-only)
+   
+4. FAIL SECURE
+   - Errors close connections
+   - Failed auth = denied access
+   - Timeouts terminate operations
+   
+5. TRANSPARENCY
+   - User sees what Pi is doing
+   - No hidden operations
+   - Clear consent for sensitive actions
+
+CREDENTIAL SECURITY:
+
+.env File Protection:
+```
+# .gitignore MUST include:
+.env
+*.log
+data/pi.db
+logs/
+
+# Never commit credentials to git
+# Never paste credentials in code
+# Never log credentials
+```
+
+API Key Rotation:
+- Rotate keys every 90 days
+- Revoke old keys immediately
+- Test new keys before revoking old
+
+Key Storage:
+- .env in project root (not in git)
+- File permissions: 600 (read/write owner only)
+- No keys in code, ever
+
+TOOL SECURITY:
+
+execute_python:
+```python
+BLACKLIST = [
+    "import os",
+    "import subprocess",
+    "eval(",
+    "exec(",
+    "__import__",
+    "open(",  # Controlled separately
+]
+
+def execute_python(code: str):
+    # Check blacklist
+    for forbidden in BLACKLIST:
+        if forbidden in code:
+            return {
+                "success": False,
+                "error": f"Forbidden: {forbidden}"
+            }
+    
+    # Execute in restricted environment
+    # (Future: Use RestrictedPython or Docker)
+```
+
+execute_bash:
+```python
+BLACKLIST = [
+    "sudo",
+    "su",
+    "rm -rf /",
+    "dd if=",
+    "mkfs",
+    ":(){ :|:& };:",  # Fork bomb
+]
+
+def execute_bash(command: str):
+    # Check blacklist
+    for forbidden in BLACKLIST:
+        if forbidden in command:
+            return {
+                "success": False,
+                "error": f"Forbidden: {forbidden}"
+            }
+    
+    # Execute with timeout
+    result = subprocess.run(
+        command,
+        shell=True,
+        timeout=30,
+        capture_output=True
+    )
+```
+
+modify_file:
+```python
+def modify_file(path: str, old_str: str, new_str: str):
+    # Only allow modifications in project directory
+    abs_path = os.path.abspath(path)
+    project_root = os.path.dirname(__file__)
+    
+    if not abs_path.startswith(project_root):
+        return {
+            "success": False,
+            "error": "Can only modify files in project directory"
+        }
+    
+    # Verify old_str is unique
+    with open(abs_path, 'r') as f:
+        content = f.read()
+    
+    count = content.count(old_str)
+    if count != 1:
+        return {
+            "success": False,
+            "error": f"old_str found {count} times, must be unique"
+        }
+    
+    # Create backup
+    backup_path = f"{abs_path}.backup"
+    shutil.copy(abs_path, backup_path)
+    
+    # Modify
+    # ...
+```
+
+SUPABASE SECURITY:
+
+Row Level Security (RLS):
+- Enabled on all tables
+- Service role has full access
+- Anon role has no access (security by default)
+
+```sql
+-- Enable RLS
+ALTER TABLE l3_active_memory ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Service role can do everything
+CREATE POLICY "Service role full access"
+    ON l3_active_memory
+    FOR ALL
+    USING (auth.jwt() ->> 'role' = 'service_role');
+    
+-- Policy: Anon role gets nothing
+-- (No policy = deny all)
+```
+
+Connection Security:
+- HTTPS only (enforced by Supabase)
+- API keys in .env only
+- Never in client-side code
+- Never in logs
+
+Backup Security:
+- Backups encrypted at rest
+- Access controlled via IAM
+- Regular backup testing
+
+PRIVACY PROTECTION:
+
+Data Minimization:
+- Only collect what's needed
+- Delete when no longer needed
+- L1 archives after 30 days
+
+Consent:
+- Explicit consent for camera/mic (future)
+- Opt-in for telemetry
+- Clear data usage policy
+
+Anonymization:
+- No PII in logs (except local)
+- No PII sent to external APIs (except official SDKs)
+- Can delete all data on request
+
+AUDIT LOGGING:
+
+What Gets Logged:
+
+1. All Tool Calls:
+   ```json
+   {
+       "timestamp": "2026-04-20T03:30:00",
+       "tool": "memory_write",
+       "user": "ash",
+       "parameters": {"tier": "l3", "category": "test"},
+       "result": "success",
+       "duration_ms": 150
+   }
+   ```
+
+2. All File Modifications:
+   ```json
+   {
+       "timestamp": "2026-04-20T03:30:00",
+       "action": "modify_file",
+       "path": "E:/pi/pi_agent.py",
+       "user": "ash",
+       "old_hash": "abc123",
+       "new_hash": "def456"
+   }
+   ```
+
+3. All Authentication:
+   ```json
+   {
+       "timestamp": "2026-04-20T03:30:00",
+       "action": "auth_attempt",
+       "service": "gmail",
+       "result": "success"
+   }
+   ```
+
+4. All Errors:
+   ```json
+   {
+       "timestamp": "2026-04-20T03:30:00",
+       "level": "ERROR",
+       "module": "tools_memory",
+       "function": "memory_write",
+       "error": "Supabase connection failed",
+       "traceback": "..."
+   }
+   ```
+
+Logs Stored:
+- Local: logs/pi_errors.log (all errors)
+- Local: logs/evolution.jsonl (all interactions)
+- Supabase: raw_wiki table (all messages)
+
+Log Retention:
+- Local logs: Indefinite (disk cheap)
+- Supabase L1: 30 days
+- Archives: Compressed, permanent
+
+INCIDENT RESPONSE:
+
+If Security Breach Detected:
+
+1. IMMEDIATE (Within 1 Hour):
+   - Revoke all API keys
+   - Disable affected features
+   - Block suspicious IP addresses
+   - Preserve logs for forensics
+   
+2. INVESTIGATION (Within 24 Hours):
+   - Identify attack vector
+   - Assess damage
+   - Determine what data was accessed
+   - Document timeline
+   
+3. REMEDIATION (Within 72 Hours):
+   - Fix vulnerability
+   - Deploy patches
+   - Rotate all credentials
+   - Test fixes
+   
+4. NOTIFICATION (As Required):
+   - Inform affected users
+   - Report to authorities if required
+   - Public disclosure if appropriate
+   
+5. POST-MORTEM (Within 1 Week):
+   - Write incident report
+   - Identify lessons learned
+   - Update security procedures
+   - Improve detection
+
+SECURITY CHECKLIST:
+
+Before Deploying New Feature:
+
+□ Input validation on all user inputs
+□ Output sanitization on all outputs
+□ No credentials in code
+□ No SQL injection vectors
+□ No command injection vectors
+□ No path traversal vulnerabilities
+□ Rate limiting implemented
+□ Error messages don't leak info
+□ Logging doesn't expose credentials
+□ Authentication required where appropriate
+□ Authorization checks in place
+□ Encryption for sensitive data
+□ Audit trail for sensitive operations
+□ Timeout on all network operations
+□ Graceful degradation on failure
+□ Security review completed
+□ Penetration testing performed (if high-risk)
+
+THREAT MODEL:
+
+Identified Threats:
+
+1. Prompt Injection
+   - Attack: Malicious user input tricks Claude
+   - Mitigation: Consciousness.txt trained to resist
+   - Impact: Low (Claude has good safety)
+   
+2. API Key Theft
+   - Attack: .env file stolen
+   - Mitigation: File permissions, .gitignore
+   - Impact: HIGH (full access to APIs)
+   
+3. Code Execution
+   - Attack: Malicious code via execute_python
+   - Mitigation: Blacklist, timeout, sandboxing
+   - Impact: HIGH (full system access)
+   
+4. Data Exfiltration
+   - Attack: Memory contents leaked
+   - Mitigation: Access controls, encryption
+   - Impact: MEDIUM (personal data exposed)
+   
+5. Denial of Service
+   - Attack: Infinite loop or resource exhaustion
+   - Mitigation: Timeouts, rate limits
+   - Impact: LOW (just restart)
+
+Priority: Fix HIGH impact first, then MEDIUM, then LOW
+
+================================================================================
+14. TESTING PROTOCOLS
+================================================================================
+
+TESTING PHILOSOPHY:
+------------------
+"If it's not tested, it's broken. You just don't know yet."
+
+TESTING PYRAMID:
+
+       /\
+      /E2\      ← Few (expensive, slow, comprehensive)
+     /────\
+    / INT  \    ← Some (integration between modules)
+   /────────\
+  /   UNIT   \  ← Many (cheap, fast, focused)
+ /────────────\
+
+70% Unit Tests
+20% Integration Tests
+10% End-to-End Tests
+
+UNIT TESTS (Function-Level):
+
+Test Every Function Independently:
+
+```python
+# tests/test_memory_tools.py
+
+import pytest
+from tools.tools_memory import MemoryTools
+
+@pytest.fixture
+def memory_tools():
+    """Create MemoryTools instance for testing"""
+    return MemoryTools(
+        supabase_url=TEST_SUPABASE_URL,
+        supabase_key=TEST_SUPABASE_KEY
+    )
+
+def test_memory_write_success(memory_tools):
+    """Test successful memory write"""
+    result = memory_tools.memory_write(
+        content="Test content",
+        tier="l3",
+        importance=5,
+        category="test"
+    )
+    
+    assert result["success"] == True
+    assert "entry_id" in result
+    assert result["verified"] == True
+
+def test_memory_write_invalid_tier(memory_tools):
+    """Test memory write with invalid tier"""
+    result = memory_tools.memory_write(
+        content="Test",
+        tier="l99",  # Invalid
+        importance=5,
+        category="test"
+    )
+    
+    assert result["success"] == False
+    assert "invalid tier" in result["error"].lower()
+
+def test_memory_read_empty_query(memory_tools):
+    """Test memory read with empty query"""
+    result = memory_tools.memory_read(query="")
+    
+    assert isinstance(result, list)
+    assert len(result) == 0
+
+# ... more unit tests
+```
+
+Run: `pytest tests/test_memory_tools.py -v`
+
+INTEGRATION TESTS (Module-Level):
+
+Test How Modules Work Together:
+
+```python
+# tests/test_agent_integration.py
+
+def test_agent_memory_flow():
+    """Test full memory write → read flow through agent"""
+    agent = PiAgent()
+    agent.mode = "root"
+    
+    # Store memory
+    response1 = agent._respond_root("remember I like Python")
+    assert "stored" in response1.lower() or "remembered" in response1.lower()
+    
+    # Recall memory
+    response2 = agent._respond_root("what programming language do I like?")
+    assert "python" in response2.lower()
+
+def test_agent_tool_chaining():
+    """Test Claude chaining multiple tools"""
+    agent = PiAgent()
+    agent.mode = "root"
+    
+    # Request that requires: memory_read → execute_python → response
+    response = agent._respond_root(
+        "check what I'm working on, then calculate how many days until deadline"
+    )
+    
+    # Verify tools were used
+    assert len(agent.evolution.get_recent_interactions(hours=1)) > 0
+    last_interaction = agent.evolution.get_recent_interactions(hours=1)[-1]
+    assert "memory_read" in last_interaction["tools_used"]
+    assert "execute_python" in last_interaction["tools_used"]
+```
+
+END-TO-END TESTS (Full Workflow):
+
+Test Complete User Scenarios:
+
+```python
+# tests/test_e2e.py
+
+def test_full_session_workflow():
+    """
+    Simulate complete user session:
+    1. Start agent
+    2. Switch to root mode
+    3. Store multiple memories
+    4. Ask complex question requiring multiple memories
+    5. Execute code
+    6. Modify file
+    7. Exit gracefully
+    """
+    
+    # Start
+    agent = PiAgent()
+    assert agent.mode == "normie"
+    
+    # Switch mode
+    agent.mode = "root"
+    
+    # Store memories
+    agent._respond_root("remember I work on GNN research")
+    agent._respond_root("remember my advisor is Dr. Akbas")
+    agent._respond_root("remember I use PyTorch")
+    
+    # Complex query
+    response = agent._respond_root("what tools do I use for my research?")
+    assert "pytorch" in response.lower()
+    
+    # Code execution
+    response = agent._respond_root("calculate 2^10")
+    assert "1024" in response
+    
+    # Verify session logged
+    interactions = agent.evolution.get_recent_interactions(hours=1)
+    assert len(interactions) >= 5
+
+def test_research_mode_workflow():
+    """
+    Test 3-agent research mode:
+    1. Switch to research mode
+    2. Ask question
+    3. Verify all 3 agents respond
+    4. Verify synthesis
+    """
+    
+    from core.research_mode import run_research_mode
+    
+    # Run debate (captures stdout)
+    import io
+    import sys
+    captured = io.StringIO()
+    sys.stdout = captured
+    
+    run_research_mode(
+        question="Should I use PyTorch or TensorFlow?",
+        rounds=1
+    )
+    
+    sys.stdout = sys.__stdout__
+    output = captured.getvalue()
+    
+    # Verify all agents responded
+    assert "CLAUDE" in output
+    assert "GEMINI" in output or "unavailable" in output
+    assert "GROQ" in output
+    assert "SYNTHESIS" in output
+```
+
+REGRESSION TESTS:
+
+Test Previously Fixed Bugs Don't Reappear:
+
+```python
+# tests/test_regressions.py
+
+def test_bug_import_paths():
+    """Regression: Import paths must include tools/ prefix"""
+    # This should work (fixed bug from April 19)
+    from tools.tools_memory import MemoryTools
+    from tools.tools_execution import ExecutionTools
+    
+    # These should fail
+    with pytest.raises(ImportError):
+        from tools_memory import MemoryTools
+
+def test_bug_results_undefined():
+    """Regression: results variable must be initialized"""
+    tools = MemoryTools(TEST_URL, TEST_KEY)
+    
+    # This should not raise NameError (fixed bug from April 19)
+    result = tools.memory_read(query="test", tier="l2")
+    assert isinstance(result, list)
+
+def test_bug_hardcoded_paths():
+    """Regression: No hardcoded paths allowed"""
+    import tools.tools_memory as tm
+    import tools.tools_execution as te
+    import evolution as ev
+    
+    # Read source code
+    import inspect
+    
+    sources = [
+        inspect.getsource(tm),
+        inspect.getsource(te),
+        inspect.getsource(ev)
+    ]
+    
+    # Check for hardcoded paths
+    for source in sources:
+        assert "E:/pi" not in source
+        assert "C:/Users" not in source
+```
+
+PERFORMANCE TESTS:
+
+Test Speed and Resource Usage:
+
+```python
+# tests/test_performance.py
+
+import time
+
+def test_memory_read_performance():
+    """Memory read should complete in <100ms"""
+    tools = MemoryTools(SUPABASE_URL, SUPABASE_KEY)
+    
+    start = time.time()
+    result = tools.memory_read(query="test", tier="l3")
+    duration = time.time() - start
+    
+    assert duration < 0.1  # 100ms
+
+def test_agent_response_time():
+    """Agent response should complete in <10 seconds"""
+    agent = PiAgent()
+    agent.mode = "root"
+    
+    start = time.time()
+    response = agent._respond_root("what is 2+2?")
+    duration = time.time() - start
+    
+    assert duration < 10.0
+    assert "4" in response
+
+def test_memory_leak():
+    """Memory usage should stay stable over time"""
+    import psutil
+    import os
+    
+    process = psutil.Process(os.getpid())
+    initial_memory = process.memory_info().rss / 1024 / 1024  # MB
+    
+    # Run 100 interactions
+    agent = PiAgent()
+    for i in range(100):
+        agent._respond_normie("hello")
+    
+    final_memory = process.memory_info().rss / 1024 / 1024  # MB
+    memory_increase = final_memory - initial_memory
+    
+    # Should not increase more than 50 MB
+    assert memory_increase < 50
+```
+
+SECURITY TESTS:
+
+Test Security Boundaries:
+
+```python
+# tests/test_security.py
+
+def test_no_sql_injection():
+    """Verify SQL injection is prevented"""
+    tools = MemoryTools(SUPABASE_URL, SUPABASE_KEY)
+    
+    malicious_query = "'; DROP TABLE l3_active_memory; --"
+    
+    # Should not crash or execute SQL
+    result = tools.memory_read(query=malicious_query)
+    
+    # Verify table still exists
+    test_result = tools.memory_read(query="test")
+    assert isinstance(test_result, list)
+
+def test_no_command_injection():
+    """Verify command injection is prevented"""
+    tools = ExecutionTools()
+    
+    malicious_command = "ls; rm -rf /"
+    
+    result = tools.execute_bash(malicious_command)
+    
+    # Should be blocked
+    assert result["success"] == False
+    assert "forbidden" in result["error"].lower()
+
+def test_path_traversal_prevention():
+    """Verify path traversal is prevented"""
+    tools = ExecutionTools()
+    
+    # Try to read file outside project
+    result = tools.read_file(path="../../../etc/passwd")
+    
+    # Should be blocked
+    assert result["success"] == False
+
+def test_api_key_not_in_logs():
+    """Verify API keys never appear in logs"""
+    agent = PiAgent()
+    
+    # Trigger error that might log
+    try:
+        agent._respond_root("cause an error somehow")
+    except:
+        pass
+    
+    # Read logs
+    with open("logs/pi_errors.log", 'r') as f:
+        log_content = f.read()
+    
+    # Check API keys not present
+    from app.config import ANTHROPIC_API_KEY, GROQ_API_KEY
+    assert ANTHROPIC_API_KEY not in log_content
+    assert GROQ_API_KEY not in log_content
+```
+
+TEST COVERAGE:
+
+Target: 80% code coverage minimum
+
+Check Coverage:
+```bash
+pytest --cov=. --cov-report=html tests/
+open htmlcov/index.html
+```
+
+Coverage Requirements:
+- Core files (pi_agent.py, tools/*): 90%+
+- Feature files (research_mode, etc.): 80%+
+- Legacy files (state.py, routing.py): Not required
+
+TESTING SCHEDULE:
+
+Before Every Commit:
+- Run all unit tests
+- Fix failures before committing
+
+Before Every Merge to Main:
+- Run all tests (unit + integration + e2e)
+- Run security tests
+- Check code coverage
+- Fix all failures
+
+Weekly:
+- Run full test suite
+- Review test coverage
+- Add tests for new features
+- Update regression tests
+
+Monthly:
+- Performance testing
+- Load testing
+- Security audit
+- Penetration testing (if high-risk features)
+
+CONTINUOUS INTEGRATION (Future):
+
+GitHub Actions Workflow:
+```yaml
+name: Pi Agent Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+    
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.11
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+    
+    - name: Run tests
+      run: |
+        pytest --cov=. --cov-report=xml
+    
+    - name: Upload coverage
+      uses: codecov/codecov-action@v2
+      with:
+        file: ./coverage.xml
+```
+
+MANUAL TESTING CHECKLIST:
+
+Before Releasing New Version:
+
+Functionality:
+□ All commands work (root, normie, research, exit)
+□ Memory read/write/delete works
+□ Code execution works
+□ File operations work
+□ Research mode works
+□ Evolution tracking works
+
+User Experience:
+□ Responses are natural
+□ Error messages are helpful
+□ Performance is acceptable (<5s response)
+□ No confusing behavior
+
+Edge Cases:
+□ Empty input handled gracefully
+□ Very long input (>1000 words) works
+□ Special characters don't break things
+□ Network errors handled gracefully
+□ Supabase down → local cache used
+
+Security:
+□ No credentials leaked in logs
+□ No unauthorized file access
+□ No command injection possible
+□ API rate limits respected
+
+Data Integrity:
+□ Memory persists across restarts
+□ No data loss on errors
+□ Backups restorable
+□ L3 sync works correctly
+
+ACCEPTANCE CRITERIA:
+
+Feature is "Done" When:
+
+□ Code written and reviewed
+□ Unit tests written and passing (80%+ coverage)
+□ Integration tests written and passing
+□ E2E test written and passing
+□ Manual testing completed
+□ Documentation updated
+□ Changelog updated
+□ Deployed to main branch
+□ Used successfully for 1 week in production
+□ No critical bugs reported
+□ Performance metrics within targets
+□ Security review completed (if applicable)
+
+Only then → next feature
+
+================================================================================
+15. DEPLOYMENT CHECKLIST
+================================================================================
+
+FIRST-TIME SETUP:
+
+1. SYSTEM REQUIREMENTS
+   □ Windows 11 (tested) or Windows 10
+   □ Python 3.11+
+   □ 16 GB RAM (recommended, 8 GB minimum)
+   □ 10 GB free disk space
+   □ Internet connection
+
+2. CLONE OR DOWNLOAD PROJECT
+   ```bash
+   # If from git:
+   git clone [repository-url] E:/pi
+   cd E:/pi
+   
+   # If from zip:
+   # Extract to E:/pi/
+   ```
+
+3. CREATE VIRTUAL ENVIRONMENT
+   ```bash
+   python -m venv pi_env
+   pi_env\Scripts\activate
+   ```
+
+4. INSTALL DEPENDENCIES
+   ```bash
+   pip install -r requirements.txt --break-system-packages
+   ```
+
+5. CREATE .ENV FILE
+   ```bash
+   # Create E:/pi/.env
+   
+   ANTHROPIC_API_KEY=sk-ant-xxxxx
+   GROQ_API_KEY=gsk_xxxxx
+   SUPABASE_URL=https://xxx.supabase.co
+   SUPABASE_KEY=eyJhbGcxxx
+   GEMINI_API_KEY=AIzaxxxxx
+   ```
+
+6. SETUP SUPABASE
+   □ Create Supabase account (free tier)
+   □ Create new project
+   □ Copy URL and anon key to .env
+   □ Run SUPABASE_SETUP.sql in SQL Editor
+   □ Verify tables created:
+     - l3_active_memory
+     - organized_memory
+     - raw_wiki
+   □ Verify permanent profile seeded
+
+7. CREATE DIRECTORIES
+   ```bash
+   mkdir data
+   mkdir logs
+   mkdir prompts
+   mkdir tools
+   ```
+
+8. VERIFY FILE STRUCTURE
+   ```
+   E:/pi/
+   ├── pi_agent.py          ✓
+   ├── evolution.py         ✓
+   ├── .env                 ✓
+   ├── requirements.txt     ✓
+   ├── prompts/
+   │   └── consciousness.txt ✓
+   ├── tools/
+   │   ├── __init__.py      ✓
+   │   ├── tools_memory.py  ✓
+   │   └── tools_execution.py ✓
+   ├── app/
+   │   └── config.py        ✓
+   └── ... (other files)
+   ```
+
+9. TEST IMPORTS
+   ```bash
+   python -c "from tools.tools_memory import MemoryTools; print('OK')"
+   python -c "from tools.tools_execution import ExecutionTools; print('OK')"
+   python -c "from evolution import EvolutionTracker; print('OK')"
+   ```
+
+10. FIRST RUN
+    ```bash
+    python pi_agent.py
+    ```
+    
+    Expected:
+    ```
+    [Monthly Review Prompt]
+    → Type: no
+    
+    [Health Check]
+    Supabase: ✓
+    SQLite: ✓
+    Anthropic Key: ✓
+    Groq Key: ✓
+    
+    [Pi] Agent initialized
+    [Pi] Mode: normie
+    [Pi] Consciousness loaded: 9559 chars
+    
+    Ash: hello
+    Pi: hey
+    ```
+
+UPDATING EXISTING INSTALLATION:
+
+1. BACKUP CURRENT VERSION
+   ```bash
+   # Backup database
+   copy E:\pi\data\pi.db E:\pi\data\pi.db.backup
+   
+   # Backup .env
+   copy E:\pi\.env E:\pi\.env.backup
+   
+   # Backup logs
+   xcopy /E /I E:\pi\logs E:\pi\logs.backup
+   ```
+
+2. PULL LATEST CODE
+   ```bash
+   cd E:\pi
+   git pull origin main
+   
+   # Or download new version and extract
+   ```
+
+3. UPDATE DEPENDENCIES
+   ```bash
+   pi_env\Scripts\activate
+   pip install -r requirements.txt --upgrade
+   ```
+
+4. RUN MIGRATIONS (if any)
+   ```bash
+   # Check CHANGELOG.md for migration scripts
+   # Run any listed migration scripts
+   ```
+
+5. VERIFY CONFIGURATION
+   ```bash
+   # Check if new config options added
+   # Update .env if needed
+   ```
+
+6. TEST
+   ```bash
+   # Run test suite
+   pytest tests/ -v
+   
+   # Manual smoke test
+   python pi_agent.py
+   # Type a few test commands
+   ```
+
+7. ROLLBACK IF ISSUES
+   ```bash
+   # If update breaks things:
+   git revert HEAD
+   # Or restore from backup
+   copy E:\pi\data\pi.db.backup E:\pi\data\pi.db
+   ```
+
+PRODUCTION DEPLOYMENT:
+
+For Running Pi 24/7:
+
+1. BACKGROUND SERVICE (Windows)
+   
+   Create pi_service.bat:
+   ```batch
+   @echo off
+   cd E:\pi
+   call pi_env\Scripts\activate
+   python pi_agent.py
+   pause
+   ```
+   
+   Create scheduled task:
+   - Task Scheduler → Create Task
+   - Trigger: At startup
+   - Action: Run pi_service.bat
+   - Settings: Run whether user is logged in or not
+
+2. AUTO-RESTART ON CRASH
+   
+   Create pi_watchdog.py:
+   ```python
+   import subprocess
+   import time
+   
+   while True:
+       try:
+           subprocess.run(["python", "pi_agent.py"])
+       except Exception as e:
+           print(f"Pi crashed: {e}")
+           print("Restarting in 10 seconds...")
+           time.sleep(10)
+   ```
+
+3. MONITORING
+   
+   Setup monitoring:
+   - Check logs/pi_errors.log daily
+   - Alert if error rate > 10%
+   - Alert if cost > $0.50/day
+   - Alert if Supabase connection fails
+
+4. BACKUP AUTOMATION
+   
+   Create backup.bat:
+   ```batch
+   @echo off
+   set BACKUP_DIR=E:\pi_backups\%date:~-4,4%%date:~-10,2%%date:~-7,2%
+   mkdir %BACKUP_DIR%
+   xcopy /E /I E:\pi\data %BACKUP_DIR%\data
+   xcopy /E /I E:\pi\logs %BACKUP_DIR%\logs
+   copy E:\pi\.env %BACKUP_DIR%\.env
+   ```
+   
+   Schedule daily backups
+
+5. LOG ROTATION
+   
+   Create log_rotate.py:
+   ```python
+   import os
+   import gzip
+   import shutil
+   from datetime import datetime, timedelta
+   
+   logs_dir = "E:/pi/logs"
+   
+   # Compress logs older than 7 days
+   for file in os.listdir(logs_dir):
+       if file.endswith(".log"):
+           path = os.path.join(logs_dir, file)
+           modified = datetime.fromtimestamp(os.path.getmtime(path))
+           
+           if datetime.now() - modified > timedelta(days=7):
+               # Compress
+               with open(path, 'rb') as f_in:
+                   with gzip.open(f"{path}.gz", 'wb') as f_out:
+                       shutil.copyfileobj(f_in, f_out)
+               
+               # Delete original
+               os.remove(path)
+   ```
+   
+   Schedule weekly
+
+HEALTH CHECKS:
+
+Daily Checks:
+- Pi responds to "hello"
+- Memory read/write works
+- Cost under budget
+- Error rate < 5%
+
+Weekly Checks:
+- All tests passing
+- Performance within targets
+- Disk space sufficient
+- Backups working
+
+Monthly Checks:
+- Security audit
+- Dependency updates
+- Performance optimization
+- Cost analysis
+
+TROUBLESHOOTING COMMON DEPLOYMENT ISSUES:
+
+Issue: "Module not found"
+Solution:
+```bash
+# Check virtual env activated
+pi_env\Scripts\activate
+
+# Reinstall dependencies
+pip install -r requirements.txt --force-reinstall
+```
+
+Issue: "Supabase connection failed"
+Solution:
+```bash
+# Check .env has correct URL and key
+# Test connection
+python -c "from supabase import create_client; client = create_client('URL', 'KEY'); print(client.table('l3_active_memory').select('*').limit(1).execute())"
+```
+
+Issue: "Permission denied"
+Solution:
+```bash
+# Check file permissions
+icacls E:\pi /grant %USERNAME%:F /T
+
+# Run as administrator if needed
+```
+
+Issue: "API rate limit"
+Solution:
+- Wait 60 seconds for Groq
+- Switch to normie mode to reduce Claude usage
+- Check DAILY_COST_LIMIT in config.py
+
+Issue: "Memory leak / high memory usage"
+Solution:
+- Restart Pi
+- Check for large files in logs/
+- Clear evolution.jsonl if very large
+- Update to latest version (may have fix)
+
+DEPLOYMENT ENVIRONMENTS:
+
+Development (Local Machine):
+- Full debugging
+- Test data
+- Relaxed rate limits
+- Verbose logging
+
+Staging (Test Machine):
+- Production-like
+- Real API keys
+- Limited test data
+- Production logging
+
+Production (Main Machine):
+- Stable code only
+- Real data
+- Monitoring enabled
+- Auto-restart on crash
+
+PRE-DEPLOYMENT CHECKLIST:
+
+□ All tests passing
+□ Code reviewed
+□ Documentation updated
+□ Changelog updated
+□ Dependencies updated
+□ Security audit completed
+□ Performance acceptable
+□ Backup created
+□ Rollback plan ready
+□ Monitoring configured
+□ Users notified (if applicable)
+
+POST-DEPLOYMENT CHECKLIST:
+
+□ Deployment successful
+□ Pi starts without errors
+□ Health checks passing
+□ Basic functionality working
+□ Monitor logs for 1 hour
+□ Check error rate
+□ Check cost
+□ Verify backups working
+□ Document any issues
+□ Update status page (if applicable)
+
+================================================================================
+16. TROUBLESHOOTING GUIDE
+================================================================================
+
+SYSTEMATIC APPROACH:
+
+When Pi Misbehaves:
+
+1. GATHER INFORMATION
+   - What were you trying to do?
+   - What happened instead?
+   - Error messages?
+   - When did it start?
+   - Can you reproduce it?
+
+2. CHECK LOGS
+   ```bash
+   # Error log
+   tail -50 logs/pi_errors.log
+   
+   # Recent interactions
+   tail -20 logs/evolution.jsonl
+   
+   # Check for patterns
+   grep "ERROR" logs/pi_errors.log | tail -20
+   ```
+
+3. VERIFY BASICS
+   □ Internet connection working?
+   □ Supabase accessible?
+   □ API keys valid?
+   □ Virtual environment activated?
+   □ Disk space available?
+
+4. ISOLATE PROBLEM
+   - Does it happen in normie mode?
+   - Does it happen in root mode?
+   - Does it happen with specific commands?
+   - Does it happen consistently?
+
+5. TRY FIXES
+   - Restart Pi
+   - Clear cache
+   - Update dependencies
+   - Check for updates
+   - Restore from backup
+
+6. ESCALATE IF NEEDED
+   - Document problem thoroughly
+   - Include error messages
+   - Include steps to reproduce
+   - Share logs
+
+COMMON PROBLEMS & SOLUTIONS:
+
+PROBLEM: Pi won't start
+-----------------------
+Symptoms:
+- Python crashes
+- Import errors
+- Module not found
+
+Diagnosis:
+```bash
+# Try importing main module
+python -c "import pi_agent"
+
+# Check Python version
+python --version  # Should be 3.11+
+
+# Check virtual env
+where python  # Should point to pi_env/Scripts/python.exe
+```
+
+Solutions:
+```bash
+# 1. Activate virtual environment
+pi_env\Scripts\activate
+
+# 2. Reinstall dependencies
+pip install -r requirements.txt --force-reinstall
+
+# 3. Check file structure
+# Ensure all required files exist
+
+# 4. Check imports
+# Run import tests from deployment checklist
+```
+
+PROBLEM: Supabase connection failed
+-----------------------------------
+Symptoms:
+- "Could not find table..."
+- "Connection timeout"
+- Memory operations fail
+
+Diagnosis:
+```bash
+# Test Supabase connection
+python -c "
+from supabase import create_client
+from app.config import SUPABASE_URL, SUPABASE_KEY
+client = create_client(SUPABASE_URL, SUPABASE_KEY)
+result = client.table('l3_active_memory').select('*').limit(1).execute()
+print(result)
+"
+```
+
+Solutions:
+1. Check .env has correct SUPABASE_URL and SUPABASE_KEY
+2. Verify Supabase project is active (not paused)
+3. Check RLS policies allow service role access
+4. Verify tables exist (run SUPABASE_SETUP.sql if missing)
+5. Check internet connection
+6. Try regenerating Supabase API key
+
+PROBLEM: "Results undefined" error
+----------------------------------
+Symptoms:
+- NameError: name 'results' is not defined
+- Crash in memory_read()
+
+Diagnosis:
+- This is a known bug, should be fixed
+- Check if you have latest version
+
+Solution:
+```python
+# In tools/tools_memory.py, ensure line ~50 has:
+results = []  # Initialize at start of function
+
+# Not inside an if block
+```
+
+PROBLEM: High API costs
+-----------------------
+Symptoms:
+- Unexpected charges
+- Budget exceeded
+- Cost alerts
+
+Diagnosis:
+```bash
+# Check recent costs
+python -c "
+from evolution import EvolutionTracker
+et = EvolutionTracker()
+costs = et.analyze_costs(days=7)
+print(costs)
+"
+```
+
+Solutions:
+1. Switch to normie mode (Groq free)
+   ```
+   Ash: normie mode
+   ```
+
+2. Reduce research mode usage (most expensive)
+
+3. Check for loops or automation causing excess API calls
+
+4. Review consciousness.txt mode selection logic
+
+5. Set stricter DAILY_COST_LIMIT in config.py
+
+PROBLEM: Claude says "I don't have tools"
+-----------------------------------------
+Symptoms:
+- "I can't access memory"
+- "I can't execute code"
+- Tools not working
+
+Diagnosis:
+- Check mode
+- Verify tool definitions in pi_agent.py
+
+Solution:
+```
+# 1. Switch to root mode
+Ash: root mode
+
+# 2. Verify root mode is active
+# Pi should respond: "Root mode active"
+
+# 3. If still broken, check tool definitions in pi_agent.py
+# Ensure tools array is properly defined
+```
+
+PROBLEM: Memory not persisting
+------------------------------
+Symptoms:
+- Stored memory disappears
+- Pi "forgets" things
+- L3 context empty
+
+Diagnosis:
+```python
+# Check Supabase directly
+from supabase import create_client
+from app.config import SUPABASE_URL, SUPABASE_KEY
+
+client = create_client(SUPABASE_URL, SUPABASE_KEY)
+result = client.table("l3_active_memory").select("*").execute()
+print(f"L3 entries: {len(result.data)}")
+```
+
+Solutions:
+1. Verify Supabase tables exist
+2. Check RLS policies
+3. Verify memory_write returns success
+4. Check active_until hasn't expired
+5. Verify SQLite cache syncing
+
+PROBLEM: Research mode not working
+----------------------------------
+Symptoms:
+- "research mode" command does nothing
+- No 3-agent debate
+
+Diagnosis:
+- Check if research mode wired into pi_agent.py
+- This is a known pending issue
+
+Solution:
+- Update to latest version with research mode integration
+- Or manually add research mode handler to pi_agent.py
+
+PROBLEM: Gemini quota exceeded
+------------------------------
+Symptoms:
+- "[Gemini unavailable - quota resets in 24h]"
+- Research mode missing Gemini response
+
+Diagnosis:
+- Free tier quota hit
+- Expected behavior
+
+Solution:
+- Wait 24 hours for quota reset
+- Or upgrade to paid Gemini tier
+- Or use 2-agent debate (Claude + Groq only)
+
+PROBLEM: Slow responses
+-----------------------
+Symptoms:
+- Pi takes >10 seconds to respond
+- Timeouts
+
+Diagnosis:
+```python
+# Check recent response times
+from evolution import EvolutionTracker
+et = EvolutionTracker()
+interactions = et.get_recent_interactions(hours=1)
+for i in interactions:
+    print(f"Response time: {i.get('response_time_seconds', 'N/A')}s")
+```
+
+Solutions:
+1. Check internet connection speed
+2. Switch to normie mode (Groq is faster)
+3. Reduce L3 context size (if very large)
+4. Check for API rate limiting
+5. Verify no background processes consuming resources
+
+PROBLEM: File modification fails
+--------------------------------
+Symptoms:
+- "old_str not unique"
+- "Verification failed"
+- File changes not applied
+
+Diagnosis:
+- Check if old_str appears exactly once in file
+- Verify file not locked by another process
+
+Solution:
+```python
+# Make old_str more specific
+# Instead of:
+old_str = 'model="claude-sonnet-4-20250514"'
+
+# Use:
+old_str = '''message = self.claude.messages.create(
+            model="claude-sonnet-4-20250514",'''
+# (Include surrounding context for uniqueness)
+```
+
+PROBLEM: Evolution tracking not working
+---------------------------------------
+Symptoms:
+- No data in evolution.jsonl
+- analyze_performance returns empty
+
+Diagnosis:
+```bash
+# Check if file exists and has data
+cat logs/evolution.jsonl | wc -l
+
+# Check recent entries
+tail -5 logs/evolution.jsonl
+```
+
+Solutions:
+1. Verify logs/ directory exists
+2. Check file permissions
+3. Verify log_interaction() is being called
+4. Check if EvolutionTracker initialized correctly
+
+PROBLEM: Consciousness not loading
+----------------------------------
+Symptoms:
+- "Consciousness loaded: 0 chars"
+- Pi behaves strangely
+- Missing intelligence
+
+Diagnosis:
+```bash
+# Check file exists
+ls -la prompts/consciousness.txt
+
+# Check file size
+du -h prompts/consciousness.txt
+```
+
+Solutions:
+1. Verify prompts/consciousness.txt exists
+2. Check file not corrupted (should be ~10KB)
+3. Verify file encoding is UTF-8
+4. Restore from backup if needed
+
+ERROR CODE REFERENCE:
+
+Common Error Codes:
+
+| Error | Meaning | Solution |
+|-------|---------|----------|
+| PGRST205 | Supabase table not found | Run SUPABASE_SETUP.sql |
+| PGRST301 | RLS policy blocks access | Update RLS policies |
+| 401 | Invalid API key | Check .env credentials |
+| 429 | Rate limit exceeded | Wait or reduce usage |
+| 500 | Server error | Retry, check service status |
+
+EMERGENCY PROCEDURES:
+
+If Pi is Completely Broken:
+
+1. STOP USING IT
+   - Don't make it worse
+   - Preserve evidence (logs, database)
+
+2. BACKUP EVERYTHING
+   ```bash
+   xcopy /E /I E:\pi E:\pi_backup_%date%
+   ```
+
+3. RESTORE LAST KNOWN GOOD VERSION
+   ```bash
+   # From git
+   git log  # Find last good commit
+   git checkout <commit-hash>
+   
+   # From backup
+   xcopy /E /I E:\pi_backup_20260415 E:\pi
+   ```
+
+4. VERIFY RESTORE
+   ```bash
+   python pi_agent.py
+   # Test basic functionality
+   ```
+
+5. INVESTIGATE CAUSE
+   - Check what changed
+   - Review recent commits
+   - Check logs
+   - Identify root cause
+
+6. DOCUMENT
+   - Write incident report
+   - Note what broke
+   - Note what fixed it
+   - Update troubleshooting guide
+
+GETTING HELP:
+
+If All Else Fails:
+
+1. Prepare Information:
+   - Exact error message
+   - Steps to reproduce
+   - Recent logs (last 50 lines)
+   - System info (Python version, OS, etc.)
+   - What you've already tried
+
+2. Check Resources:
+   - README.md
+   - ARCHITECTURE.md
+   - USER_GUIDE.md
+   - This DNA file
+
+3. Search Issues:
+   - Check if someone else had this problem
+   - Look for similar error messages
+
+4. Ask for Help:
+   - Provide all prepared information
+   - Be specific
+   - Include code/logs
+   - Explain expected vs actual behavior
+
+================================================================================
+17. API COST MANAGEMENT
+================================================================================
+
+COST TRACKING SYSTEM:
+
+Every API call is logged with cost:
+
+```json
+{
+    "timestamp": "2026-04-20T03:30:00",
+    "mode": "root",
+    "model": "claude-sonnet-4-6",
+    "tokens_in": 1500,
+    "tokens_out": 500,
+    "cost": 0.0032
+}
+```
+
+Stored in: logs/evolution.jsonl
+
+CURRENT PRICING (April 2026):
+
+Groq (Normie Mode):
+- Model: Llama 3.3 70B Versatile
+- Cost: $0.00 (free tier)
+- Limits: 30 requests/min, 6000 tokens/min
+- Monthly: $0.00
+
+Claude (Root Mode):
+- Model: Claude Sonnet 4.6
+- Input: $0.80 per 1M tokens
+- Output: $4.00 per 1M tokens
+- Typical message: ~$0.003
+- Target: <500 messages/month = <$1.50/month
+
+Gemini (Research Mode):
+- Model: Gemini 2.0 Flash
+- Cost: $0.00 (free tier, 15 RPM limit)
+- Fallback: Gemini 1.5 Flash (also free)
+- Monthly: $0.00
+
+Estimated Monthly Cost Breakdown:
+
+| Mode | Usage | Cost/Use | Monthly Uses | Monthly Cost |
+|------|-------|----------|--------------|--------------|
+| Normie | 90% | $0.00 | ~900 | $0.00 |
+| Root | 9% | $0.003 | ~90 | $0.27 |
+| Research | 1% | $0.02 | ~10 | $0.20 |
+| **TOTAL** | **100%** | | **~1000** | **~$0.47** |
+
+Well under $10/month target ✓
+
+COST OPTIMIZATION STRATEGIES:
+
+1. PREFER FREE TIERS
+   - Groq for everything by default
+   - Only use Claude when necessary
+   - Gemini in research mode (free)
+
+2. REDUCE CONTEXT SIZE
+   - L3 max 800 tokens (not more)
+   - History only 6 messages (not more)
+   - Consciousness is 4000 tokens (optimized)
+
+3. BATCH OPERATIONS
+   - Don't make 10 memory reads
+   - Make 1 memory read with broader query
+   - Process multiple items per API call
+
+4. CACHE RESPONSES
+   - Same question? Same answer (don't call API)
+   - Implement response cache (future)
+
+5. SMART MODE SELECTION
+   Consciousness guidance:
+   ```
+   Mode Selection:
+   - Simple question? → Normie (free)
+   - Need tools? → Root (paid)
+   - Complex decision? → Research (most expensive)
+   
+   Default to free. Respect Ash's money.
+   ```
+
+6. DAILY BUDGET ENFORCEMENT
+   ```python
+   # In pi_agent.py
+   daily_cost = sum(i["cost"] for i in evolution.get_recent_interactions(hours=24))
+   
+   if daily_cost > DAILY_COST_LIMIT:
+       print(f"[Pi] Daily limit (${DAILY_COST_LIMIT}) reached. Switching to normie mode.")
+       self.mode = "normie"
+   ```
+
+COST MONITORING:
+
+Real-Time Tracking:
+```
+Ash: analyze performance
+
+Pi: === COST ANALYSIS (Last 7 Days) ===
+Total: $0.47
+By mode:
+  - Normie: $0.00 (900 uses)
+  - Root: $0.27 (90 uses)
+  - Research: $0.20 (10 uses)
+Average: $0.0005 per message
+Projection (30 days): $2.01
+
+On track for <$10/month target ✓
+```
+
+Daily Summary on Exit:
+```
+Ash: exit
+
+[Pi] Session Summary:
+Messages: 15
+Cost: $0.045
+Tools used: memory_write (3), execute_python (2)
+Mode: 80% normie, 20% root
+
+[Pi] Shutting down...
+```
+
+Monthly Cost Report:
+- Automatically generated every 30 days
+- Breakdown by mode, day, feature
+- Comparison to budget
+- Recommendations for optimization
+
+COST REDUCTION TACTICS:
+
+If Approaching Budget:
+
+1. Increase Normie Mode Usage
+   - Review what's using root mode
+   - Can it be done in normie?
+   - Update consciousness to prefer normie
+
+2. Reduce Research Mode
+   - Most expensive feature
+   - Use only for critical decisions
+   - Consider removing if rarely used
+
+3. Optimize Context
+   - Reduce L3 size (currently 800 tokens)
+   - Reduce history (currently 6 messages)
+   - Shorter consciousness (currently 4000 tokens)
+
+4. Cache Common Queries
+   - "what's the weather?" → cache for 1 hour
+   - "what am I working on?" → cache until L3 changes
+   - Implement caching layer (future)
+
+5. Switch to Cheaper Models
+   - Claude Haiku instead of Sonnet (3x cheaper)
+   - But: Lower quality, may need more retries
+   - Test before switching
+
+BUDGET ALERT SYSTEM:
+
+Alert Thresholds:
+
+| Threshold | Action |
+|-----------|--------|
+| $5/month | Info: "Halfway to budget" |
+| $8/month | Warning: "Approaching limit, switch to normie" |
+| $10/month | Critical: "Budget hit, normie only" |
+| $15/month | Emergency: "Stop all paid API calls" |
+
+Implementation:
+```python
+def check_budget():
+    monthly_cost = sum(
+        i["cost"]
+        for i in evolution.get_recent_interactions(hours=24*30)
+    )
+    
+    if monthly_cost > 15.0:
+        print("[Pi] EMERGENCY: Budget severely exceeded!")
+        print("[Pi] Disabling all paid API calls.")
+        return "emergency"
+    
+    elif monthly_cost > 10.0:
+        print("[Pi] CRITICAL: Monthly budget exceeded.")
+        print("[Pi] Forcing normie mode.")
+        return "critical"
+    
+    elif monthly_cost > 8.0:
+        print("[Pi] WARNING: Approaching budget limit.")
+        print("[Pi] Consider using normie mode more.")
+        return "warning"
+    
+    elif monthly_cost > 5.0:
+        print("[Pi] INFO: Halfway to monthly budget.")
+        return "info"
+    
+    else:
+        return "ok"
+```
+
+COST ATTRIBUTION:
+
+Track Which Features Cost Money:
+
+```python
+# Tag each interaction with feature
+{
+    "timestamp": "...",
+    "feature": "memory_operations",  # NEW
+    "cost": 0.003
+}
+
+# Monthly breakdown
+{
+    "memory_operations": $0.15,
+    "code_execution": $0.08,
+    "research_mode": $0.20,
+    "general_chat": $0.04
+}
+```
+
+Insights:
+- Which features are expensive?
+- Which features are worth the cost?
+- Which features to optimize?
+
+ROI ANALYSIS:
+
+Is Pi Worth the Cost?
+
+Metrics:
+- Tasks automated
+- Time saved
+- Quality improved
+- Productivity gain
+
+Example:
+- Cost: $0.50/month
+- Time saved: 2 hours/month
+- Value of time: $20/hour
+- ROI: 8000%
+
+Conclusion: Absolutely worth it.
+
+FREE TIER MAXIMIZATION:
+
+Groq Free Tier:
+- 30 requests/minute
+- 6000 tokens/minute
+- Effectively unlimited for personal use
+
+Gemini Free Tier:
+- 15 requests/minute
+- 1M tokens/day
+- More than enough for research mode
+
+Strategy:
+- Use free tiers for 99% of operations
+- Use Claude only when:
+  1. Groq doesn't support tools (can't avoid)
+  2. Quality critical (complex reasoning)
+  3. User explicitly requests root mode
+
+Result: <$1/month typical usage
+
+FUTURE COST OPTIMIZATIONS:
+
+1. Response Caching
+   - Cache identical queries
+   - Cache for appropriate TTL
+   - Save ~30% API calls
+
+2. Prompt Compression
+   - Compress consciousness.txt
+   - Use shorter system prompts
+   - Save ~20% input tokens
+
+3. Streaming Responses
+   - Start rendering before complete
+   - Improves perceived speed
+   - Same cost, better UX
+
+4. Local LLM Fallback
+   - Ollama for offline mode
+   - Free, private, fast
+   - Lower quality but $0.00
+
+5. Fine-Tuned Models (Far Future)
+   - Train small model on Pi's patterns
+   - Cheaper than Claude
+   - But requires data and expertise
+
+COST vs QUALITY TRADEOFF:
+
+```
+High Quality ↑         Claude Opus ($$$$$)
+            │              │
+            │          Claude Sonnet ($$)
+            │              │
+            │          Claude Haiku ($)
+            │              │
+            │          Groq Llama (Free)
+            │              │
+            │          Local Gemma (Free, Slower)
+            │              │
+Low Cost   →───────────────────────────→
+```
+
+Current Strategy:
+- Groq for most things (free, good quality)
+- Claude Sonnet for tools (required, affordable)
+- Local Gemma for offline (free backup)
+
+Target: <$1/month while maintaining high quality
+
+================================================================================
+18. MODULAR DEVELOPMENT FRAMEWORK
+================================================================================
+
+MODULARITY PRINCIPLE:
+--------------------
+"Every feature is a self-contained module that can be added, removed, or
+updated without breaking anything else."
+
+WHAT MAKES A GOOD MODULE:
+
+1. SINGLE RESPONSIBILITY
+   - Does one thing well
+   - Clear purpose
+   - Focused scope
+
+2. CLEAR INTERFACE
+   - Well-defined inputs
+   - Well-defined outputs
+   - Documented API
+
+3. MINIMAL DEPENDENCIES
+   - Depends only on what's necessary
+   - No circular dependencies
+   - Loose coupling
+
+4. TESTABLE IN ISOLATION
+   - Can test without full system
+   - Mocked dependencies
+   - Clear success criteria
+
+5. COMPOSABLE
+   - Works with other modules
+   - Standard data formats
+   - Clean abstractions
+
+MODULE TEMPLATE:
+
+```python
+"""
+Module: [MODULE_NAME]
+
+Purpose: [ONE SENTENCE DESCRIPTION]
+
+Dependencies:
+- [DEPENDENCY 1]
+- [DEPENDENCY 2]
+
+Usage:
+```python
+from module_name import ModuleClass
+
+module = ModuleClass(config)
+result = module.do_something(input)
+```
+
+Status: [STABLE/BETA/EXPERIMENTAL]
+Version: [SEMANTIC VERSION]
+Last Updated: [DATE]
+"""
+
+import logging
+from typing import Any, Dict, List, Optional
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+class ModuleClass:
+    """
+    [DESCRIPTION OF CLASS]
+    
+    Attributes:
+        config: Configuration dictionary
+        state: Internal state
+    """
+    
+    def __init__(self, config: Dict[str, Any]):
+        """
+        Initialize module.
+        
+        Args:
+            config: Configuration dictionary
+                Required keys: [LIST]
+                Optional keys: [LIST]
+        """
+        self.config = config
+        self.state = {}
+        self._validate_config()
+        self._initialize()
+    
+    def _validate_config(self):
+        """Validate configuration has required keys"""
+        required = ["key1", "key2"]
+        for key in required:
+            if key not in self.config:
+                raise ValueError(f"Missing required config: {key}")
+    
+    def _initialize(self):
+        """Initialize module state"""
+        # Setup code here
+        logger.info(f"{self.__class__.__name__} initialized")
+    
+    def do_something(self, input: str) -> Dict[str, Any]:
+        """
+        Main functionality.
+        
+        Args:
+            input: Description
+            
+        Returns:
+            dict: Result with keys:
+                - success: bool
+                - output: Any
+                - error: str (if success=False)
+        """
+        try:
+            # Validate input
+            if not input:
+                raise ValueError("Input cannot be empty")
+            
+            # Do work
+            output = self._process(input)
+            
+            # Return success
+            logger.info(f"Successfully processed: {input[:50]}")
+            return {
+                "success": True,
+                "output": output,
+                "error": None
+            }
+            
+        except Exception as e:
+            # Log and return error
+            logger.error(f"Error processing {input[:50]}: {e}")
+            return {
+                "success": False,
+                "output": None,
+                "error": str(e)
+            }
+    
+    def _process(self, input: str) -> Any:
+        """Internal processing logic"""
+        # Implementation here
+        pass
+
+# Module-level convenience function
+def create_module(config: Dict[str, Any]) -> ModuleClass:
+    """
+    Factory function to create module instance.
+    
+    Args:
+        config: Configuration dictionary
+        
+    Returns:
+        ModuleClass: Initialized module
+    """
+    return ModuleClass(config)
+```
+
+INTEGRATION CHECKLIST:
+
+When Adding New Module:
+
+□ 1. DESIGN
+  - Define purpose (one sentence)
+  - Define interface (inputs/outputs)
+  - Identify dependencies
+  - Plan testing strategy
+
+□ 2. IMPLEMENT
+  - Create module file
+  - Follow template structure
+  - Add logging
+  - Handle errors gracefully
+
+□ 3. TEST
+  - Unit tests (function-level)
+  - Integration tests (with dependencies)
+  - Edge cases
+  - Error conditions
+
+□ 4. DOCUMENT
+  - Module docstring
+  - Function docstrings
+  - Usage examples
+  - Known limitations
+
+□ 5. INTEGRATE
+  - Import in main system
+  - Wire into agent tools (if applicable)
+  - Update consciousness.txt
+  - Add to tool definitions
+
+□ 6. VERIFY
+  - Run full test suite
+  - Manual testing
+  - Check performance
+  - Monitor for errors
+
+□ 7. DEPLOY
+  - Commit to git
+  - Update changelog
+  - Tag release
+  - Monitor in production
+
+EXAMPLE: Gmail Integration Module
+
+```
+integrations/gmail_client.py
+
+Purpose: OAuth2 authentication and Gmail API operations
+
+Dependencies:
+- google-auth-oauthlib
+- google-api-python-client
+
+Interface:
+- authenticate() → bool
+- get_messages(query, max_results) → List[Dict]
+- create_draft(to, subject, body) → str (draft_id)
+- send_draft(draft_id) → bool
+
+Testing:
+- Mock Gmail API responses
+- Test OAuth flow
+- Test rate limiting
+- Test error handling
+
+Integration:
+- Add to tools/tools_email.py
+- Wrap in tool interface
+- Document in consciousness.txt
+- Add to tool definitions in pi_agent.py
+
+Usage:
+```python
+from tools.tools_email import email_read
+
+# Claude can now call:
+result = email_read(query="from:advisor subject:meeting")
+# Returns: List of matching emails
+```
+```
+
+DEPENDENCY MANAGEMENT:
+
+Dependency Hierarchy:
+
+```
+Level 0: No dependencies (pure Python)
+- utils/
+- helpers/
+
+Level 1: Standard library only
+- Most internal modules
+
+Level 2: External packages (pip)
+- API clients (anthropic, groq)
+- Database (supabase)
+
+Level 3: Optional integrations
+- Gmail (google-api-python-client)
+- Calendar (google-api-python-client)
+
+Level 4: Experimental
+- Voice (whisper, elevenlabs)
+- UI (tkinter)
+```
+
+Rule: Lower-level modules cannot depend on higher-level modules
+
+PLUGIN ARCHITECTURE (Future):
+
+Enable Third-Party Extensions:
+
+```python
+# plugins/weather_plugin.py
+
+from pi.plugin_interface import Plugin
+
+class WeatherPlugin(Plugin):
+    name = "weather"
+    version = "1.0.0"
+    
+    def initialize(self, config):
+        self.api_key = config.get("WEATHER_API_KEY")
+    
+    def get_tools(self):
+        return [
+            {
+                "name": "get_weather",
+                "description": "Get current weather",
+                "function": self.get_weather
+            }
+        ]
+    
+    def get_weather(self, location: str) -> dict:
+        # Implementation
+        pass
+
+# Pi auto-discovers and loads plugins from plugins/
+```
+
+Benefits:
+- Easy to add features
+- Easy to remove features
+- Third-party extensions possible
+- No core code modification needed
+
+BACKWARD COMPATIBILITY:
+
+When Updating Modules:
+
+1. SEMANTIC VERSIONING
+   - MAJOR: Breaking changes
+   - MINOR: New features (backward compatible)
+   - PATCH: Bug fixes
+
+2. DEPRECATION WARNINGS
+   ```python
+   import warnings
+   
+   def old_function():
+       warnings.warn(
+           "old_function is deprecated, use new_function instead",
+           DeprecationWarning
+       )
+       return new_function()
+   ```
+
+3. MIGRATION GUIDES
+   - Document breaking changes
+   - Provide migration path
+   - Examples before/after
+
+4. BACKWARD COMPATIBLE BY DEFAULT
+   - New features opt-in
+   - Old features continue working
+   - Gradual migration
+
+FEATURE FLAGS:
+
+Enable/Disable Features Without Code Changes:
+
+```python
+# config.py
+
+FEATURES = {
+    "gmail_integration": False,  # Not ready yet
+    "voice_input": False,        # Experimental
+    "research_mode": True,       # Stable
+    "memory_system": True,       # Core feature
+}
+
+# In module:
+from app.config import FEATURES
+
+if FEATURES.get("gmail_integration"):
+    # Enable Gmail tools
+    pass
+else:
+    # Disable Gmail tools
+    pass
+```
+
+Benefits:
+- Safe rollouts
+- A/B testing
+- Quick rollback
+- User-specific features
+
+MODULE COMMUNICATION:
+
+Standard Message Format:
+
+```python
+# All modules exchange messages in this format:
+{
+    "success": bool,
+    "data": Any,           # Payload
+    "error": str | None,   # Error message if failed
+    "metadata": {          # Optional metadata
+        "timestamp": str,
+        "module": str,
+        "version": str
+    }
+}
+```
+
+Event Bus (Future):
+
+```python
+# Modules can publish and subscribe to events
+
+from pi.event_bus import EventBus
+
+bus = EventBus()
+
+# Publisher
+bus.publish("memory_updated", {
+    "tier": "l3",
+    "entry_id": "abc-123"
+})
+
+# Subscriber
+@bus.subscribe("memory_updated")
+def on_memory_updated(event):
+    print(f"Memory updated: {event['entry_id']}")
+```
+
+Benefits:
+- Loose coupling
+- Event-driven architecture
+- Easy to add new integrations
+
+VERSIONING STRATEGY:
+
+Entire Project:
+- Version: MAJOR.MINOR.PATCH
+- Current: 2.0.0 (Agent architecture)
+
+Individual Modules:
+- Version: MAJOR.MINOR.PATCH
+- Tracked in module docstring
+- Updated independently
+
+Tagging:
+```bash
+# Tag releases
+git tag -a v2.0.0 -m "Agent architecture complete"
+git push --tags
+```
+
+DOCUMENTATION PER MODULE:
+
+Every module should have:
+
+1. README.md (if complex)
+2. Docstrings (all functions)
+3. Usage examples
+4. Testing guide
+5. Known limitations
+6. Changelog
+
+Example Structure:
+```
+integrations/gmail/
+├── __init__.py
+├── gmail_client.py
+├── README.md
+├── tests/
+│   └── test_gmail.py
+├── examples/
+│   └── basic_usage.py
+└── CHANGELOG.md
+```
+
+MODULAR TESTING:
+
+Test Each Module Independently:
+
+```bash
+# Test just memory module
+pytest tests/test_memory_tools.py
+
+# Test just execution module
+pytest tests/test_execution_tools.py
+
+# Test module integration
+pytest tests/test_integration.py
+
+# Test full system
+pytest tests/
+```
+
+Benefits:
+- Faster feedback
+- Easier debugging
+- Parallel testing
+
+CONCLUSION:
+
+With this modular framework:
+
+✓ Features can be added without breaking existing code
+✓ Features can be removed cleanly
+✓ Features can be tested in isolation
+✓ Features can be versioned independently
+✓ New developers can understand one module at a time
+✓ System remains maintainable as it grows
+
+Every new idea Ash has can be implemented as a module and layered on top
+of the existing system without requiring a rebuild.
+
+================================================================================
+END OF PROJECT PI DNA
+================================================================================
+
+This document contains the complete knowledge, history, architecture,
+specifications, and methodology for Project Pi.
+
+Use this as the single source of truth for all development decisions.
+
+Last Updated: 2026-04-20
+Version: 2.0
+Status: ACTIVE DEVELOPMENT
+
+For updates, see: CHANGELOG.md
+For questions, see: TROUBLESHOOTING GUIDE (Section 16)
+For architecture, see: ARCHITECTURE.md
+
+Build Pi. Make it better. Repeat.
+
+================================================================================

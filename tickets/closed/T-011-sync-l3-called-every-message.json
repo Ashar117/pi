@@ -1,0 +1,17 @@
+{
+  "id": "T-011",
+  "title": "_sync_l3() called on every single message — full Supabase fetch per prompt",
+  "component": "tools/tools_memory.py:get_l3_context()",
+  "what_failed": "get_l3_context() unconditionally calls _sync_l3() at line 296. _sync_l3() does: SELECT * from l3_active_memory (full table fetch), DELETE FROM l3_cache, then re-INSERT all rows. This entire Supabase round-trip happens before every response Pi generates, including every normie-mode message. It adds latency to every single prompt and hammers Supabase unnecessarily.",
+  "where_failed": "tools/tools_memory.py get_l3_context() line 296: self._sync_l3()",
+  "why_likely": "sync was added to ensure freshness, but no TTL or rate-limiting was added. Result: full sync on every call.",
+  "severity": "P1",
+  "reproduction": "Send 10 messages to Pi. Observe 10 full Supabase fetches in logs.",
+  "expected": "Supabase sync happens at most once per session startup, or at most once every 5 minutes.",
+  "actual": "Full Supabase fetch + SQLite wipe + reinsert on every single prompt.",
+  "suggested_fix": "Add self._last_sync: Optional[datetime] = None to MemoryTools.__init__. In get_l3_context(), only call _sync_l3() if _last_sync is None or age > 300 seconds. Update _last_sync after each sync.",
+  "status": "closed",
+  "created": "2026-04-22T00:00:00Z",
+  "closed": "2026-04-22T01:00:00Z",
+  "linked_solution": "S-008"
+}

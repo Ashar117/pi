@@ -1,0 +1,17 @@
+{
+  "id": "T-006",
+  "title": "self.messages cleared on every mode switch — normie amnesia + session summary never saves",
+  "component": "pi_agent.py:process_input()",
+  "what_failed": "Switching mode (root→normie or normie→root) wiped self.messages = []. Normie had no session context. Session summary exit guard 'if self.messages:' was always False after a normie session, so summary was silently skipped.",
+  "where_failed": "pi_agent.py lines ~316, ~320, ~356 (self.messages = [] on mode switch); line ~687 (if self.messages: guard)",
+  "why_likely": "self.messages was intended as the Claude API message list (needs reset between API sessions), but was incorrectly reset on mode switches instead of only on true session boundaries. The exit guard then depended on this list being non-empty.",
+  "severity": "P0",
+  "reproduction": "1. Start Pi in root mode. 2. Have a conversation. 3. Type 'normie mode'. 4. Ask about previous conversation. 5. Pi has no memory of it. 6. Type 'exit'. 7. No '[Memory] Session summary saved' message.",
+  "expected": "self.messages persists across mode switches. Session summary writes on every exit with conversation content.",
+  "actual": "self.messages wiped on mode switch. Session summary silently skipped.",
+  "suggested_fix": "Remove self.messages = [] from mode switch handlers. Change exit guard to 'if self.messages or self.history:'.",
+  "status": "closed",
+  "created": "2026-04-21T03:00:00Z",
+  "closed": "2026-04-21T03:30:00Z",
+  "linked_solution": "S-006"
+}
