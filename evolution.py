@@ -37,8 +37,10 @@ class EvolutionTracker:
     ):
         """Log an interaction for later analysis"""
 
+        md = metadata or {}
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "session_id": md.get("session_id", ""),
             "mode": mode,
             "model": model,
             "success": success,
@@ -46,9 +48,10 @@ class EvolutionTracker:
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
             "tools_used": [tc.get("name", "") for tc in tool_calls],
+            "tool_calls": tool_calls,
             "user_message_length": len(user_input),
             "response_length": len(pi_response),
-            "metadata": metadata or {}
+            "metadata": md
         }
 
         with open(self.log_path, 'a') as f:
@@ -82,28 +85,46 @@ class EvolutionTracker:
         successful = sum(1 for i in interactions if i["success"])
         failed = total - successful
         
-        # Tool usage
+        # Tool usage — prefer the structured "tool_calls" field; fall back to
+        # the legacy "tools_used" name list for entries written before SM-001 fix.
         tool_usage = defaultdict(int)
         tool_success = defaultdict(lambda: {"total": 0, "success": 0})
-        
+
         for interaction in interactions:
-            for tool_call in interaction.get("tool_calls", []):
+            tool_call_list = interaction.get("tool_calls", [])
+            if not tool_call_list and interaction.get("tools_used"):
+                tool_call_list = [{"name": name} for name in interaction["tools_used"]]
+
+            for tool_call in tool_call_list:
                 tool_name = tool_call.get("name", "unknown")
                 tool_usage[tool_name] += 1
                 tool_success[tool_name]["total"] += 1
                 if interaction["success"]:
                     tool_success[tool_name]["success"] += 1
-        
+
         # Mode usage
         mode_usage = defaultdict(int)
         for interaction in interactions:
             mode_usage[interaction["mode"]] += 1
-        
+
         # Failed model breakdown
         failed_interactions = [i for i in interactions if not i["success"]]
         failed_by_model = defaultdict(int)
         for interaction in failed_interactions:
             failed_by_model[interaction.get("model", "unknown")] += 1
+
+        # Per-session breakdown — top-level session_id first, metadata.session_id fallback
+        sessions = defaultdict(lambda: {"interactions": 0, "successful": 0, "failed": 0, "cost": 0.0})
+        for interaction in interactions:
+            sid = (interaction.get("session_id")
+                   or interaction.get("metadata", {}).get("session_id")
+                   or "unknown")
+            sessions[sid]["interactions"] += 1
+            if interaction["success"]:
+                sessions[sid]["successful"] += 1
+            else:
+                sessions[sid]["failed"] += 1
+            sessions[sid]["cost"] = round(sessions[sid]["cost"] + interaction.get("cost", 0.0), 6)
 
         return {
             "timeframe_days": days,
@@ -117,7 +138,8 @@ class EvolutionTracker:
                 for tool, s in tool_success.items()
             },
             "mode_usage": dict(mode_usage),
-            "failed_by_model": dict(failed_by_model)
+            "failed_by_model": dict(failed_by_model),
+            "sessions": dict(sessions)
         }
     
     def identify_improvements(self, analysis: Dict) -> List[Dict]:

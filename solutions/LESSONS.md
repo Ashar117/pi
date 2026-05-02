@@ -81,3 +81,19 @@ Every entry here was written because something failed. Read this before touching
 **From:** T-016, S-011  
 **Lesson:** `self.messages` (Claude-API-shaped) and `self.history` (research-mode string helper) were two stores meant to track the same thing — the conversation. Normie wrote to one, root read the other. The bug was invisible inside each mode and only surfaced at the boundary: switch normie → root and Claude saw an empty thread, denying that any prior conversation had happened.  
 **Rule:** One conversation, one store. If a second representation is needed, derive it on demand from the canonical one. Never write to both — drift is guaranteed and the failure mode is a continuity break that doesn't crash, just quietly contradicts the user.
+
+---
+
+## L-011 — Telemetry field-name drift produces zero errors and infinite wrong data
+**Date:** 2026-04-25
+**From:** T-020, S-012, [SCHEMA_MISMATCHES.md SM-001](../SCHEMA_MISMATCHES.md)
+**Lesson:** `evolution.log_interaction` wrote the field `tools_used` (list of name strings); `evolution.analyze_performance` read the field `tool_calls` (list of structured dicts). The two had never agreed. Every analytic about tool usage and success rate had been silently empty since the analyzer was written. The monthly-review "tool failure" branch in `identify_improvements` was unreachable. 107 production interactions worth of telemetry analysed back to `tool_usage: {}`. Nothing crashed. No log line said anything was wrong. The bug only became visible when someone went looking.
+**Rule:** For every telemetry pipeline, write a round-trip test that calls the writer and the reader together and asserts the reader returns *populated* output, not just non-error output. "No error" and "no data" look identical and lie identically. Add the round-trip test to the verify script so it runs on every change. And: when a schema change adds a field, keep reading the old field as a fallback for at least one cycle — a fix that makes prior log data unanalyzable is worse than the original drift.
+
+---
+
+## L-012 — A round-trip test that's satisfied by ambient context isn't testing the tool path
+**Date:** 2026-04-26
+**From:** Phase 3 canary (`testing/test_memory_roundtrip.py`), [FINDINGS.md F-001](../FINDINGS.md), open ticket T-023
+**Lesson:** The Phase 3 round-trip canary wrote a marker via `memory_write` in agent #1, tore down, rebuilt agent #2, asked agent #2 to recall the color associated with the marker, and got "Purple" — verdict GREEN. But agent #2 made *zero tool calls* to retrieve it. The path Pi #2 actually took: `__init__` → `_sync_l3` → SQLite cache populated from Supabase → `_get_system_prompt` → `get_l3_context` returned a string containing the marker → Claude read it directly from the system prompt. The `memory_read` tool path — which is the path the production failure mode (T-019, LOG1/LOG2 chat logs) actually breaks on — was bypassed. The canary proved storage and L3 context injection work. It did NOT prove that `memory_read` works when invoked by Claude's natural-language query formulation.
+**Rule:** When designing a round-trip test for a memory system that has both an *ambient-context* path (loaded into the system prompt) and a *tool-call* path (queried explicitly), make sure the test forces the tool-call path. Put the entry where it cannot be loaded ambiently (e.g., L2, which is not pulled into context at startup), or write so many entries that the target gets crowded out of the L3 token budget. Otherwise the LLM short-circuits the test by reading from context, and you get a green verdict that says nothing about the failure mode you're trying to catch.

@@ -53,11 +53,17 @@ class MemoryTools:
 
         Args:
             query: Search term (empty = return all recent)
-            tier: l1/l2/l3 or None for all
+            tier:  'l1' | 'l2' | 'l3' to search a specific tier; None searches L3+L2 only.
+                   L1 (raw_wiki archive) is opt-in via tier='l1' explicitly — it excludes
+                   itself from the implicit search because content-matching against the
+                   raw archive is noisy without a real query layer. T-017, conservative
+                   fix per master prompt §6 Phase 3.3. The aggressive fix (include L1
+                   with a low default limit) is deferred until full-text search lands
+                   on raw_wiki.
             limit: Max results
 
         Returns:
-            List of matching entries
+            List of matching entries. Each entry carries a 'tier' key indicating origin.
         """
         results = []
 
@@ -82,14 +88,32 @@ class MemoryTools:
 
         if tier == "l2" or tier is None:
             try:
-                builder = self.supabase.table("organized_memory").select("*")
                 if query:
-                    builder = builder.ilike("title", f"%{query}%")
-                response = builder.order("created_at", desc=True).limit(limit).execute()
-                if response.data:
-                    for entry in response.data:
+                    # SM-003 fix: title is only the first 100 chars of content; the
+                    # full text lives in content.text JSONB. Search BOTH and merge
+                    # by id so distinctive keywords past char 100 stay reachable.
+                    r_title = (self.supabase.table("organized_memory").select("*")
+                               .ilike("title", f"%{query}%")
+                               .order("created_at", desc=True).limit(limit).execute())
+                    r_body = (self.supabase.table("organized_memory").select("*")
+                              .ilike("content->>text", f"%{query}%")
+                              .order("created_at", desc=True).limit(limit).execute())
+                    seen_ids = set()
+                    merged = []
+                    for entry in (r_title.data or []) + (r_body.data or []):
+                        if entry["id"] in seen_ids:
+                            continue
+                        seen_ids.add(entry["id"])
                         entry["tier"] = "l2"
-                    results.extend(response.data)
+                        merged.append(entry)
+                    results.extend(merged[:limit])
+                else:
+                    response = (self.supabase.table("organized_memory").select("*")
+                                .order("created_at", desc=True).limit(limit).execute())
+                    if response.data:
+                        for entry in response.data:
+                            entry["tier"] = "l2"
+                        results.extend(response.data)
             except Exception as e:
                 print(f"[Memory] L2 search error: {e}")
 

@@ -1,0 +1,28 @@
+{
+  "id": "T-020",
+  "title": "evolution.py write/read schema drift — analytics silently empty since inception",
+  "component": "evolution.py:log_interaction (write), evolution.py:analyze_performance (read)",
+  "what_failed": "log_interaction emitted the field 'tools_used' (list of name strings). analyze_performance iterated 'interaction.get(\"tool_calls\", [])' (list of dicts) — a field name that was never written. Result: tool_usage and tool_success_rates returned empty dicts on every call. The monthly self-review's tool-failure improvement branch was unreachable. Confirmed against the actual production log (logs/evolution.jsonl, 107 interactions across 4 sessions) — pre-fix analyze_performance returned tool_usage={}.",
+  "where_failed": "evolution.py log_interaction line 48 ('tools_used' written); evolution.py analyze_performance line 90 ('tool_calls' read).",
+  "why_likely": "The analyzer was probably written first against an intended schema, the logger was written against a simpler schema, and the two were never reconciled. Because analyze_performance never raises on a missing field (defaultdict + .get), the drift produced zero error signal.",
+  "severity": "P0",
+  "reproduction": "1. With current evolution.py, run testing/test_evolution_schema.py → all 4 tests fail with 'tool_usage is empty'. 2. Or manually: tracker.log_interaction(tool_calls=[{'name':'memory_read'}], success=True, ...); tracker.analyze_performance(days=7) → returns tool_usage={}. 3. Confirmed against real production log: pre-fix `analyze_performance(days=30)` on logs/evolution.jsonl returned tool_usage={} despite 107 interactions including 36+ memory_read calls.",
+  "expected": "tool_usage and tool_success_rates populated with correct counts and rates. session_id queryable from log entries without digging into metadata. Per-session breakdown available in analytics output.",
+  "actual": "Pre-fix: tool_usage={}, tool_success_rates={}, no per-session breakdown, session_id only inside metadata. Post-fix: all three populate correctly. Verified post-fix by running analyze_performance(days=30) on the real production log — returned tool_usage={'memory_read': 36, 'memory_write': 12, 'execute_python': 4, 'execute_bash': 1, 'read_file': 1} and tool_success_rates with memory_read at 0.917, all others at 1.0.",
+  "suggested_fix": "log_interaction: also write 'tool_calls' (full structured list) and 'session_id' at top level (extracted from metadata). analyze_performance: read 'tool_calls' first, fall back to materializing dicts from 'tools_used' for legacy entries (preserves analyzability of all 107 existing log entries). Add per-session breakdown reading session_id top-level first, metadata.session_id fallback.",
+  "status": "closed",
+  "created": "2026-04-25T00:30:00Z",
+  "closed": "2026-04-25T00:50:00Z",
+  "linked_solution": "S-012",
+  "verification": {
+    "test_file": "testing/test_evolution_schema.py",
+    "tests_passing": [
+      "tool_usage populated after logging tool calls",
+      "session_id at top level of log entry",
+      "per-session breakdown in analyze_performance",
+      "legacy log entries still analyzable"
+    ],
+    "real_log_check": "analyze_performance(days=30) on logs/evolution.jsonl post-fix returned non-empty tool_usage with 5 distinct tools across 107 interactions and 4 distinct session_ids (548ff561, bfe9f64b, e9197064, plus 'unknown' for legacy entries pre-T-013)."
+  },
+  "scope_disclaimer": "T-020 is a telemetry fix only. It does NOT close any of: T-017 (memory_read tier=None), T-019 (normie hallucination), or the unverified memory round-trip via the agent loop. Per Ash's reproduction rule (2026-04-25), runtime/ticket closure requires reproduction in the current codebase — only SM-001 is so reproduced here."
+}

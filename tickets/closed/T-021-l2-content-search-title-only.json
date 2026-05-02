@@ -1,0 +1,28 @@
+{
+  "id": "T-021",
+  "source": "SCHEMA_MISMATCHES.md SM-003 (Phase 0 audit); reproduced in Phase 3 via testing/test_l2_content_search.py",
+  "title": "L2 search filters on title only; content body keywords past char 100 unreachable",
+  "component": "tools/tools_memory.py:memory_read (L2 branch, was lines 83-94)",
+  "what_failed": "memory_write(tier='l2') stores the full content under content.text (a JSONB field) but the title is only the first 100 chars of content. memory_read(tier='l2') filtered with ilike on `title` only. Distinctive keywords appearing past char 100 of the content were unreachable via L2 search — the chat-log production failure mode where Pi 'forgot' something it just stored is the same shape: write succeeds, recall returns 0 because the query doesn't hit the title bucket.",
+  "where_failed": "tools/tools_memory.py memory_read() — the L2 branch did `builder.ilike('title', f'%{query}%')` only; no second query against content->>text JSONB.",
+  "why_likely": "L2 was originally written for a structured-knowledge use case where a short title was the canonical handle. As L2 grew to hold richer content with the body in the JSONB field, the search path lagged.",
+  "severity": "P1",
+  "reproduction": "testing/test_l2_content_search.py — writes an L2 entry whose distinctive marker sits past char 100 of content (so it's NOT in title), then calls memory_read(query=MARKER, tier='l2'). Pre-fix: 0 results. Same with tier=None (which delegates to the L2 branch when L3 has no hit). Post-fix: 1 result, both via tier='l2' and tier=None.",
+  "expected": "memory_read(tier='l2') matches against full content, not just title prefix.",
+  "actual": "Pre-fix: title-only match. Post-fix: dual-query (title + content->>text) merged by id with dedup.",
+  "suggested_fix": "Two queries: ilike on title and ilike on content->>text (PostgREST JSON-path operator). Confirmed working on supabase-py 2.28.3 via direct probe before applying. Merge by id, slice to limit. Empty-query behaviour preserved.",
+  "status": "closed",
+  "created": "2026-04-26T01:00:00Z",
+  "closed": "2026-04-26T01:00:00Z",
+  "linked_solution": "S-013",
+  "verification": {
+    "test_file": "testing/test_l2_content_search.py",
+    "tests_passing": [
+      "memory_read(tier='l2', query=MARKER) returns the entry whose marker is in body past char 100",
+      "memory_read(tier=None, query=MARKER) also returns the entry via the L2 branch"
+    ],
+    "probe_evidence": "Pre-fix run: 0 results from both calls (entry confirmed in Supabase via direct .eq('id', ...) query). Post-fix run: 1 result from each. Dedup verified — the entry is not double-counted when title and content both happen to match.",
+    "regression_check": "testing/test_memory.py — 5/5 pre-existing tests still pass; testing/test_memory_tier_contract.py — 3/3 still pass; testing/test_session_id_propagation.py — 3/3 still pass."
+  },
+  "scope_disclaimer": "T-021 closes the L2 title-only filter gap. It does not address the broader memory-recall question (T-019, T-023): even with content search working, Claude's natural-language query formulation may still fail to hit the right keyword. That remains open."
+}

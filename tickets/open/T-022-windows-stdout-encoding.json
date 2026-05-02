@@ -1,0 +1,18 @@
+{
+  "id": "T-022",
+  "source": "FINDINGS.md F-002 (discovered during Phase 3 env precheck)",
+  "title": "Multiple Python scripts in repo crash on default Windows cp1252 stdout when printing ✓/✗/box-drawing chars",
+  "component": "testing/test_requirements.py, testing/test_runner.py, pi_agent.py:_health_check, pi_agent.py:_get_system_prompt (mode block uses ═ box characters)",
+  "what_failed": "On Windows Python 3.13 with default stdout encoding (cp1252), `print('✓ ...')` raises UnicodeEncodeError. Reproduced during Phase 3 env pre-check on `python testing/test_requirements.py`. The env-var checking logic itself works; only the printout crashes.",
+  "where_failed": "testing/test_requirements.py:24 (the f-string with ✓), testing/test_runner.py (multiple ✓/✗), pi_agent.py:653 (_health_check), pi_agent.py:94-100 and 103-109 (mode-block box characters via \\u2550).",
+  "why_likely": "Author developed in a UTF-8-capable terminal (or set PYTHONIOENCODING globally). The repo runs fine for that author but breaks on a fresh Windows shell. Latest production session bfe9f64b was logged successfully, so Ash's working setup has UTF-8 stdout — but a new contributor or a CI runner would not.",
+  "severity": "P3",
+  "reproduction": "On Windows, fresh shell, no PYTHONIOENCODING set: `python testing/test_requirements.py` raises UnicodeEncodeError. Workaround: `$env:PYTHONIOENCODING='utf-8'; python testing/test_requirements.py` works.",
+  "expected": "Tests and pi_agent.py run without env-var workaround on default Windows shell.",
+  "actual": "Crashes; user must export PYTHONIOENCODING.",
+  "suggested_fix": "Two cheap options: (a) replace ✓/✗ with [OK]/[FAIL] in test files; replace box characters with ASCII = signs in pi_agent.py. Loses some pretty-printing on Linux but works everywhere. (b) Set sys.stdout.reconfigure(encoding='utf-8') at the top of each script that prints non-ASCII. Cleaner but adds boilerplate. Recommend (a) for tests (lowest risk), (b) for pi_agent.py (preserves the existing box-drawing aesthetic where the terminal supports it).",
+  "status": "open",
+  "created": "2026-04-26T01:00:00Z",
+  "closed": null,
+  "linked_solution": null
+}

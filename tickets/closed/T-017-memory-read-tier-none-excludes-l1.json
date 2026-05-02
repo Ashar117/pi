@@ -1,0 +1,29 @@
+{
+  "id": "T-017",
+  "source": "analysis/chat_logs.txt (originally), promoted from analysis/tickets.jsonl 2026-04-26",
+  "session_ref": "## Session 2026-04-24 21:37 (Session ID e9197064)",
+  "title": "memory_read with tier=None silently excludes L1 despite docstring saying 'None for all'",
+  "component": "tools/tools_memory.py:memory_read",
+  "what_failed": "Function signature and docstring promised that tier=None searches every tier. The code only searched L3+L2 in that case; the L1 branch is gated on `if tier == 'l1'` (exclusive). Pi reasons about its own capabilities from contracts (docstrings), so contract drift caused wrong self-descriptions in chat.",
+  "where_failed": "tools/tools_memory.py memory_read() — `if tier == 'l1':` (line 96) excluded L1 from the implicit search; docstring said 'l1/l2/l3 or None for all'.",
+  "why_likely": "L1 (raw_wiki) may be large; an early author probably wanted to avoid expensive scans on broad queries and quietly excluded it without updating the docstring.",
+  "severity": "P2",
+  "reproduction": "Phase 0 audit confirmed via code reading. Phase 3 added testing/test_memory_tier_contract.py: 3 tests that assert (1) docstring no longer claims 'None for all', (2) docstring explicitly marks L1 as opt-in, (3) code behaviour unchanged (the `tier == 'l1'` gate stays). Pre-fix the first two tests fail, the third passes. Post-fix all three pass.",
+  "expected": "Either include L1 in the implicit search, or update docstring so reality matches contract.",
+  "actual": "Pre-fix: docstring lied. Post-fix: docstring corrected to 'tier=None searches L3+L2 only; L1 is opt-in via tier=l1 explicitly'. Code-behaviour change deferred to a future phase when raw_wiki has a proper full-text index.",
+  "suggested_fix": "Conservative: docstring correction only (chosen). Aggressive: `if tier in ('l1', None):` with low default limit (deferred — requires faster L1 query layer).",
+  "status": "closed",
+  "created": "2026-04-24T22:00:00Z",
+  "closed": "2026-04-26T01:00:00Z",
+  "linked_solution": "S-013",
+  "verification": {
+    "test_file": "testing/test_memory_tier_contract.py",
+    "tests_passing": [
+      "docstring no longer claims 'None for all'",
+      "docstring explicitly marks L1 as opt-in",
+      "code behaviour unchanged (L1 still gated)"
+    ],
+    "regression_check": "testing/test_memory.py — 5/5 pre-existing tests still pass post-fix (no behaviour regression on L3 or L2 paths)."
+  },
+  "scope_disclaimer": "T-017 closes the docstring-vs-code drift only. The aggressive fix (include L1 in tier=None searches) is deferred. T-017 closure does not imply that L1 search itself is well-tested or fast."
+}

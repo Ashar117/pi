@@ -1,0 +1,18 @@
+{
+  "id": "T-023",
+  "source": "FINDINGS.md F-001 (Phase 3 canary green-with-caveat)",
+  "title": "Phase 3 round-trip canary passes via L3 ambient context, not via the memory_read tool path",
+  "component": "testing/test_memory_roundtrip.py + the underlying recall pathway in pi_agent.py / tools_memory.py",
+  "what_failed": "The round-trip test wrote a marker via memory_write in agent #1, tore down, rebuilt agent #2, asked agent #2 to recall the color, and got 'Purple. It's in your L3 active context.' VERDICT: GREEN. But agent #2 made ZERO tool calls. The marker was synced from Supabase to SQLite by agent #2's _sync_l3, surfaced in get_l3_context() output, and Claude read it directly from the system prompt. The memory_read tool path — which is the path the production failure mode (T-019 / LOG1+LOG2) actually breaks on — was bypassed. The canary verifies storage and L3 ambient injection. It does NOT verify that memory_read works when invoked via Claude's natural-language query formulation against an entry that isn't already in L3 ambient context.",
+  "where_failed": "Test design, not runtime code. Rooted in pi_agent.py:_get_system_prompt → tools_memory.py:get_l3_context — when an L3 entry fits the 800-token budget it lands ambiently in the system prompt, so Claude has no reason to call memory_read.",
+  "why_likely": "Round-trip designed against the master-prompt §6 Phase 3 spec (assert response contains 'purple'). The spec is satisfied. The spec just doesn't force the memory_read path. The L2 content-search test (T-021/SM-003) does exercise memory_read in isolation, but only against the structural search filter — not against the Claude-formulated-query failure mode.",
+  "severity": "P1",
+  "reproduction": "Run testing/test_memory_roundtrip.py — verdict is GREEN, but the test output's '[C] Pi #2 response' line is followed by '1 interaction(s) logged for session #2' with no '↳ tool:' lines beneath. That zero-tool-call signal IS the bug.",
+  "expected": "A round-trip test that forces the memory_read tool path and asserts Claude's query formulation actually retrieves the right entry.",
+  "actual": "The current canary is satisfied by ambient context. It is a true canary for storage; it is a false canary for the production failure mode the analysis pipeline keeps documenting.",
+  "suggested_fix": "Two-track test design: (a) extend the existing canary to use multiple decoy entries that crowd the L3 budget, forcing Claude to either query L2/L1 or admit it doesn't know; (b) add a parallel test that writes only to L2 (which doesn't auto-load), then asks the recall question in a fresh agent. The L2 path forces memory_read because there is no other way for the answer to surface. T-021's testing/test_l2_content_search.py is structurally close but tests MemoryTools directly, not the agent loop. The new test would invoke PiAgent.process_input and assert (1) memory_read tool call fired, (2) recall response contains the content. Both tests should run in the costly tier. Phase 5's prompt-engineering work on query formulation is the natural fix path if this then reproduces a real failure.",
+  "status": "open",
+  "created": "2026-04-26T01:00:00Z",
+  "closed": null,
+  "linked_solution": null
+}

@@ -26,20 +26,32 @@ Pi is a multi-mode agent built on Claude Sonnet 4.6, with a three-tier memory ba
 
 ---
 
-## Capabilities (today)
+## Capabilities — current honest state
 
-| Capability | Status | Notes |
+This table tracks the *verified* state of each capability, not the design intent. A row is `✅ Working` only when there's an end-to-end test or runtime evidence of it working. Rows that work in unit tests but haven't been verified end-to-end are `🟡`.
+
+| Capability | Status | Evidence |
 |---|---|---|
-| Three-mode routing (Root / Normie / Research) | ✅ Working | Root = Claude Sonnet 4.6 with full tools. Normie = Groq Llama 3.3 70B, free, no tools. Research = 3-agent debate. |
-| Three-tier memory (L3 active / L2 organized / L1 raw archive) | ✅ Working | Supabase as durable store, SQLite as cache, TTL-based sync. |
-| Tool use: memory ops, file ops, Python/bash execution | ✅ Working | Sandboxed local execution, auto-logging on file changes. |
-| Session persistence and continuity | ✅ Working | Session IDs propagate to logs, L1 raw archive, and summaries. |
-| Engineering loop (tickets → solutions → lessons) | ✅ Working | Manual today, structured to be auto-driven later. |
-| Conversation analysis pipeline | ✅ Working | Real chat logs become tickets through `analysis/`. |
-| Cost awareness and budget gating | ✅ Working | Daily limits, mode switching when over budget. |
-| Health diagnostics | ✅ Working | Connection, sync, success-rate checks. |
-| Autonomous ticket generation from logs | 🚧 In progress | Pi flags weak outputs; auto-conversion to tickets is next. |
-| Self-improvement loop (Pi reads SOLUTIONS before fixing) | 🚧 In progress | Architecture is in place, behavior is not yet wired. |
+| Three-mode routing (Root / Normie / Research) | ✅ Working | [pi_agent.py:344-371 (mode switch)](pi_agent.py#L344-L371), [pi_agent.py:373-397 (research)](pi_agent.py#L373-L397). Closed tickets T-009, T-015 cover natural-language mode-switch matching. |
+| Real Claude tool loop (root mode) | ✅ Working | [pi_agent.py:454-482](pi_agent.py#L454-L482). Latest `logs/evolution.jsonl` entry shows live `tools_used: ["memory_read", "memory_read"]`. |
+| Three-tier memory storage layer | ✅ Working | `MemoryTools` write/read/delete in [tools/tools_memory.py](tools/tools_memory.py); 5 unit tests in [testing/test_memory.py](testing/test_memory.py); dual-store write verification at [tools_memory.py:401-422](tools/tools_memory.py#L401-L422). |
+| Memory round-trip through the agent (write via tool → restart → recall via tool) | 🟡 Working (needs round-trip test) | Storage works in isolation; the path Claude actually takes during a real session is not yet covered by an automated test. Phase 3 of [PI_MASTER_PROMPT.md](PI_MASTER_PROMPT.md) adds that test. |
+| Cross-mode continuity (normie → root preserves conversation) | ✅ Working | S-011 / T-016 closed. [pi_agent.py:548-572](pi_agent.py#L548-L572). |
+| Session persistence + summary on exit | ✅ Working | [pi_agent.py:766-777](pi_agent.py#L766-L777); S-006 closed. |
+| Session ID correlation across logs / L1 / summaries | ✅ Working | [pi_agent.py:68](pi_agent.py#L68). Verified in `logs/evolution.jsonl` — five consecutive entries from session `bfe9f64b` all carry the same `metadata.session_id`. |
+| Tool execution (Python / bash / file ops) | ✅ Working | [tools/tools_execution.py](tools/tools_execution.py); 30s subprocess timeout; verified write-back on `modify_file`/`create_file`. |
+| Engineering loop (tickets → solutions → lessons) | ✅ Working | 11 closed tickets, 6 solution records (S-006 to S-011), 10 lessons (L-001 to L-010). |
+| Conversation analysis pipeline | ✅ Working | [analysis/](analysis/) is operating. T-015–T-019 generated through it. |
+| Cost awareness + budget gating | ✅ Working | Daily limit $0.50, auto root → normie switch at limit ([pi_agent.py:402-406](pi_agent.py#L402-L406)). |
+| Health diagnostics on startup | ✅ Working | [pi_agent.py:629-655](pi_agent.py#L629-L655). |
+| Tool-usage analytics (`analyze performance`) | 🔴 Broken (silent) | Logger writes `tools_used`; analyzer reads `tool_calls`. Drift documented in [SCHEMA_MISMATCHES.md SM-001](SCHEMA_MISMATCHES.md). Fix in Phase 2. |
+| `memory_read(tier=None)` searches all tiers | 🔴 Broken (docstring lies) | Excludes L1. Open ticket T-017. Conservative fix is a docstring correction. |
+| L2 search by content keywords (vs. title) | 🔴 Limited | L2 search filters on `title` only; full content is in `content.text`. [SCHEMA_MISMATCHES.md SM-003](SCHEMA_MISMATCHES.md). |
+| Normie mode honesty (refuses tool-shaped requests) | 🟡 Mostly | Strong "Never Mime Tool Use" section in `consciousness.txt`, but prompt sometimes still slips. Open ticket T-019. |
+| Autonomous ticket generation from logs | 🚧 In progress | Pipeline architecture is in place; auto-conversion is not yet wired. |
+| Self-improvement loop (Pi reads SOLUTIONS before fixing) | 🚧 In progress | `SelfModifier` class exists ([evolution.py:261-356](evolution.py#L261-L356)) but is not yet invoked at runtime. |
+
+The most rigorous, citation-backed snapshot is in [STATUS.md](STATUS.md).
 
 ---
 
@@ -57,14 +69,14 @@ Every component writes to logs. Every failure produces a ticket. Every fix produ
 
 The system is designed in layers:
 
-- **Identity layer** — `consciousness.txt` and `self/` define what Pi is, versioned across changes.
+- **Identity layer** — `prompts/consciousness.txt` defines what Pi is, versioned across changes.
 - **Memory layer** — three-tier storage with strict invariants (verified writes go to the durable store, read paths must match write paths, sync is rate-limited).
 - **Tool layer** — replaceable tools that all auto-log to the run record.
 - **Mode layer** — routing between models without breaking session state.
 - **Engineering loop layer** — tickets, solutions, lessons, diagnostics, conversation analysis.
 - **Self-observation layer** — Pi can read its own architecture docs, known limitations, and past solutions.
 
-Full design rationale is in [ARCHITECTURE_DIRECTION.md](ARCHITECTURE_DIRECTION.md). The patterns Pi has already learned the hard way are in [solutions/LESSONS.md](solutions/LESSONS.md).
+Full design rationale: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The patterns Pi has already learned the hard way: [solutions/LESSONS.md](solutions/LESSONS.md).
 
 ---
 
@@ -106,13 +118,16 @@ A few overlapping things, honestly:
 
 Continuous evolution enabled. The agent that committed yesterday's code is not the same one that's running today. The lessons file gets longer. The architecture stabilizes. The autonomy boundary moves outward, slowly, on purpose.
 
-If you want to see what's currently broken and being worked on, read [tickets/open/](tickets/open/) and [analysis/SUMMARY.md](analysis/SUMMARY.md). If you want to see what's been learned along the way, read [solutions/LESSONS.md](solutions/LESSONS.md). Those three files are the real changelog.
+If you want the citation-backed snapshot of *right now*, read [STATUS.md](STATUS.md).
+If you want what's currently being worked on, read [analysis/tickets.jsonl](analysis/tickets.jsonl) and [analysis/SUMMARY.md](analysis/SUMMARY.md).
+If you want what's been learned along the way, read [solutions/LESSONS.md](solutions/LESSONS.md).
+Those four files are the real changelog.
 
 ---
 
 ## Author
 
-Built by **Ash** — CS undergrad at Georgia State University, researching graph neural networks, building Pi in the hours that aren't class or research.
+Built by **Ashar** — CS undergrad at Georgia State University, researching graph neural networks, building Pi in the hours that aren't class or research.
 
 Reach: via GitHub issues on this repo.
 
