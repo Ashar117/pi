@@ -6,6 +6,7 @@ Simple, powerful, composable tools for memory management.
 import json
 import os
 import sqlite3
+import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from supabase import create_client
@@ -242,17 +243,20 @@ class MemoryTools:
                 return {"id": entry_id, "success": False, "verified": False, "error": str(e)}
 
         elif tier == "l1":
-            # Write to L1 raw archive (raw_wiki table)
-            import uuid
-            # T-013: use session_id as thread_id for coherent session threading
-            thread = session_id if session_id else str(uuid.uuid4())
+            # Write to L1 raw archive (raw_wiki table).
+            # raw_wiki.thread_id is UUID NOT NULL — session_id is only 8 hex chars
+            # and cannot be used directly. Derive a deterministic UUID via uuid5 so
+            # all L1 writes in a session (both tool-path and auto-log) share the
+            # same thread_id for reconstruction (T-013, T-024).
+            thread_uuid = (str(uuid.uuid5(uuid.NAMESPACE_DNS, session_id))
+                           if session_id else str(uuid.uuid4()))
             entry = {
                 "id": entry_id,
                 "timestamp": now.isoformat(),
-                "thread_id": thread,
+                "thread_id": thread_uuid,
                 "role": category if category in ("user", "assistant", "system", "tool") else "system",
                 "content": content,
-                "metadata": {"importance": importance, "category": category},
+                "metadata": {"importance": importance, "category": category, "session_id": session_id},
                 "created_at": now.isoformat()
             }
             try:
@@ -262,7 +266,111 @@ class MemoryTools:
                 return {"id": entry_id, "success": False, "verified": False, "error": str(e)}
 
         return {"id": entry_id, "success": False, "error": f"Unknown tier: {tier}"}
-    
+
+    def log_turn(
+        self,
+        thread_id: str,
+        session_id: str,
+        turn_number: int,
+        user_content: str,
+        assistant_content: str,
+        mode: str,
+        tool_calls: Optional[List[Dict]] = None,
+        tokens_in: int = 0,
+        tokens_out: int = 0,
+        cost: float = 0.0,
+    ) -> Dict:
+        """
+        Append one complete conversation turn to L1 (raw_wiki). Best-effort —
+        exceptions are caught and logged; a failure here never surfaces to the
+        caller.
+
+        Inserts one row per participant in the turn, in order:
+          role="user"      — the raw user message
+          role="tool"      — one row per tool call (in call order), if any
+          role="assistant" — Pi's final text response
+
+        All rows share ``thread_id`` so the full turn is reconstructable with a
+        single ``WHERE thread_id = ?`` filter on raw_wiki.
+
+        Args:
+            thread_id:         Proper UUID for the session's L1 thread.
+                               Use uuid5(NAMESPACE_DNS, session_id) in the caller
+                               so tool-path writes and auto-log rows share the
+                               same thread (T-013, T-024).
+            session_id:        8-char hex — stored in metadata for cross-log
+                               correlation with evolution.jsonl.
+            turn_number:       Monotonically increasing counter per session.
+                               Provides an ordering anchor independent of clock
+                               resolution.
+            user_content:      The raw user message text.
+            assistant_content: Pi's final text response.
+            mode:              "root" | "normie" — stored in each row's metadata.
+            tool_calls:        Optional list of dicts, one per tool call:
+                                 name           — tool name string
+                                 input          — dict of arguments
+                                 result_summary — str summary of the result (caller
+                                                  should pre-truncate to ~500 chars)
+            tokens_in:         Claude input token count (root mode; 0 for normie).
+            tokens_out:        Claude output token count (root mode; 0 for normie).
+            cost:              API cost in USD for this turn.
+
+        Returns:
+            {"success": bool, "rows": int}
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        base_meta = {
+            "session_id": session_id,
+            "turn": turn_number,
+            "mode": mode,
+        }
+        entries = []
+
+        # User row — always written first
+        entries.append({
+            "id": str(uuid.uuid4()),
+            "timestamp": now,
+            "thread_id": thread_id,
+            "role": "user",
+            "content": user_content,
+            "metadata": base_meta.copy(),
+        })
+
+        # Tool rows — one per call, in invocation order
+        for tc in (tool_calls or []):
+            tool_input_str = json.dumps(tc.get("input", {}))[:200]
+            result_str = str(tc.get("result_summary", ""))[:300]
+            entries.append({
+                "id": str(uuid.uuid4()),
+                "timestamp": now,
+                "thread_id": thread_id,
+                "role": "tool",
+                "content": f"[{tc['name']}] {tool_input_str} → {result_str}",
+                "metadata": {**base_meta, "tool_name": tc["name"]},
+            })
+
+        # Assistant row — always written last
+        entries.append({
+            "id": str(uuid.uuid4()),
+            "timestamp": now,
+            "thread_id": thread_id,
+            "role": "assistant",
+            "content": assistant_content,
+            "metadata": {
+                **base_meta,
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
+                "cost": round(cost, 6),
+            },
+        })
+
+        try:
+            self.supabase.table("raw_wiki").insert(entries).execute()
+            return {"success": True, "rows": len(entries)}
+        except Exception as e:
+            print(f"[Memory] L1 auto-log failed (non-fatal): {e}")
+            return {"success": False, "rows": 0, "error": str(e)}
+
     def memory_delete(self, target: str, soft: bool = True) -> Dict:
         """
         Delete from memory.
@@ -447,7 +555,6 @@ class MemoryTools:
     
     def _generate_id(self) -> str:
         """Generate unique ID"""
-        import uuid
         return str(uuid.uuid4())
 
 

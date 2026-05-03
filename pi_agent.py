@@ -77,6 +77,11 @@ class PiAgent:
         self.history = []    # Simplified string-only history for research mode context
         self.session_start = datetime.now(timezone.utc)
         self.session_id = uuid.uuid4().hex[:8]  # T-013: short ID for log correlation
+        # T-024: L1 thread UUID — derived deterministically from session_id so
+        # auto-logged rows and any explicit memory_write(tier="l1") tool calls
+        # share the same raw_wiki thread_id. uuid5 is stable across the session.
+        self.l1_thread_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, self.session_id))
+        self.turn_number = 0   # T-024: monotonic turn counter for L1 ordering
         
         run_health_check(self.memory.supabase, self.memory.sqlite_path,
                          ANTHROPIC_API_KEY, GROQ_API_KEY, SUPABASE_KEY)
@@ -176,6 +181,7 @@ class PiAgent:
     def _respond_root(self, user_input: str, interaction_start, tool_calls_made: list) -> str:
         """Root mode: Claude with full tool loop"""
         system_prompt = self._get_system_prompt()
+        l1_tool_records = []  # T-024: separate from tool_calls_made to carry result_summary
 
         # Append user message to persistent history
         self.messages.append({"role": "user", "content": user_input})
@@ -204,6 +210,11 @@ class PiAgent:
                 if block.type == "tool_use":
                     result = self._execute_tool(block.name, block.input)
                     tool_calls_made.append({"id": block.id, "name": block.name, "input": block.input})
+                    l1_tool_records.append({  # T-024: include result for L1 archive
+                        "name": block.name,
+                        "input": dict(block.input),
+                        "result_summary": str(result)[:500],
+                    })
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
@@ -249,6 +260,21 @@ class PiAgent:
             tokens_in=t_in,
             tokens_out=t_out,
             metadata={"duration_seconds": (datetime.now(timezone.utc) - interaction_start).total_seconds(), "session_id": self.session_id}
+        )
+
+        # T-024: Auto-log complete turn to L1 archive.
+        self.turn_number += 1
+        self.memory.log_turn(
+            thread_id=self.l1_thread_id,
+            session_id=self.session_id,
+            turn_number=self.turn_number,
+            user_content=user_input,
+            assistant_content=final_text,
+            mode=self.mode,
+            tool_calls=l1_tool_records,
+            tokens_in=t_in,
+            tokens_out=t_out,
+            cost=total_cost,
         )
 
         return final_text
@@ -308,6 +334,17 @@ class PiAgent:
             tokens_in=0,
             tokens_out=0,
             metadata={"duration_seconds": (datetime.now(timezone.utc) - interaction_start).total_seconds(), "session_id": self.session_id}
+        )
+
+        # T-024: Auto-log complete turn to L1 archive.
+        self.turn_number += 1
+        self.memory.log_turn(
+            thread_id=self.l1_thread_id,
+            session_id=self.session_id,
+            turn_number=self.turn_number,
+            user_content=user_input,
+            assistant_content=content,
+            mode=self.mode,
         )
 
         return content

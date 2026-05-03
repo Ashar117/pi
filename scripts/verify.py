@@ -30,6 +30,7 @@ COSTLY_TESTS = {
     "test_memory_roundtrip.py",   # hits Claude API
     "test_memory_tool_path.py",   # T-023: hits Supabase + Claude API
     "test_l2_content_search.py",  # standalone script (no def test_*); run directly
+    "test_l1_autolog.py",         # standalone script (no def test_*); hits Supabase
     "test_runner.py",             # old harness class (TestRunner.__init__ confuses pytest)
 }
 
