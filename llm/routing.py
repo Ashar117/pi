@@ -1,3 +1,29 @@
+"""
+DEPRECATED — DO NOT EDIT TO FIX RUNTIME BEHAVIOUR.
+
+This module is an orphaned earlier function-based router. It is NOT imported
+by pi_agent.py and does NOT run when the agent runs. Verified with:
+    grep -r "from llm.routing\|import routing\|from llm import" .
+    -> 0 matches outside this file itself.
+
+The live agent code path is:
+    pi_agent.py:PiAgent._respond_root  (Claude with tools, full agentic loop)
+    pi_agent.py:PiAgent._respond_normie (Groq, no tools)
+    pi_agent.py:PiAgent._execute_tool  (dispatches to tools/tools_memory.py
+                                        and tools/tools_execution.py)
+
+Tools ARE wired correctly there — every Claude API call passes
+tools=self._get_tool_definitions() and handles stop_reason=="tool_use".
+Earlier docs (CRITICAL_FIX_TICKET.md, ARCHITECTURE_FIX.md, ARCHITECTURE_ADDENDUM.md,
+VSCODE_CLAUDE_PROMPT.md) wrongly point HERE as the source of tool-call
+hallucination. The real cause was T-015 (mode-switch matcher missing natural
+variants -> agent stuck in normie -> Groq mimed tool calls). See
+solutions/LESSONS.md L-009 / L-011.
+
+Kept on disk only because the __main__ block at the bottom is a useful
+Groq smoke test. Delete the rest if you confirm nothing else relies on it.
+"""
+
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

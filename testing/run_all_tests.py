@@ -67,7 +67,7 @@ if __name__ == "__main__":
     print("=" * 80)
     passed_count = sum(1 for r in all_results if r["passed"])
     for r in all_results:
-        symbol = "✓" if r["passed"] else "✗"
+        symbol = "[OK]" if r["passed"] else "[FAIL]"
         status = "PASSED" if r["passed"] else "FAILED"
         print(f"{symbol} {r['suite']}: {status}")
 
@@ -88,7 +88,7 @@ if __name__ == "__main__":
                 for r in all_results
             ]
         }, f, indent=2)
-    print(f"\n✓ Master results: {master_results_path}")
+    print(f"\n[OK] Master results: {master_results_path}")
 
     # Write master failure report
     failures = [r for r in all_results if not r["passed"]]
@@ -107,7 +107,7 @@ if __name__ == "__main__":
                 if r['stderr']:
                     f.write(f"Errors:\n{r['stderr']}\n")
                 f.write("\n" + "-" * 80 + "\n\n")
-        print(f"✓ Master failures: {master_failures_path}")
+        print(f"[OK] Master failures: {master_failures_path}")
 
-    print("\n✓ All test suites complete")
+    print("\n[OK] All test suites complete")
     sys.exit(0 if passed_count == len(all_results) else 1)

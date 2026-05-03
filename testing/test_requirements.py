@@ -95,9 +95,9 @@ if __name__ == "__main__":
 
     print("\n" + "=" * 60)
     if imports_ok and env_ok:
-        print("✓ ALL REQUIREMENTS SATISFIED")
+        print("[OK] ALL REQUIREMENTS SATISFIED")
     else:
-        print("✗ REQUIREMENTS NOT MET - Fix above issues before running Pi")
+        print("[FAIL] REQUIREMENTS NOT MET - Fix above issues before running Pi")
     print("=" * 60)
 
     sys.exit(0 if (imports_ok and env_ok) else 1)

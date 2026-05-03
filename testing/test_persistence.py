@@ -23,12 +23,12 @@ def test_002_evolution_log_exists():
 
     print(f"  Checking logs dir: {logs_dir}")
     assert os.path.exists(logs_dir), f"Logs directory missing: {logs_dir}"
-    print(f"  ✓ Logs directory exists")
+    print(f"  [OK]Logs directory exists")
 
     evolution_log = os.path.join(logs_dir, "evolution.jsonl")
     if os.path.exists(evolution_log):
         stat = os.stat(evolution_log)
-        print(f"  ✓ evolution.jsonl exists: {stat.st_size} bytes")
+        print(f"  [OK]evolution.jsonl exists: {stat.st_size} bytes")
     else:
         print(f"  ⚠ evolution.jsonl not yet created (will be created on first interaction)")
 
@@ -49,7 +49,7 @@ def test_002_l3_context_loads():
     assert context, "L3 context is empty"
     assert len(context) > 50, f"L3 context too short ({len(context)} chars) - permanent profile missing?"
 
-    print(f"  ✓ L3 context loaded: {len(context)} chars")
+    print(f"  [OK]L3 context loaded: {len(context)} chars")
     return True
 
 
@@ -76,7 +76,7 @@ def test_002_session_history_category_writable():
     print(f"  Read back count: {len(read) if read else 0}")
     assert len(read) > 0, "Session history write succeeded but read returned empty"
 
-    print(f"  ✓ Session history write and read work")
+    print(f"  [OK]Session history write and read work")
     return True
 
 
@@ -114,7 +114,7 @@ def test_002_session_summary_method_exists():
     assert has_method, "_generate_session_summary method not found in pi_agent.py or agent/session.py"
     assert has_exit_save, "No session summary save on exit found in pi_agent.py or agent/session.py"
 
-    print(f"  ✓ Session summary infrastructure exists in pi_agent.py")
+    print(f"  [OK]Session summary infrastructure exists in pi_agent.py")
     return True
 
 

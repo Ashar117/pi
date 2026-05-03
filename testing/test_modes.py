@@ -29,7 +29,7 @@ def test_003_consciousness_file_exists():
     print(f"  consciousness.txt size: {len(content)} chars")
     assert len(content) > 100, "consciousness.txt is nearly empty"
 
-    print(f"  ✓ consciousness.txt exists ({len(content)} chars)")
+    print(f"  [OK]consciousness.txt exists ({len(content)} chars)")
     return True
 
 
@@ -58,7 +58,7 @@ def test_003_system_prompt_injects_mode():
     assert has_root_injection, "No 'MODE: ROOT' state injection found in pi_agent.py or agent/prompt.py"
     assert has_normie_injection, "No 'MODE: NORMIE' state injection found in pi_agent.py or agent/prompt.py"
 
-    print(f"  ✓ Mode state injection exists in _get_system_prompt()")
+    print(f"  [OK]Mode state injection exists in _get_system_prompt()")
     return True
 
 
@@ -81,7 +81,7 @@ def test_003_normie_has_session_context():
     assert has_normie_method, "_respond_normie method not found in pi_agent.py"
     assert has_session_context_in_normie, "No SESSION CONTEXT injection in _respond_normie"
 
-    print(f"  ✓ Normie mode has session context mechanism")
+    print(f"  [OK]Normie mode has session context mechanism")
     return True
 
 
@@ -106,7 +106,7 @@ def test_003_messages_list_persists():
     assert has_self_messages, "self.messages not found in pi_agent.py"
     assert messages_in_init, "self.messages not initialized in __init__"
 
-    print(f"  ✓ self.messages persistent list exists")
+    print(f"  [OK]self.messages persistent list exists")
     return True
 
 

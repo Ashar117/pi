@@ -11,8 +11,14 @@
   "expected": "A round-trip test that forces the memory_read tool path and asserts Claude's query formulation actually retrieves the right entry.",
   "actual": "The current canary is satisfied by ambient context. It is a true canary for storage; it is a false canary for the production failure mode the analysis pipeline keeps documenting.",
   "suggested_fix": "Two-track test design: (a) extend the existing canary to use multiple decoy entries that crowd the L3 budget, forcing Claude to either query L2/L1 or admit it doesn't know; (b) add a parallel test that writes only to L2 (which doesn't auto-load), then asks the recall question in a fresh agent. The L2 path forces memory_read because there is no other way for the answer to surface. T-021's testing/test_l2_content_search.py is structurally close but tests MemoryTools directly, not the agent loop. The new test would invoke PiAgent.process_input and assert (1) memory_read tool call fired, (2) recall response contains the content. Both tests should run in the costly tier. Phase 5's prompt-engineering work on query formulation is the natural fix path if this then reproduces a real failure.",
-  "status": "open",
+  "status": "closed",
   "created": "2026-04-26T01:00:00Z",
-  "closed": null,
-  "linked_solution": null
+  "closed": "2026-05-03T00:00:00Z",
+  "linked_solution": "S-016",
+  "lesson": "L-012",
+  "fix_summary": "Created testing/test_memory_tool_path.py with three pytest tests that force the memory_read tool path. Key design: marker is written to L2 (organized_memory) only — L2 is never loaded into get_l3_context(), so Claude cannot read it ambiently. Fresh agent is created per test. _execute_tool is monkey-patched to capture memory_read calls. Assertions: (1) captured_queries non-empty, (2) response contains marker, (3) query contains a useful keyword (zx9/codeword/secret). Marked @pytest.mark.costly. Companion fix S-013 (T-021) had already fixed the L2 content-search to search content->>text, not just title, so the forced tool call actually returns results.",
+  "verification": {
+    "implementation": "testing/test_memory_tool_path.py exists; 3 pytest tests implemented: test_memory_read_tool_fires, test_recall_response_contains_marker, test_query_contains_useful_keyword",
+    "commit": "413f34e — Fix T-022, SM-005, T-023"
+  }
 }

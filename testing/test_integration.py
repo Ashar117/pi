@@ -33,7 +33,7 @@ def test_integration_supabase_connection():
     r3 = memory.supabase.table("raw_wiki").select("id").limit(1).execute()
     print(f"  raw_wiki query OK, rows returned: {len(r3.data)}")
 
-    print(f"  ✓ All 3 Supabase tables accessible")
+    print(f"  [OK]All 3 Supabase tables accessible")
     return True
 
 
@@ -55,7 +55,7 @@ def test_integration_sqlite_works():
     conn.close()
 
     print(f"  l3_cache row count: {count}")
-    print(f"  ✓ SQLite operational")
+    print(f"  [OK]SQLite operational")
     return True
 
 
@@ -79,24 +79,24 @@ def test_integration_full_write_read_cycle():
     print(f"  Write result: {write_result}")
     has_success = write_result.get("success") is True or write_result.get("status") == "success"
     assert has_success, f"Write failed: {write_result}"
-    print(f"  ✓ Step 1: Write succeeded")
+    print(f"  [OK]Step 1: Write succeeded")
 
     # Read back immediately
     read_result = memory.memory_read(query=unique_marker)
     print(f"  Read result count: {len(read_result) if read_result else 0}")
     assert len(read_result) > 0, f"Immediate read returned empty after write. Write was: {write_result}"
-    print(f"  ✓ Step 2: Immediate read succeeded")
+    print(f"  [OK]Step 2: Immediate read succeeded")
 
     # Verify content
     found = any(test_data in str(entry) for entry in read_result)
     assert found, f"Written content not found in read results. Read: {read_result}"
-    print(f"  ✓ Step 3: Content verified in results")
+    print(f"  [OK]Step 3: Content verified in results")
 
     # Verify in Supabase directly
     supa_check = memory.supabase.table("l3_active_memory").select("*").ilike("content", f"%{unique_marker}%").execute()
     print(f"  Supabase direct check count: {len(supa_check.data)}")
     assert len(supa_check.data) > 0, "Content not found in Supabase l3_active_memory directly"
-    print(f"  ✓ Step 4: Supabase persistence verified")
+    print(f"  [OK]Step 4: Supabase persistence verified")
 
     return True
 
@@ -123,9 +123,9 @@ def test_integration_pi_agent_imports():
     for f in required_files:
         full_path = os.path.join(pi_agent_path, f)
         if os.path.exists(full_path):
-            print(f"  ✓ {f}")
+            print(f"  [OK]{f}")
         else:
-            print(f"  ✗ MISSING: {f}")
+            print(f"  [FAIL]MISSING: {f}")
             missing.append(f)
 
     assert not missing, f"Missing files: {missing}"
@@ -138,11 +138,11 @@ def test_integration_pi_agent_imports():
             source = fh.read()
         try:
             ast.parse(source)
-            print(f"  ✓ {f} syntax OK")
+            print(f"  [OK]{f} syntax OK")
         except SyntaxError as e:
             assert False, f"Syntax error in {f}: {e}"
 
-    print(f"  ✓ All required files present and syntactically valid")
+    print(f"  [OK]All required files present and syntactically valid")
     return True
 
 
