@@ -1,0 +1,16 @@
+{
+  "id": "S-NNN",
+  "ticket_ids": ["T-NNN"],
+  "problem": "What was broken, with evidence: log excerpts, test output, file:line citations. Enough detail that a future reader understands the failure mode without running the code.",
+  "countermeasure": "Exactly what was changed and why. Reference file:line for each edit. If multiple changes, describe them in order.",
+  "files_changed": ["path/to/file.py"],
+  "result": "worked | partial | wrong",
+  "better_future_fix": "What a cleaner or more complete fix would look like. Be specific. This is the prompt for the next person.",
+  "lessons": [
+    "Lesson 1 as a standalone sentence.",
+    "Lesson 2 as a standalone sentence.",
+    "Lesson 3 as a standalone sentence."
+  ],
+  "date": "YYYY-MM-DDTHH:MM:SSZ",
+  "recurring": false
+}

@@ -94,19 +94,25 @@ def test_002_session_summary_method_exists():
     )
     module = importlib.util.module_from_spec(spec)
 
-    # Just check the source code for the method
-    pi_agent_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pi_agent.py")
-    with open(pi_agent_path, 'r') as f:
-        source = f.read()
+    # After Phase 4 refactor, session logic lives in agent/session.py
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    pi_agent_path = os.path.join(root_dir, "pi_agent.py")
+    session_path = os.path.join(root_dir, "agent", "session.py")
+    search_paths = [pi_agent_path, session_path]
+    combined_source = ""
+    for p in search_paths:
+        if os.path.exists(p):
+            with open(p, 'r') as f:
+                combined_source += f.read()
 
-    has_method = "_generate_session_summary" in source
-    has_exit_save = "Session summary saved" in source or "session summary" in source.lower()
+    has_method = "_generate_session_summary" in combined_source
+    has_exit_save = "Session summary saved" in combined_source or "session summary" in combined_source.lower()
 
-    print(f"  _generate_session_summary in pi_agent.py: {has_method}")
+    print(f"  _generate_session_summary in source: {has_method}")
     print(f"  Exit save logic present: {has_exit_save}")
 
-    assert has_method, "_generate_session_summary method not found in pi_agent.py"
-    assert has_exit_save, "No session summary save on exit found in pi_agent.py"
+    assert has_method, "_generate_session_summary method not found in pi_agent.py or agent/session.py"
+    assert has_exit_save, "No session summary save on exit found in pi_agent.py or agent/session.py"
 
     print(f"  ✓ Session summary infrastructure exists in pi_agent.py")
     return True

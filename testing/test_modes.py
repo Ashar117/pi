@@ -38,19 +38,25 @@ def test_003_system_prompt_injects_mode():
     Ticket #003 Test: System prompt includes current mode state
     Expected: _get_system_prompt() includes ROOT or NORMIE state block
     """
-    with open(PI_AGENT_PATH, 'r') as f:
-        source = f.read()
+    # After Phase 4 refactor, mode-block injection lives in agent/prompt.py
+    prompt_path = os.path.join(os.path.dirname(PI_AGENT_PATH), "agent", "prompt.py")
+    search_paths = [PI_AGENT_PATH, prompt_path]
+    combined_source = ""
+    for p in search_paths:
+        if os.path.exists(p):
+            with open(p, 'r', encoding='utf-8') as f:
+                combined_source += f.read()
 
-    has_root_injection = "MODE: ROOT" in source
-    has_normie_injection = "MODE: NORMIE" in source
-    has_session_time = "SESSION TIME" in source or "CURRENT SESSION" in source
+    has_root_injection = "MODE: ROOT" in combined_source
+    has_normie_injection = "MODE: NORMIE" in combined_source
+    has_session_time = "SESSION TIME" in combined_source or "CURRENT SESSION" in combined_source
 
     print(f"  ROOT mode injection in source: {has_root_injection}")
     print(f"  NORMIE mode injection in source: {has_normie_injection}")
     print(f"  Session time injection: {has_session_time}")
 
-    assert has_root_injection, "No 'MODE: ROOT' state injection found in pi_agent.py"
-    assert has_normie_injection, "No 'MODE: NORMIE' state injection found in pi_agent.py"
+    assert has_root_injection, "No 'MODE: ROOT' state injection found in pi_agent.py or agent/prompt.py"
+    assert has_normie_injection, "No 'MODE: NORMIE' state injection found in pi_agent.py or agent/prompt.py"
 
     print(f"  ✓ Mode state injection exists in _get_system_prompt()")
     return True

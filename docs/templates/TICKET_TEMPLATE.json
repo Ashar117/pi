@@ -1,0 +1,20 @@
+{
+  "id": "T-NNN",
+  "title": "One-sentence description of the bug or feature",
+  "status": "open",
+  "severity": "critical | high | medium | low | p3",
+  "opened": "YYYY-MM-DD",
+  "closed": null,
+  "phase_closed": null,
+  "root_cause": "What is actually broken, not symptoms. Cite file:line if known.",
+  "fix": {
+    "files": [],
+    "description": "What was changed and why. Fill in when closing."
+  },
+  "verification": {
+    "tests": [],
+    "notes": "Any additional manual verification steps."
+  },
+  "solution_record": null,
+  "lesson": null
+}

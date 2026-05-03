@@ -1,0 +1,22 @@
+{
+  "id": "T-019",
+  "title": "Normie mode claims tool effects despite strict prompt",
+  "status": "closed",
+  "severity": "high",
+  "opened": "2026-04-25",
+  "closed": "2026-05-02",
+  "phase_closed": 5,
+  "root_cause": "consciousness.txt Never-Mime-Tool-Use section lacked a per-case refusal table. Groq improvised and sometimes produced 'I've stored...', 'saved to L3', fake MODE banners.",
+  "related_bugs": ["C-008 (no memory_read query formation rules)", "C-009 (ghost web_search tool)"],
+  "fix": {
+    "files": ["prompts/consciousness.txt", "prompts/system.txt"],
+    "description": "Added NORMIE MODE REFUSAL TABLE with exact phrases for: 'remember X', 'what did I tell you about Y', 'run code', 'search for X', 'switch to root'. Removed all web_search references (C-009). Added MEMORY_READ QUERY FORMATION RULES (C-008). Rewrote system.txt from 19 thin lines to structured Groq context with mode explanation, tool list, and matching refusal table."
+  },
+  "verification": {
+    "tests": ["testing/test_normie_honesty.py (5 tests, @pytest.mark.costly)", "testing/test_mode_switch_natural.py (22 tests, free, all pass)"],
+    "syntax_check": "python -c \"import ast; ast.parse(open('prompts/consciousness.txt').read())\" — N/A (not Python); reviewed manually",
+    "mode_switch_test": "22/22 PASS"
+  },
+  "solution_record": "S-014",
+  "lesson": "L-013"
+}
