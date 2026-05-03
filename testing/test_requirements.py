@@ -21,24 +21,24 @@ def test_all_imports():
     for import_name, package_name in checks:
         try:
             __import__(import_name)
-            print(f"  ✓ {package_name}")
+            print(f"  [OK]{package_name}")
         except ImportError as e:
-            print(f"  ✗ {package_name} - NOT INSTALLED: {e}")
+            print(f"  [FAIL]{package_name} - NOT INSTALLED: {e}")
             missing.append(package_name)
 
     # ollama optional
     try:
         import ollama
-        print(f"  ✓ ollama (optional)")
+        print(f"  [OK]ollama (optional)")
     except ImportError:
-        print(f"  ⚠ ollama - not installed (optional, for local model support)")
+        print(f"  [WARN]ollama - not installed (optional, for local model support)")
 
     if missing:
         print(f"\n  Missing required packages: {', '.join(missing)}")
         print(f"  Install with: pip install {' '.join(missing)}")
         return False
 
-    print(f"\n  ✓ All required packages installed")
+    print(f"\n  [OK]All required packages installed")
     return True
 
 
@@ -62,23 +62,23 @@ def test_env_vars():
     for var in required_vars:
         val = os.getenv(var)
         if val:
-            print(f"  ✓ {var} = {val[:8]}...")
+            print(f"  [OK]{var} = {val[:8]}...")
         else:
-            print(f"  ✗ {var} - NOT SET")
+            print(f"  [FAIL]{var} - NOT SET")
             missing.append(var)
 
     for var in optional_vars:
         val = os.getenv(var)
         if val:
-            print(f"  ✓ {var} = {val[:8]}... (optional)")
+            print(f"  [OK]{var} = {val[:8]}... (optional)")
         else:
-            print(f"  ⚠ {var} - not set (optional)")
+            print(f"  [WARN]{var} - not set (optional)")
 
     if missing:
         print(f"\n  Missing required env vars: {', '.join(missing)}")
         return False
 
-    print(f"\n  ✓ All required env vars set")
+    print(f"\n  [OK]All required env vars set")
     return True
 
 

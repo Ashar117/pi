@@ -69,7 +69,7 @@ def test_001_memory_read_after_write():
     found = any(test_content in str(entry) for entry in read_result)
     assert found, f"Test content not found in read results. Results: {read_result}"
 
-    print(f"  ✓ Test content found in results")
+    print(f"  [OK]Test content found in results")
     return True
 
 
@@ -96,21 +96,23 @@ def test_001_memory_bulk_read():
         has_success = result.get("success") is True or result.get("status") == "success"
         assert has_success, f"Failed to write: {item}, result: {result}"
 
-    # Read all items with empty query
-    read_result = memory.memory_read(query="")
+    # Read with a specific query that matches the written items
+    # (empty-query read is fragile: L3 has many higher-importance entries that
+    # crowd out importance=3 test items within the limit=20 window)
+    read_result = memory.memory_read(query="Bulk test item")
 
     print(f"  Items written: {len(test_items)}")
-    print(f"  Items read (empty query): {len(read_result) if read_result else 0}")
+    print(f"  Items read (query='Bulk test item'): {len(read_result) if read_result else 0}")
 
     assert read_result is not None, "Read returned None"
-    assert len(read_result) > 0, "Empty query returned no results"
+    assert len(read_result) > 0, "Bulk test query returned no results"
 
     # Check at least one bulk item is present
     all_content = str(read_result)
     found_any = any(item in all_content for item in test_items)
     assert found_any, f"None of bulk items found in read results"
 
-    print(f"  ✓ Bulk read returned {len(read_result)} entries")
+    print(f"  [OK] Bulk read returned {len(read_result)} entries")
     return True
 
 
@@ -137,7 +139,7 @@ def test_001_single_fact_recall():
     found = any("March 15" in str(entry) for entry in result)
     assert found, f"Specific fact not found in query results. Got: {result}"
 
-    print(f"  ✓ Single fact query successful")
+    print(f"  [OK]Single fact query successful")
     return True
 
 
@@ -168,7 +170,7 @@ def test_001_write_read_l3_vs_l2():
     assert len(l3_read) > 0, f"L3 read returned empty. Write result was: {l3_result}"
     assert len(l2_read) > 0, f"L2 read returned empty. Write result was: {l2_result}"
 
-    print(f"  ✓ Both L3 and L2 reads working")
+    print(f"  [OK]Both L3 and L2 reads working")
     return True
 
 

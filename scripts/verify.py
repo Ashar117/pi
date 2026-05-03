@@ -27,7 +27,8 @@ STATUS_OUT = ROOT / "docs" / "STATUS.md"
 COSTLY_TESTS = {
     "test_normie_honesty.py",
     "test_query_formulation.py",
-    "test_memory_roundtrip.py",  # hits Claude API
+    "test_memory_roundtrip.py",   # hits Claude API
+    "test_memory_tool_path.py",   # T-023: hits Supabase + Claude API
     "test_l2_content_search.py",  # standalone script (no def test_*); run directly
     "test_runner.py",             # old harness class (TestRunner.__init__ confuses pytest)
 }

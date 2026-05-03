@@ -21,3 +21,6 @@ Format: `YYYY-MM-DD | file | summary`
 2026-05-02 | scripts/verify.py | Phase 6: CI script — syntax check + non-costly tests + docs/STATUS.md write
 2026-05-02 | docs/CONTRIBUTING.md | Phase 6: engineering loop protocol documented
 2026-05-02 | docs/templates/ | Phase 6: TICKET, SOLUTION, LESSON, MODULE templates added
+2026-05-02 | tools/tools_memory.py | Fix SM-005: L2/L1 memory_write now returns verified=True so tool tracking is accurate
+2026-05-02 | pi_agent.py | Fix T-022: sys.stdout.reconfigure(utf-8) so box-drawing chars work on Windows cp1252
+2026-05-02 | testing/test_memory_tool_path.py | T-023: L2-only round-trip test that forces memory_read tool path (costly)

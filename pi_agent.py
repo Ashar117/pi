@@ -7,6 +7,11 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# T-022: force UTF-8 stdout on Windows so box-drawing chars in the mode block
+# don't crash on a default cp1252 shell
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 import json
 import uuid
 from datetime import datetime, timezone

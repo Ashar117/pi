@@ -237,9 +237,9 @@ class MemoryTools:
             
             try:
                 self.supabase.table("organized_memory").insert(entry).execute()
-                return {"id": entry_id, "success": True, "tier": "l2"}
+                return {"id": entry_id, "success": True, "verified": True, "tier": "l2"}
             except Exception as e:
-                return {"id": entry_id, "success": False, "error": str(e)}
+                return {"id": entry_id, "success": False, "verified": False, "error": str(e)}
 
         elif tier == "l1":
             # Write to L1 raw archive (raw_wiki table)
@@ -257,9 +257,9 @@ class MemoryTools:
             }
             try:
                 self.supabase.table("raw_wiki").insert(entry).execute()
-                return {"id": entry_id, "success": True, "tier": "l1"}
+                return {"id": entry_id, "success": True, "verified": True, "tier": "l1"}
             except Exception as e:
-                return {"id": entry_id, "success": False, "error": str(e)}
+                return {"id": entry_id, "success": False, "verified": False, "error": str(e)}
 
         return {"id": entry_id, "success": False, "error": f"Unknown tier: {tier}"}
     
