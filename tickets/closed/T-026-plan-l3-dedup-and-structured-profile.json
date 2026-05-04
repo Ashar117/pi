@@ -1,0 +1,17 @@
+{
+  "id": "T-026-plan",
+  "title": "Active context pollution: duplicates and contradictions",
+  "severity": "P0",
+  "status": "closed",
+  "solution_id": "S-023",
+  "opened": "2026-05-04",
+  "closed": "2026-05-04",
+  "sub_tickets": ["T-026b", "T-026c"],
+  "evidence": "L3 context showed same subway order stored 3+ times with different markers; same research deadline stored 10 times with unique tags",
+  "root_cause_026b": "_is_l3_duplicate compared content[:120] literally — trailing markers like marker_abc123 made identical facts look distinct within the 120-char window",
+  "root_cause_026c": "No merge semantics for profile data — every profile write inserted a new row, fragmenting identity facts across N entries",
+  "fix_026b": "Added _normalize_for_dedup() static method that strips trailing marker/unique-tag patterns via _MARKER_RE before the 120-char prefix comparison. Both stored and incoming content are normalised before comparing.",
+  "fix_026c": "Added _merge_profile() that detects an existing profile_structured row in SQLite, merges incoming JSON into it (incoming keys win), updates in-place. memory_write dispatches to _merge_profile before the normal insert path when category=='profile_structured'.",
+  "files_changed": ["tools/tools_memory.py", "testing/test_t026_dedup_and_profile.py"],
+  "test": "testing/test_t026_dedup_and_profile.py — 6 tests, all offline"
+}

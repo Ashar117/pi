@@ -5,11 +5,19 @@ Simple, powerful, composable tools for memory management.
 
 import json
 import os
+import re
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 from supabase import create_client
+
+# Strips trailing session markers before dedup comparison so that the same fact
+# appended with different markers (e.g. "...veggies. marker_abc123" vs
+# "...veggies. marker_def456") is recognised as a duplicate.
+_MARKER_RE = re.compile(
+    r'\s*(marker_[0-9a-f]{6,}|unique[a-z0-9]{4,})\s*$', re.IGNORECASE
+)
 
 
 class MemoryTools:
@@ -183,6 +191,23 @@ class MemoryTools:
         now = datetime.now(timezone.utc)
         
         if tier == "l3":
+            # profile_structured: merge JSON fields into the single existing row
+            # rather than inserting a new one.  Incoming keys win on conflict.
+            if category == "profile_structured":
+                merged = self._merge_profile(content, importance)
+                if merged is not None:
+                    return merged
+
+            # Deduplication: skip if a near-duplicate already exists in l3_cache
+            # for the same category (first 120 chars, marker-stripped, case-insensitive).
+            # Prevents the same fact accumulating across sessions when Claude
+            # re-writes something it already stored.
+            dup_id = self._is_l3_duplicate(content, category)
+            if dup_id:
+                print(f"[Memory] L3 dedup: duplicate of {dup_id[:8]}..., skipping")
+                return {"id": dup_id, "success": True, "verified": True,
+                        "tier": "l3", "duplicate": True}
+
             # Write to Supabase
             entry = {
                 "id": entry_id,
@@ -225,6 +250,15 @@ class MemoryTools:
             return self._verify_write(entry_id, content, tier)
         
         elif tier == "l2":
+            # Deduplication: skip if a near-duplicate already exists in organized_memory
+            # for the same category.  Prevents distillation from stacking the same
+            # fact across sessions when the user mentions it repeatedly (T-026).
+            dup_id = self._is_l2_duplicate(content, category)
+            if dup_id:
+                print(f"[Memory] L2 dedup: duplicate of {dup_id[:8]}..., skipping")
+                return {"id": dup_id, "success": True, "verified": True,
+                        "tier": "l2", "duplicate": True}
+
             # Write to L2 organized memory
             entry = {
                 "id": entry_id,
@@ -364,12 +398,284 @@ class MemoryTools:
             },
         })
 
+        # Stamp each row with a monotonic seq so within-turn ordering is
+        # recoverable even if Supabase returns rows in an unspecified order.
+        for seq_i, entry in enumerate(entries):
+            entry["metadata"]["seq"] = seq_i
+
         try:
             self.supabase.table("raw_wiki").insert(entries).execute()
             return {"success": True, "rows": len(entries)}
         except Exception as e:
             print(f"[Memory] L1 auto-log failed (non-fatal): {e}")
             return {"success": False, "rows": 0, "error": str(e)}
+
+    @staticmethod
+    def _normalize_for_dedup(text: str) -> str:
+        """Strip trailing session markers and normalise case/whitespace."""
+        return _MARKER_RE.sub('', text[:120]).strip().lower()
+
+    def _merge_profile(self, incoming_content: str, importance: int) -> Optional[Dict]:
+        """Merge ``incoming_content`` (JSON) into the existing profile_structured row.
+
+        Returns a result dict with ``merged=True`` if an existing row was found
+        and updated, or ``None`` to signal the caller to fall through to a normal
+        insert (first-ever profile write).
+        """
+        try:
+            incoming = json.loads(incoming_content)
+        except (json.JSONDecodeError, TypeError):
+            return None  # not JSON — fall through to normal insert
+
+        conn = sqlite3.connect(self.sqlite_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, content FROM l3_cache WHERE category = 'profile_structured' LIMIT 1"
+        )
+        row = cursor.fetchone()
+
+        if row is None:
+            conn.close()
+            return None  # first write — let caller do normal insert
+
+        existing_id, existing_raw = row
+        try:
+            existing = json.loads(existing_raw or "{}")
+        except (json.JSONDecodeError, TypeError):
+            existing = {}
+
+        merged = {**existing, **incoming}  # incoming wins on conflict
+        merged_str = json.dumps(merged)
+
+        cursor.execute(
+            "UPDATE l3_cache SET content=?, importance=? WHERE id=?",
+            [merged_str, max(importance, existing.get("_importance", importance)), existing_id],
+        )
+        conn.commit()
+        conn.close()
+
+        # Best-effort Supabase update — never blocks
+        try:
+            self.supabase.table("l3_active_memory").update(
+                {"content": merged_str, "importance": importance}
+            ).eq("id", existing_id).execute()
+        except Exception as e:
+            print(f"[Memory] profile_structured Supabase update failed: {e}")
+
+        print(f"[Memory] profile_structured merged into {existing_id[:8]}...")
+        return {"id": existing_id, "success": True, "verified": True,
+                "tier": "l3", "merged": True}
+
+    def _is_l3_duplicate(self, content: str, category: str) -> Optional[str]:
+        """Return existing entry id if a near-duplicate exists in l3_cache, else None.
+
+        Compares the first 120 chars (marker-stripped, case-insensitive) of
+        ``content`` against every cached entry in the same category.  Trailing
+        markers like ``marker_abc123`` and ``unique7x4b`` are removed before
+        comparison so that the same fact appended with different markers is
+        correctly identified as a duplicate.
+        """
+        prefix = self._normalize_for_dedup(content)
+        if not prefix:
+            return None
+        conn = sqlite3.connect(self.sqlite_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, content FROM l3_cache WHERE category = ? LIMIT 200",
+            [category],
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        for row_id, row_content in rows:
+            if self._normalize_for_dedup(row_content or "") == prefix:
+                return row_id
+        return None
+
+    def get_l1_thread(self, thread_id: str) -> List[Dict]:
+        """Fetch all L1 rows for a session thread from raw_wiki, ordered by (turn, seq).
+
+        Returns an empty list on any error so callers can treat the result as a
+        simple iterable without extra error handling.
+        """
+        try:
+            r = (
+                self.supabase.table("raw_wiki")
+                .select("*")
+                .eq("thread_id", thread_id)
+                .order("timestamp")
+                .execute()
+            )
+            rows = r.data or []
+            # Secondary sort by (turn, seq) from metadata so within-turn ordering
+            # is stable even when Supabase returns rows with identical timestamps.
+            rows.sort(key=lambda x: (
+                (x.get("metadata") or {}).get("turn", 0),
+                (x.get("metadata") or {}).get("seq", 0),
+            ))
+            return rows
+        except Exception as e:
+            print(f"[Memory] get_l1_thread error: {e}")
+            return []
+
+    def prune_l1(self, days: int = 30) -> Dict:
+        """Delete raw_wiki entries older than ``days`` days.
+
+        Best-effort — errors are caught and returned in the result dict rather
+        than raised so that a Supabase hiccup during session shutdown never
+        blocks the agent from exiting cleanly.
+        """
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        try:
+            r = (
+                self.supabase.table("raw_wiki")
+                .delete()
+                .lt("created_at", cutoff)
+                .execute()
+            )
+            deleted = len(r.data or [])
+            if deleted > 0:
+                print(f"[Memory] L1 prune: deleted {deleted} rows older than {days}d")
+            return {"success": True, "deleted": deleted}
+        except Exception as e:
+            print(f"[Memory] L1 prune error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _is_l2_duplicate(self, content: str, category: str) -> Optional[str]:
+        """Return existing entry id if a near-duplicate exists in organized_memory, else None.
+
+        Compares the first 120 chars (case-insensitive, stripped) against all L2
+        rows in the same category.  Requires a Supabase round-trip (no local L2
+        cache).  Returns None on any error so a network hiccup never silently
+        blocks a legitimate write.
+        """
+        prefix = content[:120].strip().lower()
+        if not prefix:
+            return None
+        try:
+            r = (
+                self.supabase.table("organized_memory")
+                .select("id, title")
+                .eq("category", category)
+                .limit(200)
+                .execute()
+            )
+            for row in (r.data or []):
+                # title is content[:100] — sufficient for prefix comparison
+                existing = (row.get("title") or "")[:120].strip().lower()
+                if existing == prefix[:len(existing)] and len(existing) >= min(60, len(prefix)):
+                    return row["id"]
+        except Exception as e:
+            print(f"[Memory] L2 dedup check error (non-fatal): {e}")
+        return None
+
+    def prune_l3_expired(self) -> Dict:
+        """Delete L3 entries whose active_until has passed from both Supabase and SQLite.
+
+        Entries past their expiry are already invisible in get_l3_context() queries,
+        but they accumulate in storage indefinitely without this cleanup (T-026).
+        Best-effort — errors are caught and returned in the result dict.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        supabase_deleted = 0
+        sqlite_deleted = 0
+        try:
+            r = (
+                self.supabase.table("l3_active_memory")
+                .delete()
+                .lt("active_until", now)
+                .not_.is_("active_until", "null")
+                .execute()
+            )
+            supabase_deleted = len(r.data or [])
+        except Exception as e:
+            print(f"[Memory] L3 Supabase prune error: {e}")
+
+        try:
+            conn = sqlite3.connect(self.sqlite_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM l3_cache WHERE active_until IS NOT NULL AND active_until < ?",
+                [now],
+            )
+            sqlite_deleted = cursor.rowcount
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[Memory] L3 SQLite prune error: {e}")
+
+        total = supabase_deleted + sqlite_deleted
+        if total > 0:
+            print(f"[Memory] L3 prune: removed {supabase_deleted} from Supabase, "
+                  f"{sqlite_deleted} from SQLite cache")
+        return {"success": True, "supabase_deleted": supabase_deleted,
+                "sqlite_deleted": sqlite_deleted}
+
+    def promote_l2_to_l3(self, importance_threshold: int = 8) -> Dict:
+        """Promote high-importance L2 facts to L3 ambient context.
+
+        Queries organized_memory for active entries at or above importance_threshold,
+        then writes any that are not already in L3 to l3_active_memory via
+        memory_write(tier='l3').  Runs at session end so that facts extracted by
+        distill_session() with high importance become ambient in the next session
+        without requiring an explicit memory_write(tier='l3') call (T-026).
+
+        Args:
+            importance_threshold: Minimum L2 importance to consider for promotion.
+                                  Default 8 — only genuinely important facts
+                                  (user profile, primary projects) are promoted.
+
+        Returns:
+            {"promoted": N, "skipped": M}
+        """
+        promoted = 0
+        skipped = 0
+        try:
+            r = (
+                self.supabase.table("organized_memory")
+                .select("id, title, content, category, importance")
+                .eq("status", "active")
+                .gte("importance", importance_threshold)
+                .order("importance", desc=True)
+                .limit(50)
+                .execute()
+            )
+            candidates = r.data or []
+        except Exception as e:
+            print(f"[Memory] promote_l2_to_l3 fetch error: {e}")
+            return {"promoted": 0, "skipped": 0}
+
+        for row in candidates:
+            # Extract full text: content is JSONB {"text": "..."} or plain string
+            raw_content = row.get("content") or {}
+            if isinstance(raw_content, dict):
+                text = raw_content.get("text") or row.get("title") or ""
+            else:
+                text = str(raw_content)
+
+            if not text.strip():
+                skipped += 1
+                continue
+
+            # Skip if already in L3 (prefix dedup via SQLite cache — no network)
+            dup_id = self._is_l3_duplicate(text, row.get("category", "note"))
+            if dup_id:
+                skipped += 1
+                continue
+
+            result = self.memory_write(
+                content=text,
+                tier="l3",
+                importance=row.get("importance", importance_threshold),
+                category=row.get("category", "note"),
+            )
+            if result.get("success"):
+                promoted += 1
+            else:
+                skipped += 1
+
+        if promoted > 0:
+            print(f"[Memory] L2->L3 promotion: {promoted} facts promoted, {skipped} skipped")
+        return {"promoted": promoted, "skipped": skipped}
 
     def memory_delete(self, target: str, soft: bool = True) -> Dict:
         """

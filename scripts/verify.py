@@ -26,7 +26,9 @@ STATUS_OUT = ROOT / "docs" / "STATUS.md"
 
 COSTLY_TESTS = {
     "test_normie_honesty.py",
+    "test_normie_no_misfire.py",   # T-024: hits real Groq API
     "test_query_formulation.py",
+    "test_query_formulation_v2.py",  # T-027: hits real Claude API
     "test_memory_roundtrip.py",   # hits Claude API
     "test_memory_tool_path.py",   # T-023: hits Supabase + Claude API
     "test_l2_content_search.py",  # standalone script (no def test_*); run directly
@@ -39,8 +41,8 @@ def syntax_check_all() -> tuple[list[str], list[str]]:
     """Return (passed_paths, failed_paths) for all .py files in the repo."""
     passed, failed = [], []
     for path in sorted(ROOT.rglob("*.py")):
-        # skip venv, __pycache__, .git
-        if any(part in path.parts for part in ("pi_env", "__pycache__", ".git")):
+        # skip venv, __pycache__, .git, and tool-managed worktree dirs
+        if any(part in path.parts for part in ("pi_env", "__pycache__", ".git", ".claude")):
             continue
         try:
             ast.parse(path.read_text(encoding="utf-8", errors="replace"))

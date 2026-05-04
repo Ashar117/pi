@@ -10,6 +10,12 @@ data/
 logs/
 evolution.jsonl
 
+# Obsidian vault config — personal settings, never commit
+.obsidian/
+
+# Engineering backlog — contains personal context/location references
+PI_ENGINEERING_PLAN.md
+
 # Raw conversation transcripts — personal, never push
 # (the rest of analysis/ is public: README, WORKFLOW, SUMMARY, tickets.jsonl)
 analysis/chat_logs.txt
@@ -23,6 +29,9 @@ __pycache__/
 pi_env/
 *.backup.*
 temp_exec.py
+
+# MCP server config (contains API keys)
+.mcp.json
 
 # OS and IDE
 .DS_Store

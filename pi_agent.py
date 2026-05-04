@@ -13,6 +13,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
@@ -22,18 +23,31 @@ from app.config import (
     GROQ_API_KEY,
     SUPABASE_URL,
     SUPABASE_KEY,
-    DEFAULT_MODE
+    DEFAULT_MODE,
+    OPENWEATHER_API_KEY,
+    ALPHA_VANTAGE_KEY,
+    NEWS_API_KEY,
 )
 
 import anthropic
 from groq import Groq
+try:
+    from groq import RateLimitError as _GroqRateLimitError
+    from groq import APIStatusError as _GroqAPIStatusError
+except ImportError:
+    _GroqRateLimitError = None
+    _GroqAPIStatusError = None
 
 from tools.tools_memory import MemoryTools
 from tools.tools_execution import ExecutionTools
+from tools.tools_awareness import AwarenessTools
 from evolution import EvolutionTracker
 from agent.health import run_health_check
 from agent.review import check_monthly_review
-from agent.truncation import truncate_messages_safely, extract_text_from_messages
+from agent.truncation import (
+    truncate_messages_safely, extract_text_from_messages,
+    compress_messages_with_groq,
+)
 from agent.session import generate_session_summary, on_exit
 from agent.tools import get_tool_definitions, execute_tool
 from agent.prompt import build_system_prompt, minimal_consciousness
@@ -61,6 +75,13 @@ class PiAgent:
             print("[Pi] Using minimal consciousness")
             self.consciousness = self._minimal_consciousness()
         
+        # State — initialised early so subsystem setup can reference them
+        self.mode = DEFAULT_MODE
+        self.messages = []   # Persistent API message list (raw content blocks preserved)
+        self.history = []    # Simplified string-only history for research mode context
+        self.session_start = datetime.now(timezone.utc)
+        self.session_id = uuid.uuid4().hex[:8]  # T-013: short ID for log correlation
+
         # Initialize systems
         self.memory = MemoryTools(SUPABASE_URL, SUPABASE_KEY)
         self.execution = ExecutionTools()
@@ -70,18 +91,20 @@ class PiAgent:
         # Initialize LLM clients
         self.claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         self.groq = Groq(api_key=GROQ_API_KEY)
-        
-        # State
-        self.mode = DEFAULT_MODE
-        self.messages = []   # Persistent API message list (raw content blocks preserved)
-        self.history = []    # Simplified string-only history for research mode context
-        self.session_start = datetime.now(timezone.utc)
-        self.session_id = uuid.uuid4().hex[:8]  # T-013: short ID for log correlation
-        # T-024: L1 thread UUID — derived deterministically from session_id so
-        # auto-logged rows and any explicit memory_write(tier="l1") tool calls
-        # share the same raw_wiki thread_id. uuid5 is stable across the session.
+
+        # Awareness — fetch live world state once at startup, cache 30 min
+        self.awareness = AwarenessTools(
+            openweather_key=OPENWEATHER_API_KEY or "",
+            alpha_vantage_key=ALPHA_VANTAGE_KEY or "",
+            news_api_key=NEWS_API_KEY or "",
+        )
+        print("[Pi] Loading live awareness data (weather, news, markets, research)...")
+        self.awareness_snapshot = self.awareness.get_awareness_snapshot()
+        print("[Pi] Awareness loaded")
+
+        # T-024: L1 thread UUID — deterministic from session_id; shared by auto-log and tool-path writes
         self.l1_thread_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, self.session_id))
-        self.turn_number = 0   # T-024: monotonic turn counter for L1 ordering
+        self.turn_number = 0
         
         run_health_check(self.memory.supabase, self.memory.sqlite_path,
                          ANTHROPIC_API_KEY, GROQ_API_KEY, SUPABASE_KEY)
@@ -95,8 +118,10 @@ class PiAgent:
         return minimal_consciousness()
     
     def _get_system_prompt(self) -> str:
-        """Thin wrapper preserving the method API; logic in agent.prompt."""
-        return build_system_prompt(self.consciousness, self.mode, self.memory)
+        base = build_system_prompt(self.consciousness, self.mode, self.memory)
+        if self.mode == "root" and self.awareness_snapshot:
+            return base + "\n\n" + self.awareness_snapshot
+        return base
     
     def _get_tool_definitions(self) -> List[Dict]:
         """Thin wrapper preserving the method API; logic in agent.tools."""
@@ -178,9 +203,78 @@ class PiAgent:
             )
             return f"[Pi] Error: {str(e)}"
 
+    def _prefetch_memory(self, user_input: str) -> str:
+        """Extract a keyword from user_input and search L3+L2 memory.
+
+        Only fires on recall questions — statements of fact and small talk are
+        skipped entirely to avoid spurious searches ("followed", "planning", etc.).
+        Returns a formatted block to append to the system prompt, or "".
+        Best-effort — never raises.
+        """
+        try:
+            lower = user_input.lower().rstrip(" ?.")
+
+            # Step 1: only prefetch when the message is a recall question.
+            RECALL_SIGNALS = {
+                "what", "which", "remind", "tell me", "do i", "have i",
+                "show me", "when is", "where is", "who is", "my ",
+            }
+            is_recall = (
+                user_input.rstrip().endswith("?")
+                or any(sig in lower for sig in RECALL_SIGNALS)
+            )
+            if not is_recall:
+                return ""
+
+            # Step 2: extract the most specific non-filler keyword.
+            stop_words = {
+                "the", "a", "an", "is", "are", "was", "were", "be", "been",
+                "have", "has", "had", "do", "does", "did", "will", "would",
+                "can", "could", "should", "may", "might", "shall", "must",
+                "and", "or", "but", "if", "in", "on", "at", "to", "for",
+                "of", "with", "by", "from", "up", "about", "into", "what",
+                "how", "when", "where", "who", "why", "that", "this", "it",
+                "i", "you", "we", "me", "my", "your", "our", "please", "just",
+                "like", "so", "then", "now", "its", "as", "not", "no", "all",
+                # T-027: reject generic nouns that never produce useful hits
+                "location", "things", "stuff", "planning", "going", "good",
+                "great", "okay", "sure", "yeah", "tell", "remind", "show",
+                "have", "give", "know", "need", "want", "think", "said",
+            }
+            words = re.findall(r"\b[a-zA-Z]{4,}\b", user_input.lower())
+            keywords = [w for w in words if w not in stop_words]
+            if not keywords:
+                return ""
+
+            query = keywords[0]
+
+            # Step 3: normalise plural → singular ("deadlines" → "deadline")
+            if query.endswith("s") and len(query) > 4:
+                query = query[:-1]
+
+            hits = self.memory.memory_read(query=query, limit=4)
+            if not hits:
+                return ""
+            lines = [f"[PREFETCH: '{query}']"]
+            for h in hits[:4]:
+                tier_label = h.get("tier", "?").upper()
+                content = (h.get("content") or "")[:200]
+                lines.append(f"  [{tier_label}] {content}")
+            return "\n".join(lines)
+        except Exception:
+            return ""
+
     def _respond_root(self, user_input: str, interaction_start, tool_calls_made: list) -> str:
         """Root mode: Claude with full tool loop"""
         system_prompt = self._get_system_prompt()
+
+        # Proactive memory prefetch: search L3+L2 for terms in the user's message
+        # and inject relevant hits into the system prompt before Claude sees it.
+        # This means Pi always has relevant context without needing to call memory_read.
+        prefetch = self._prefetch_memory(user_input)
+        if prefetch:
+            system_prompt = system_prompt + "\n\n" + prefetch
+
         l1_tool_records = []  # T-024: separate from tool_calls_made to carry result_summary
 
         # Append user message to persistent history
@@ -280,8 +374,18 @@ class PiAgent:
         return final_text
 
     def _truncate_messages_safely(self, max_messages: int = 20):
-        """Thin wrapper preserving the method API; logic in agent.truncation."""
-        self.messages = truncate_messages_safely(self.messages, max_messages)
+        """Compress or hard-truncate message history depending on length.
+
+        At 30+ messages, Groq summarises the oldest half into a context block
+        (free, zero Claude cost) so long sessions don't lose earlier context.
+        Below that threshold, falls back to the safe hard-truncation logic.
+        """
+        if len(self.messages) >= 30:
+            self.messages = compress_messages_with_groq(
+                self.messages, self.groq, threshold=30, keep_recent=12
+            )
+        else:
+            self.messages = truncate_messages_safely(self.messages, max_messages)
 
     def _extract_text_from_messages(self, n: int = 10) -> str:
         """Thin wrapper preserving the method API; logic in agent.truncation."""
@@ -306,6 +410,7 @@ class PiAgent:
         groq_messages = [{"role": "system", "content": system_prompt}]
         groq_messages.append({"role": "user", "content": user_input})
 
+        error_type: str | None = None
         try:
             response = self.groq.chat.completions.create(
                 model="llama-3.3-70b-versatile",
@@ -314,7 +419,19 @@ class PiAgent:
             )
             content = response.choices[0].message.content
         except Exception as e:
-            content = f"[Pi] Groq error: {str(e)}"
+            if _GroqRateLimitError and isinstance(e, _GroqRateLimitError):
+                content = (
+                    "Hit the daily free-tier limit on normie mode. "
+                    "Switch to root mode, or check back in an hour."
+                )
+                error_type = "rate_limit"
+            elif _GroqAPIStatusError and isinstance(e, _GroqAPIStatusError):
+                content = "Something went wrong on my end — try again in a moment."
+                error_type = "api_error"
+            else:
+                content = "Couldn't reach my language model — try again in a moment."
+                error_type = "unknown"
+            print(f"[Pi] Groq {error_type}: {e}", flush=True)
 
         # T-016: Persist assistant turn to unified store as well.
         self.messages.append({"role": "assistant", "content": content})
@@ -323,17 +440,22 @@ class PiAgent:
         self.history.append({"role": "user", "content": user_input})
         self.history.append({"role": "assistant", "content": content})
 
+        duration = (datetime.now(timezone.utc) - interaction_start).total_seconds()
         self.evolution.log_interaction(
             user_input=user_input,
             pi_response=content,
             tool_calls=[],
-            success=True,
+            success=(error_type is None),
             mode=self.mode,
             cost=0.0,
             model="groq",
             tokens_in=0,
             tokens_out=0,
-            metadata={"duration_seconds": (datetime.now(timezone.utc) - interaction_start).total_seconds(), "session_id": self.session_id}
+            metadata={
+                "duration_seconds": duration,
+                "session_id": self.session_id,
+                **({"error_type": error_type} if error_type else {}),
+            },
         )
 
         # T-024: Auto-log complete turn to L1 archive.
@@ -393,6 +515,42 @@ Failed by model:
         """Thin wrapper preserving the method API; logic in agent.session."""
         return generate_session_summary(self.groq, self.messages, self.history, n=12)
 
+    def _daily_briefing(self) -> str:
+        """Generate a startup briefing from L3 context + recent session stats.
+
+        Runs once at startup via run(). Best-effort — never raises.
+        """
+        try:
+            today = datetime.now(timezone.utc).strftime("%A, %Y-%m-%d")
+            recent = self.evolution.get_recent_interactions(hours=24)
+            sessions_today = len({
+                i.get("metadata", {}).get("session_id", "")
+                for i in recent if i.get("metadata", {}).get("session_id")
+            })
+            cost_today = sum(i.get("cost", 0) for i in recent)
+
+            # Pull top L3 facts (already cached locally — no network)
+            l3_ctx = self.memory.get_l3_context(max_tokens=400)
+
+            # Count open tickets
+            from pathlib import Path
+            open_tickets = len(list(
+                (Path(__file__).parent / "tickets" / "open").glob("*.json")
+            ))
+
+            lines = [
+                f"=== Pi Briefing — {today} ===",
+                f"Sessions today: {sessions_today}  |  Cost today: ${cost_today:.4f}  |  Open tickets: {open_tickets}",
+                f"Mode: {self.mode}",
+            ]
+            if l3_ctx.strip():
+                lines.append("")
+                lines.append(l3_ctx.strip())
+            lines.append("=" * 40)
+            return "\n".join(lines)
+        except Exception:
+            return ""
+
     def run(self):
         """Main loop"""
 
@@ -401,7 +559,12 @@ Failed by model:
         print("="*60)
         print(f"Mode: {self.mode}")
         print("Commands: 'root mode', 'normie mode', 'research mode', 'analyze performance', 'exit'")
-        print("="*60 + "\n")
+        print("="*60)
+
+        briefing = self._daily_briefing()
+        if briefing:
+            print("\n" + briefing)
+        print()
 
         while True:
             try:

@@ -1,0 +1,14 @@
+{
+  "id": "T-025-plan",
+  "title": "Raw provider errors leak to user",
+  "severity": "P0",
+  "status": "closed",
+  "solution_id": "S-022",
+  "opened": "2026-05-04",
+  "closed": "2026-05-04",
+  "evidence": "Pi: [Pi] Groq error: Error code: 429 - {'error': {'message': 'Rate limit reached...'}}",
+  "root_cause": "pi_agent.py _respond_normie had bare 'except Exception as e: content = f\"[Pi] Groq error: {str(e)}\"' — raw exception string returned as response, success always logged as True regardless of error",
+  "fix": "Replaced bare handler with typed except blocks: RateLimitError → friendly rate-limit message, APIStatusError → generic retry message, fallback Exception → generic. All errors print internally (not to response), log success=False + error_type to evolution.jsonl. Same fix applied to the dead copy in agent/respond.py.",
+  "files_changed": ["pi_agent.py", "agent/respond.py", "testing/test_provider_error_handling.py"],
+  "test": "testing/test_provider_error_handling.py — 4 tests, mocked Groq, no network required"
+}

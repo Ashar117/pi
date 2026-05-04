@@ -1,12 +1,9 @@
-"""Session lifecycle helpers — summary generation (Groq) and exit handler.
-
-Mechanical lift from PiAgent._generate_session_summary and the EXIT branch
-of PiAgent.run() (Phase 4) — no behaviour change.
-"""
+"""Session lifecycle helpers — summary generation (Groq) and exit handler."""
 from datetime import datetime, timezone
 from typing import List, Dict
 
 from agent.truncation import extract_text_from_messages
+from memory.pipeline import distill_session
 
 
 def generate_session_summary(
@@ -70,6 +67,38 @@ def on_exit(agent) -> None:
                 session_id=agent.session_id,
             )
             print("[Memory] Session summary saved")
+
+    # L1 -> L2 distillation: extract durable facts from this session's archive.
+    # Runs only if we have an L1 thread (root mode turns populate it).
+    if getattr(agent, "l1_thread_id", None):
+        try:
+            distill_session(
+                thread_id=agent.l1_thread_id,
+                session_id=agent.session_id,
+                memory_tools=agent.memory,
+                groq_client=agent.groq,
+            )
+        except Exception as e:
+            print(f"[Memory] Distillation failed (non-fatal): {e}")
+
+    # L1 TTL enforcement: prune raw_wiki rows older than 30 days.
+    try:
+        agent.memory.prune_l1(days=30)
+    except Exception as e:
+        print(f"[Memory] L1 prune failed (non-fatal): {e}")
+
+    # L2 -> L3 promotion: elevate high-importance (>=8) L2 facts to ambient context.
+    # Runs after distillation so facts written this session are eligible immediately.
+    try:
+        agent.memory.promote_l2_to_l3(importance_threshold=8)
+    except Exception as e:
+        print(f"[Memory] L2->L3 promotion failed (non-fatal): {e}")
+
+    # L3 expired entry cleanup: remove past-active_until rows from Supabase + SQLite.
+    try:
+        agent.memory.prune_l3_expired()
+    except Exception as e:
+        print(f"[Memory] L3 prune failed (non-fatal): {e}")
 
     recent = agent.evolution.get_recent_interactions(hours=24)
     total_cost = sum(i.get("cost", 0) for i in recent)

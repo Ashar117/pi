@@ -9,6 +9,13 @@ import json
 from datetime import datetime, timezone
 from typing import List
 
+try:
+    from groq import RateLimitError as _GroqRateLimitError
+    from groq import APIStatusError as _GroqAPIStatusError
+except ImportError:  # groq not installed in test env
+    _GroqRateLimitError = None
+    _GroqAPIStatusError = None
+
 
 def respond_root(agent, user_input: str, interaction_start, tool_calls_made: list) -> str:
     """Root mode: Claude with full tool loop."""
@@ -111,6 +118,7 @@ def respond_normie(agent, user_input: str, interaction_start) -> str:
     groq_messages = [{"role": "system", "content": system_prompt}]
     groq_messages.append({"role": "user", "content": user_input})
 
+    error_type: str | None = None
     try:
         response = agent.groq.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -119,7 +127,20 @@ def respond_normie(agent, user_input: str, interaction_start) -> str:
         )
         content = response.choices[0].message.content
     except Exception as e:
-        content = f"[Pi] Groq error: {str(e)}"
+        if _GroqRateLimitError and isinstance(e, _GroqRateLimitError):
+            content = (
+                "Hit the daily free-tier limit on normie mode. "
+                "Switch to root mode, or check back in an hour."
+            )
+            error_type = "rate_limit"
+        elif _GroqAPIStatusError and isinstance(e, _GroqAPIStatusError):
+            content = "Something went wrong on my end — try again in a moment."
+            error_type = "api_error"
+        else:
+            content = "Couldn't reach my language model — try again in a moment."
+            error_type = "unknown"
+        # log the raw error detail internally, never in the response
+        print(f"[Pi] Groq {error_type}: {e}", flush=True)
 
     # T-016: Persist assistant turn to unified store as well.
     agent.messages.append({"role": "assistant", "content": content})
@@ -128,19 +149,21 @@ def respond_normie(agent, user_input: str, interaction_start) -> str:
     agent.history.append({"role": "user", "content": user_input})
     agent.history.append({"role": "assistant", "content": content})
 
+    duration = (datetime.now(timezone.utc) - interaction_start).total_seconds()
     agent.evolution.log_interaction(
         user_input=user_input,
         pi_response=content,
         tool_calls=[],
-        success=True,
+        success=(error_type is None),
         mode=agent.mode,
         cost=0.0,
         model="groq",
         tokens_in=0,
         tokens_out=0,
         metadata={
-            "duration_seconds": (datetime.now(timezone.utc) - interaction_start).total_seconds(),
+            "duration_seconds": duration,
             "session_id": agent.session_id,
+            **({"error_type": error_type} if error_type else {}),
         },
     )
 

@@ -3,7 +3,7 @@ DEPRECATED — DO NOT EDIT TO FIX RUNTIME BEHAVIOUR.
 
 This module is an orphaned earlier function-based router. It is NOT imported
 by pi_agent.py and does NOT run when the agent runs. Verified with:
-    grep -r "from llm.routing\|import routing\|from llm import" .
+    grep -r "from llm.routing|import routing|from llm import" .
     -> 0 matches outside this file itself.
 
 The live agent code path is:
