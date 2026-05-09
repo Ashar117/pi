@@ -1,0 +1,23 @@
+{
+  "id": "T-030",
+  "source": "PI_ENGINEERING_PLAN.md bug wave",
+  "title": "Awareness snapshot underused — weather/market/news questions hit LLM instead of cached data",
+  "component": "pi_agent.py, agent/awareness_shortcut.py",
+  "what_failed": "Normie mode called Groq (and hit rate-limit errors) for 'what's the weather' even though the awareness snapshot was already loaded at startup. Root mode only answered correctly because Claude incidentally noticed the snapshot in the system prompt — no structured shortcut existed.",
+  "where_failed": "pi_agent.py: _respond_normie called Groq unconditionally. _respond_root called Claude unconditionally. _get_system_prompt only injected the snapshot for root mode. No dedicated shortcut module existed.",
+  "why_likely": "The awareness snapshot was built as ambient context for the LLM, not as a structured data source. No fast-path logic existed to extract specific answers from it.",
+  "severity": "P2",
+  "reproduction": "Ask 'what's the weather?' in normie mode — observe Groq API call (or rate-limit error) despite snapshot already loaded at startup.",
+  "expected": "Weather/market/news questions answered directly from the in-memory snapshot without any API call, in both modes.",
+  "actual": "Both modes called their respective LLM backends unconditionally.",
+  "suggested_fix": "Create agent/awareness_shortcut.py with pure keyword detection + line extraction. Wire into _respond_normie and _respond_root as a pre-LLM shortcut. Also share the snapshot with normie via _get_system_prompt.",
+  "status": "closed",
+  "created": "2026-05-03T00:00:00Z",
+  "closed": "2026-05-04T00:00:00Z",
+  "linked_solution": "S-027",
+  "fix_summary": "Created agent/awareness_shortcut.py: try_answer_from_awareness(user_message, snapshot) -> Optional[str]. Pure function, no Pi imports, no side effects. Signal sets for weather/markets/news. Extractors return None on 'unavailable'. Wired into both _respond_normie and _respond_root as the first thing before _get_system_prompt. Both paths log to evolution with model='shortcut', cost=0.0, shortcircuit=True and archive to L1. _get_system_prompt now injects snapshot for both modes (was root-only).",
+  "verification": {
+    "test": "testing/test_awareness_shortcut.py",
+    "result": "7 tests passed (offline): importable, weather hit, weather unavailable, empty snapshot, markets hit, news headlines, non-awareness pass-through"
+  }
+}

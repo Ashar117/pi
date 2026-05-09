@@ -44,6 +44,7 @@ def _stub_memory(rows):
     m = MagicMock()
     m.get_l1_thread.return_value = rows
     m.memory_write.return_value = {"success": True}
+    m._is_l2_duplicate.return_value = None  # no duplicates by default
     return m
 
 
@@ -152,7 +153,7 @@ def test_distill_session_writes_facts_to_l2():
         groq_client=groq,
     )
 
-    # Only importance >= 4 should be written
+    # Only importance >= 6 should be written
     assert result["distilled"] == 1
     assert result["skipped"] == 1
     memory.memory_write.assert_called_once()
@@ -166,7 +167,7 @@ def test_distill_session_dry_run_skips_writes():
         ("user", "I prefer tabs", 1, 0),
         ("assistant", "Got it", 1, 1),
     ])
-    facts = [{"fact": "User prefers tabs", "category": "note", "importance": 5}]
+    facts = [{"fact": "User prefers tabs over spaces", "category": "permanent_profile", "importance": 6}]
     memory = _stub_memory(rows)
     groq = _stub_groq(facts)
 

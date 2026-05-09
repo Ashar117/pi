@@ -1,0 +1,7 @@
+# CLAUDE.md
+
+**Read [`PI.md`](PI.md).** That is the single bootstrap file for any AI session on this project.
+
+Everything that used to live here — session protocol, file-touch policy, key facts, vault layout — is now in `PI.md`, sectioned and self-contained. Old phase-0 docs are under [`docs/_archive/`](docs/_archive/).
+
+If `PI.md` is missing or unreadable, that's a P0 — file a ticket and tell Ash.

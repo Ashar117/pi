@@ -1,0 +1,15 @@
+{
+  "id": "T-037",
+  "source": "user request 2026-05-04 \u00e2\u20ac\u201d 'when switching from groq to claude i want full context from groq summarized by groq to claude'",
+  "title": "Groq\u00e2\u2020\u2019Claude mode switch: no context handoff, Claude starts cold",
+  "component": "pi_agent.py::process_input(), agent/modes.py::detect_mode_switch()",
+  "what_failed": "When Ash switches from normie (Groq) to root (Claude), the conversation messages are in self.messages (T-016 fix). But Claude receives no explicit signal that it's taking over from Groq, nor a summary of what transpired. Claude sees raw alternating user/assistant turns with no framing \u00e2\u20ac\u201d it may miss context or personality continuity from the Groq session. Additionally, Groq normie responses are not archived to the Obsidian vault for later review.",
+  "where_failed": "agent/modes.py:42-47 \u00e2\u20ac\u201d mode switch returns (mode, response_string) with no handoff. pi_agent.py:144-147 \u00e2\u20ac\u201d mode switch accepted, no summary generated.",
+  "why_likely": "The T-016 fix ensured messages survive mode switches, but no summary/framing step was added. Handoff context was never part of the mode-switch design.",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-05-04T21:00:00Z",
+  "suggested_fix": "When a normie\u00e2\u2020\u2019root switch is detected: (1) extract the last N normie turns from self.messages, (2) inject a 'GROQ SESSION HANDOFF' block into the system prompt for Claude's first root response, (3) clear the handoff flag after first root response. Separately: write the normie session turns to vault/notes/sessions/YYYY-MM-DD-HHMMSS-normie.md at mode switch for Obsidian archival.",
+  "closed": "2026-05-04T22:00:00Z",
+  "linked_solution": "S-034"
+}

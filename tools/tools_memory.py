@@ -10,8 +10,6 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
-from supabase import create_client
-
 # Strips trailing session markers before dedup comparison so that the same fact
 # appended with different markers (e.g. "...veggies. marker_abc123" vs
 # "...veggies. marker_def456") is recognised as a duplicate.
@@ -27,6 +25,7 @@ class MemoryTools:
     """
     
     def __init__(self, supabase_url: str, supabase_key: str, sqlite_path: str = None):
+        from supabase import create_client  # lazy: keeps module-import fast (T-032)
         self.supabase = create_client(supabase_url, supabase_key)
         if sqlite_path is None:
             project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -171,7 +170,8 @@ class MemoryTools:
         importance: int = 5,
         category: str = "note",
         expiry: Optional[datetime] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        source: str = "stated"
     ) -> Dict:
         """
         Write to memory.
@@ -191,6 +191,13 @@ class MemoryTools:
         now = datetime.now(timezone.utc)
         
         if tier == "l3":
+            # Reject inferred facts that have not been explicitly confirmed by the user.
+            # Confirmed inferences (source="inferred_confirmed") and stated facts are allowed.
+            if source == "inferred_unconfirmed":
+                print(f"[Memory] L3 write rejected: source=inferred_unconfirmed — fact not confirmed by user")
+                return {"id": None, "success": False,
+                        "error": "inferred_unconfirmed facts cannot be written to L3; get explicit user confirmation first"}
+
             # profile_structured: merge JSON fields into the single existing row
             # rather than inserting a new one.  Incoming keys win on conflict.
             if category == "profile_structured":
@@ -207,6 +214,18 @@ class MemoryTools:
                 print(f"[Memory] L3 dedup: duplicate of {dup_id[:8]}..., skipping")
                 return {"id": dup_id, "success": True, "verified": True,
                         "tier": "l3", "duplicate": True}
+
+            # T-038: Word-overlap dedup + conflict detection.
+            # If new content is semantically near-identical (>= 0.80 overlap) → skip.
+            # If new content supersedes older entries in conflict categories (0.45–0.80) →
+            # collect IDs to soft-delete after successful write.
+            overlap_check = self._check_l3_overlap_and_conflict(content, category)
+            if overlap_check["duplicate_id"]:
+                dup_id = overlap_check["duplicate_id"]
+                print(f"[Memory] L3 word-overlap dedup: ~duplicate of {dup_id[:8]}..., skipping")
+                return {"id": dup_id, "success": True, "verified": True,
+                        "tier": "l3", "duplicate": True}
+            supersedes_ids = overlap_check["supersedes_ids"]
 
             # Write to Supabase
             entry = {
@@ -245,10 +264,23 @@ class MemoryTools:
             
             conn.commit()
             conn.close()
-            
+
+            # T-038: Soft-delete entries superseded by this new write.
+            # Done AFTER successful insert so a write failure leaves old entries intact.
+            if supersedes_ids:
+                for sid in supersedes_ids:
+                    try:
+                        self._expire_l3_entry(sid)
+                        print(f"[Memory] L3 conflict: superseded {sid[:8]}... with new entry")
+                    except Exception:
+                        pass
+
             # Verify
-            return self._verify_write(entry_id, content, tier)
-        
+            result = self._verify_write(entry_id, content, tier)
+            if supersedes_ids:
+                result["superseded"] = len(supersedes_ids)
+            return result
+
         elif tier == "l2":
             # Deduplication: skip if a near-duplicate already exists in organized_memory
             # for the same category.  Prevents distillation from stacking the same
@@ -490,6 +522,80 @@ class MemoryTools:
             if self._normalize_for_dedup(row_content or "") == prefix:
                 return row_id
         return None
+
+    # T-038: categories where new facts may supersede old ones (same subject, new value)
+    _CONFLICT_CATEGORIES = frozenset({
+        "permanent_profile", "profile", "preferences", "current_priority",
+    })
+
+    def _word_overlap(self, a: str, b: str) -> float:
+        """Jaccard-style overlap: |intersect| / min(|A|,|B|).  Returns 0 on empty input."""
+        wa = set(re.sub(r'[^\w\s]', '', a.lower()).split())
+        wb = set(re.sub(r'[^\w\s]', '', b.lower()).split())
+        denom = min(len(wa), len(wb))
+        return len(wa & wb) / denom if denom else 0.0
+
+    def _check_l3_overlap_and_conflict(
+        self, content: str, category: str
+    ) -> Dict[str, Any]:
+        """T-038: Before a new L3 insert, check existing entries in the same category.
+
+        Returns:
+          {
+            "duplicate_id":    str | None,  # word-overlap >= 0.8 → skip insert
+            "supersedes_ids":  list[str],   # overlap in [0.45, 0.8) for conflict categories
+                                             #   → soft-delete these on successful write
+          }
+
+        Never raises — errors return empty result so a DB hiccup never blocks writes.
+        """
+        result: Dict[str, Any] = {"duplicate_id": None, "supersedes_ids": []}
+        try:
+            conn = sqlite3.connect(self.sqlite_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, content FROM l3_cache WHERE category = ? LIMIT 200",
+                [category],
+            )
+            rows = cursor.fetchall()
+            conn.close()
+        except Exception as e:
+            print(f"[Memory] _check_l3_overlap_and_conflict SQLite error: {e}")
+            return result
+
+        for row_id, row_content in rows:
+            overlap = self._word_overlap(content, row_content or "")
+            if overlap >= 0.80:
+                result["duplicate_id"] = row_id
+                return result  # early exit — no need to continue
+            if overlap >= 0.45 and category in self._CONFLICT_CATEGORIES:
+                result["supersedes_ids"].append(row_id)
+
+        return result
+
+    def _expire_l3_entry(self, entry_id: str) -> None:
+        """T-038: Immediately expire an L3 entry by ID (soft-delete via past timestamp).
+        Sets active_until to 1 second ago in both SQLite and Supabase so the entry
+        becomes invisible to get_l3_context() without losing the row for audit.
+        """
+        past = (datetime.now(timezone.utc).replace(microsecond=0)
+                .isoformat().replace("+00:00", "Z"))
+        try:
+            conn = sqlite3.connect(self.sqlite_path)
+            conn.execute(
+                "UPDATE l3_cache SET active_until = ? WHERE id = ?",
+                [past, entry_id],
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[Memory] _expire_l3_entry SQLite error: {e}")
+        try:
+            self.supabase.table("l3_active_memory").update(
+                {"active_until": past}
+            ).eq("id", entry_id).execute()
+        except Exception as e:
+            print(f"[Memory] _expire_l3_entry Supabase error (non-fatal): {e}")
 
     def get_l1_thread(self, thread_id: str) -> List[Dict]:
         """Fetch all L1 rows for a session thread from raw_wiki, ordered by (turn, seq).
@@ -764,7 +870,30 @@ class MemoryTools:
             "file_operations", "temporary_note", "note"
         ]
 
-        sections: Dict[str, list] = {}
+        label_map = {
+            "permanent_profile": "PROFILE",
+            "profile": "PROFILE",
+            "active_project": "PROJECTS",
+            "projects": "PROJECTS",
+            "current_priority": "PRIORITIES",
+            "priorities": "PRIORITIES",
+            "session_history": "PREVIOUS SESSIONS",
+            "research_results": "RESEARCH",
+            "timed_reminder": "REMINDERS",
+            "file_operations": "FILES",
+            "temporary_note": "NOTES",
+            "note": "NOTES",
+            "preferences": "PREFERENCES",
+        }
+
+        # T-034: Merge by DISPLAY LABEL so alias categories (e.g. 'profile' and
+        # 'permanent_profile') never produce two sections with the same header.
+        # Key: display label → list of (priority_rank, content) tuples.
+        priority_order = [
+            "PROFILE", "PROJECTS", "PRIORITIES", "PREFERENCES",
+            "PREVIOUS SESSIONS", "RESEARCH", "REMINDERS", "FILES", "NOTES",
+        ]
+        label_entries: Dict[str, list] = {}
         total_tokens = 0
 
         for row in rows:
@@ -772,34 +901,39 @@ class MemoryTools:
             tokens = len(content) // 4
             if total_tokens + tokens > max_tokens:
                 break
-            if category not in sections:
-                sections[category] = []
-            sections[category].append(content)
+            label = label_map.get(category, category.upper().replace("_", " "))
+            if label not in label_entries:
+                label_entries[label] = []
+            label_entries[label].append(content)
             total_tokens += tokens
 
-        if not sections:
+        if not label_entries:
             return ""
 
-        # Format: known categories in priority order, then any remaining
-        ordered_keys = [k for k in priority_order if k in sections]
-        ordered_keys += [k for k in sections if k not in priority_order]
+        # T-034: Within each display group, remove entries whose words are a
+        # near-complete subset of a longer entry (>= 80% word overlap ratio).
+        def _dedup_entries(entries: list) -> list:
+            out = []
+            for candidate in entries:
+                cwords = set(candidate.lower().split())
+                dominated = any(
+                    len(cwords) > 0
+                    and len(cwords - set(kept.lower().split())) / len(cwords) < 0.20
+                    and candidate != kept
+                    for kept in out
+                )
+                if not dominated:
+                    out.append(candidate)
+            return out
+
+        ordered_labels = [l for l in priority_order if l in label_entries]
+        ordered_labels += [l for l in label_entries if l not in priority_order]
 
         output = ["=== ACTIVE CONTEXT ===\n"]
-        label_map = {
-            "permanent_profile": "PROFILE",
-            "active_project": "PROJECTS",
-            "current_priority": "PRIORITIES",
-            "session_history": "PREVIOUS SESSIONS",
-            "research_results": "RESEARCH",
-            "timed_reminder": "REMINDERS",
-            "file_operations": "FILES",
-            "temporary_note": "NOTES",
-            "note": "NOTES",
-        }
-
-        for key in ordered_keys:
-            label = label_map.get(key, key.upper().replace("_", " "))
-            entries = sections[key]
+        for label in ordered_labels:
+            entries = _dedup_entries(label_entries[label])
+            if not entries:
+                continue
             output.append(f"{label}:")
             for entry in entries:
                 output.append(f"• {entry}")

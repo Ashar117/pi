@@ -1,0 +1,17 @@
+{
+  "id": "T-040",
+  "source": "user request 2026-05-08 — explicit 'log everything' rule, both modes",
+  "title": "Confirm L1 auto-log fires in normie mode (originally suspected gap)",
+  "component": "pi_agent.py::_respond_normie",
+  "what_failed": "Initial audit suggested normie mode might not log to L1 raw_wiki, leaving ~50% of conversations off the cloud archive.",
+  "where_failed": "Suspicion: pi_agent._respond_normie had no log_turn call.",
+  "why_likely": "T-024 was titled 'L1 auto-logging per conversation turn' and the ticket focused on root mode — normie path could plausibly have been missed.",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-05-08T00:00:00Z",
+  "suggested_fix": "If the gap is real, mirror the root-mode log_turn call in normie. Otherwise add a regression test asserting both paths log.",
+  "fix_applied": "Audit confirmed _respond_normie ALREADY calls memory.log_turn at lines 628 (shortcut path) and 702 (Groq path). T-024 covered both modes correctly. No code change needed; closing as verified. Indirect coverage via testing/test_turn_log.py (universal wrapper) ensures any future return path is covered.",
+  "closed": "2026-05-09T01:30:00Z",
+  "linked_solution": "S-037",
+  "tests": "testing/test_turn_log.py::TestProcessInputWrapper covers all return paths via wrapper."
+}

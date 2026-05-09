@@ -1,0 +1,19 @@
+{
+  "id": "T-033",
+  "source": "PI_ENGINEERING_PLAN.md §2 Obsidian Integration",
+  "title": "Obsidian integration — vault sync + live read/write tools",
+  "component": "tools/tools_obsidian.py, agent/session.py, vault/",
+  "what_failed": "No vault existed. Pi had no way to mirror memory to a human-readable format. VS Code Claude sessions had to load all docs at startup (~5K tokens overhead). The ObsidianTools class referenced in agent/tools.py did not exist.",
+  "where_failed": "tools/tools_obsidian.py: did not exist. agent/session.py::on_exit(): no vault sync step. vault/: directory did not exist.",
+  "why_likely": "Obsidian integration was planned but not yet implemented. agent/tools.py had forward-declared the ObsidianTools class anticipating this work.",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-05-04T02:00:00Z",
+  "closed": "2026-05-04T03:00:00Z",
+  "linked_solution": "S-030",
+  "fix_summary": "Created tools/tools_obsidian.py with two responsibilities: (1) ObsidianTools class wrapping the Obsidian Local REST API (port 27123) — obsidian_read/write/append/search, all gracefully degrade when Obsidian is closed; (2) sync functions for session-exit mirroring — sync_l3_to_vault (SQLite, offline), sync_l2_to_vault (Supabase), render_tickets_to_vault (JSON->markdown tables), render_status_to_vault (docs/STATUS.md copy), all atomic (.tmp->replace) and non-fatal. Created vault/ directory structure with README.md. Wired sync_vault() into agent/session.py::on_exit() after promotion/prune. Updated .gitignore: vault/memory/ and vault/notes/per-ticket/ stay local.",
+  "verification": {
+    "test": "testing/test_obsidian_sync.py",
+    "result": "18 tests passed (offline): atomic write, importance bar, L3 grouping, empty cache, bad SQLite, L2 grouping, Supabase failure isolation, plain-string content, ticket render, missing dirs, status copy, missing source, sync_vault summary keys, L2 failure does not block tickets"
+  }
+}

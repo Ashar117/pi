@@ -1,0 +1,15 @@
+{
+  "id": "T-046",
+  "source": "user request 2026-05-08 — 'i want to have the obsidain graph view in vs code'",
+  "title": "VS Code Foam extension config for vault graph view",
+  "component": ".vscode/extensions.json + .vscode/settings.json + docs/vscode-setup.md",
+  "what_failed": "Vault knowledge graph (PI.md, vault/notes/, CHECKPOINTS, tickets) was visible only in standalone Obsidian — separate window from VS Code. Ash wanted it inside the IDE he codes in.",
+  "severity": "P4",
+  "status": "closed",
+  "created": "2026-05-08T00:00:00Z",
+  "suggested_fix": "Add .vscode/extensions.json recommending foam.foam-vscode (Roam-style backlinks + graph view + daily notes). Add .vscode/settings.json with foam.workspace.includeGlobs covering PI.md, vault/, CHECKPOINTS/, docs/, and ignoring docs/_archive/, pi_env/, data/, logs/. Document the setup in docs/vscode-setup.md so a fresh checkout (where .vscode/ is gitignored) knows what to do.",
+  "fix_applied": "Created .vscode/extensions.json (foam, python, pylance, markdown-all-in-one, yaml). Created .vscode/settings.json with python interpreter, pytest config, file/search/watcher excludes, and full Foam configuration. Wrote docs/vscode-setup.md with install steps, what-Foam-gives-you, and template configs for fresh checkouts.",
+  "closed": "2026-05-09T01:30:00Z",
+  "linked_solution": "S-043",
+  "tests": "Manual — Foam extension installation is interactive. Verification steps documented in docs/vscode-setup.md."
+}

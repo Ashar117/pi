@@ -69,13 +69,24 @@ class EvolutionTracker:
         
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         
-        # Load logs
+        # Load logs — skip blank or malformed lines defensively
         interactions = []
         with open(self.log_path, 'r') as f:
             for line in f:
-                entry = json.loads(line.strip())
-                if datetime.fromisoformat(entry["timestamp"]) > cutoff:
-                    interactions.append(entry)
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    entry = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                try:
+                    ts_str = entry["timestamp"]
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    if ts > cutoff:
+                        interactions.append(entry)
+                except (KeyError, ValueError):
+                    continue
         
         if not interactions:
             return {"error": "No interactions in timeframe"}

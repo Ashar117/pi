@@ -15,7 +15,7 @@ import os
 import sqlite3
 import tempfile
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 
 # ── shared helpers (same pattern as test_memory_tools_gaps.py) ────────────────
@@ -25,13 +25,12 @@ def _make_memory():
     tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
     tmp.close()
     supa = MagicMock()
-    with patch("tools.tools_memory.create_client", return_value=supa):
-        mt = MemoryTools.__new__(MemoryTools)
-        mt.supabase = supa
-        mt.sqlite_path = tmp.name
-        mt._last_sync = None
-        mt._sync_ttl_seconds = 300
-        mt._init_sqlite()
+    mt = MemoryTools.__new__(MemoryTools)
+    mt.supabase = supa
+    mt.sqlite_path = tmp.name
+    mt._last_sync = None
+    mt._sync_ttl_seconds = 300
+    mt._init_sqlite()
     return mt, supa, tmp.name
 
 

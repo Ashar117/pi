@@ -19,14 +19,17 @@ _SYSTEM = (
     "You are a memory curator for an AI assistant called Pi. "
     "Your job is to read a conversation log and extract a concise list of "
     "facts that Pi should remember long-term. "
-    "Only include facts that are genuinely worth keeping: preferences, "
-    "decisions, important context, personal details, project milestones. "
-    "Skip greetings, filler, and anything already obvious. "
+    "INCLUDE ONLY: stable identity facts (where someone lives/works/studies), "
+    "explicit preferences ('I prefer X'), firm commitments and deadlines, "
+    "things the user explicitly asked to remember, named project milestones. "
+    "SKIP: greetings, small talk, hypotheticals ('might', 'maybe', 'thinking about'), "
+    "tentative plans, facts already obvious from context, Pi's own responses, "
+    "restatements of things already stored, session mechanics. "
     "Return ONLY a JSON array — no prose, no markdown fences. "
     'Each element: {"fact": "...", "category": "...", "importance": 1-10}. '
     "Categories: permanent_profile | active_project | current_priority | "
     "research_results | session_history | note. "
-    "Minimum importance to include: 4. Maximum items: 12."
+    "Minimum importance to include: 6. Maximum items: 8."
 )
 
 
@@ -69,17 +72,29 @@ def distill_session(
 
     distilled = 0
     skipped = 0
+    skip_reasons: dict = {"low_importance": 0, "duplicate": 0, "empty": 0}
 
     for fact in facts:
         text = (fact.get("fact") or "").strip()
         category = (fact.get("category") or "note").strip()
-        importance = int(fact.get("importance") or 4)
+        importance = int(fact.get("importance") or 0)
 
-        if not text or importance < 4:
+        if not text:
             skipped += 1
+            skip_reasons["empty"] += 1
+            continue
+
+        if importance < 6:
+            skipped += 1
+            skip_reasons["low_importance"] += 1
             continue
 
         if not dry_run:
+            dup_id = memory_tools._is_l2_duplicate(text, category)
+            if dup_id:
+                skipped += 1
+                skip_reasons["duplicate"] += 1
+                continue
             memory_tools.memory_write(
                 content=text,
                 tier="l2",
@@ -89,7 +104,11 @@ def distill_session(
             )
         distilled += 1
 
-    print(f"[Distill] {distilled} facts written to L2, {skipped} skipped")
+    reason_str = ", ".join(f"{v} {k}" for k, v in skip_reasons.items() if v)
+    print(
+        f"[Distill] {distilled} facts written to L2, {skipped} skipped"
+        + (f" ({reason_str})" if reason_str else "")
+    )
     return {"distilled": distilled, "skipped": skipped, "facts": facts}
 
 

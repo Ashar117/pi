@@ -1,0 +1,23 @@
+{
+  "id": "T-031",
+  "source": "PI_ENGINEERING_PLAN.md bug wave",
+  "title": "Inferred facts persisted to L3 without explicit user confirmation",
+  "component": "tools/tools_memory.py, agent/tools.py, prompts/consciousness.txt",
+  "what_failed": "Pi inferred 'F-1 visa' from 'I'm a student' and stored it on a one-word 'yup'. Earlier it inferred Lawrenceville was the user's home city (wrong — it's just current location). consciousness.txt had no stated-vs-inferred distinction. memory_write had no source field. Nothing blocked unconfirmed inferences from reaching L3.",
+  "where_failed": "tools/tools_memory.py: memory_write() had no `source` parameter and no rejection guard. agent/tools.py: memory_write tool schema had no source field. prompts/consciousness.txt: no INFERRED VS STATED FACTS section.",
+  "why_likely": "consciousness.txt encouraged proactive fact persistence without distinguishing what the user stated explicitly vs what Pi guessed from context.",
+  "severity": "P2",
+  "reproduction": "In root mode, tell Pi 'I'm a student so?' — Pi guesses 'F-1 visa?' — say 'yup'. Without fix, the fact gets stored as source=stated regardless of confidence. Pi then uses the (possibly wrong) inferred fact as ground truth in future sessions.",
+  "expected": "Inferred facts require explicit confirmation before reaching L3. source='inferred_unconfirmed' is rejected at the tool level. source='inferred_confirmed' (user explicitly confirmed) is allowed.",
+  "actual": "All L3 writes succeeded regardless of how the fact was obtained.",
+  "suggested_fix": "Add `source` field to memory_write (stated | inferred_confirmed | inferred_unconfirmed). Reject inferred_unconfirmed for tier=l3. Add INFERRED VS STATED FACTS section to consciousness.txt. Add source to tool schema so Claude can pass it.",
+  "status": "closed",
+  "created": "2026-05-04T00:00:00Z",
+  "closed": "2026-05-04T01:00:00Z",
+  "linked_solution": "S-028",
+  "fix_summary": "Added `source: str = 'stated'` to MemoryTools.memory_write(). Rejection guard at top of L3 branch returns success=False with descriptive error when source='inferred_unconfirmed'. Added `source` enum field to memory_write tool schema in agent/tools.py with description guiding Claude on correct usage. Added 'INFERRED VS STATED FACTS' section to consciousness.txt with concrete rules and examples covering when one-word confirmations are acceptable, when to ask again, and that inferred_unconfirmed is tool-level blocked.",
+  "verification": {
+    "test": "testing/test_inferred_facts.py",
+    "result": "7 tests passed (offline): source field exists, inferred_unconfirmed rejected, stated/inferred_confirmed accepted, default is stated, L2 not blocked, consciousness.txt has required section"
+  }
+}

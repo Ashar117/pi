@@ -4,6 +4,7 @@ from typing import List, Dict
 
 from agent.truncation import extract_text_from_messages
 from memory.pipeline import distill_session
+from tools.tools_obsidian import sync_vault
 
 
 def generate_session_summary(
@@ -99,6 +100,12 @@ def on_exit(agent) -> None:
         agent.memory.prune_l3_expired()
     except Exception as e:
         print(f"[Memory] L3 prune failed (non-fatal): {e}")
+
+    # Vault sync: mirror L3, L2, tickets, and status to vault/ for Obsidian.
+    try:
+        sync_vault(agent.memory)
+    except Exception as e:
+        print(f"[Vault] sync failed (non-fatal): {e}")
 
     recent = agent.evolution.get_recent_interactions(hours=24)
     total_cost = sum(i.get("cost", 0) for i in recent)

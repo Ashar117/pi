@@ -1,0 +1,15 @@
+{
+  "id": "T-034",
+  "source": "session log 2026-05-04 \u00e2\u20ac\u201d duplicate PROFILE/PROJECTS/PREFERENCES sections visible in briefing",
+  "title": "get_l3_context() emits duplicate section headers when category aliases collide",
+  "component": "tools/tools_memory.py::get_l3_context()",
+  "what_failed": "Active context displays two PROFILE blocks, two PROJECTS blocks, two PREFERENCES blocks. Different L3 category names (e.g. 'profile' and 'permanent_profile', 'projects' and 'active_project') both render to the same display label. The code groups by raw key but outputs by label, so two separate keys that share a display label produce two identical headers.",
+  "where_failed": "tools/tools_memory.py:794-815 \u00e2\u20ac\u201d output loop uses raw category key for grouping but label_map for display, so two categories can collide on the same display label.",
+  "why_likely": "Entries were stored with inconsistent category names over multiple sessions (some tools used 'profile', others 'permanent_profile'). The render path never normalised them to a single display group.",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-05-04T21:00:00Z",
+  "suggested_fix": "In get_l3_context(), after building sections{}, merge all entries that share the same DISPLAY label into one list before rendering. Also add within-section content dedup: skip entries whose words are a >80% subset of another entry in the same group.",
+  "closed": "2026-05-04T22:00:00Z",
+  "linked_solution": "S-031"
+}

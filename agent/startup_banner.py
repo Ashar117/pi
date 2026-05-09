@@ -1,0 +1,80 @@
+"""
+agent/startup_banner.py — Compact 3-line startup banner (T-041).
+
+Replaces the legacy 12-line init dump with a scannable status line. Ash's
+preference: minimal noise, surface only what changes between sessions.
+
+Format:
+    Pi v2 · normie · session a3f2e1c · 38 tools
+    Telegram offline · Scheduler running · last verify PASS · 12 turns today
+    3 reminders due · 2 open tickets · Type 'briefing' for daily, 'help' for commands
+
+Reminder lines (one per due reminder) are appended after the banner.
+"""
+
+import json
+import re
+from pathlib import Path
+from typing import List, Optional
+
+_ROOT = Path(__file__).parent.parent
+_STATUS_PATH = _ROOT / "docs" / "STATUS.md"
+_OPEN_TICKETS = _ROOT / "tickets" / "open"
+
+
+def _read_verify_status() -> str:
+    """Return 'PASS' / 'FAIL' / 'unknown' from docs/STATUS.md."""
+    if not _STATUS_PATH.exists():
+        return "unknown"
+    try:
+        for line in _STATUS_PATH.read_text(encoding="utf-8", errors="replace").splitlines()[:10]:
+            m = re.match(r"\*\*Overall:\*\*\s*(\w+)", line)
+            if m:
+                return m.group(1).upper()
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _count_open_tickets() -> int:
+    """Count *.json files in tickets/open/."""
+    if not _OPEN_TICKETS.exists():
+        return 0
+    try:
+        return len(list(_OPEN_TICKETS.glob("*.json")))
+    except Exception:
+        return 0
+
+
+def format_banner(
+    *,
+    mode: str,
+    session_id: str,
+    tool_count: int,
+    telegram_online: bool,
+    scheduler_running: bool,
+    turns_today: int,
+    reminders: Optional[List[str]] = None,
+) -> str:
+    """Build the compact 3-line banner. Pure function — easy to unit-test."""
+    line1 = f"Pi v2 · {mode} · session {session_id} · {tool_count} tools"
+
+    tg = "online" if telegram_online else "offline"
+    sch = "running" if scheduler_running else "off"
+    verify = _read_verify_status()
+    line2 = f"Telegram {tg} · Scheduler {sch} · last verify {verify} · {turns_today} turns today"
+
+    open_tix = _count_open_tickets()
+    rem_count = len(reminders or [])
+    rem_str = f"{rem_count} reminder{'s' if rem_count != 1 else ''} due"
+    tix_str = f"{open_tix} open ticket{'s' if open_tix != 1 else ''}"
+    line3 = f"{rem_str} · {tix_str} · Type 'briefing' for daily, 'help' for commands"
+
+    out = "\n".join([line1, line2, line3])
+
+    if reminders:
+        out += "\n\n[Pi] REMINDERS DUE TODAY:"
+        for r in reminders:
+            out += f"\n  {r}"
+
+    return out + "\n"

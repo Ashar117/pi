@@ -1,0 +1,17 @@
+{
+  "id": "T-042",
+  "source": "user request 2026-05-08 — '1 md file having prompt thats gonna be reading every single thing make it workable and section it into phases'",
+  "title": "PI.md master orchestrator + scripts/refresh_pi.py auto-regenerator",
+  "component": "PI.md + scripts/refresh_pi.py + CLAUDE.md + docs/_archive/",
+  "what_failed": "Bootstrap state was fragmented across CLAUDE.md, PI_MASTER_PROMPT.md, CHECKPOINTS/current.md, vault/notes/status.md, vault/notes/tickets/open.md. A new AI session had to read 4-5 files in the right order and STILL didn't have a single source of truth for current sprint, open tickets, recent solutions, or tool inventory. 12 stale Phase-0 .md files cluttered the repo root.",
+  "where_failed": "Repo root + CLAUDE.md/PI_MASTER_PROMPT.md content split.",
+  "why_likely": "Project grew organically through 6 phases; each phase added docs but nothing ever consolidated.",
+  "severity": "P1",
+  "status": "closed",
+  "created": "2026-05-08T00:00:00Z",
+  "suggested_fix": "Create PI.md at root with 13 sections (identity, read order, sprint, state, engineering loop, architecture, tools, open tickets, solutions, file-touch policy, session protocol, phase roadmap, fire drill). Mark §4/§7/§8/§9 as auto-generated between BEGIN/END markers. Build scripts/refresh_pi.py that regenerates only those sections (idempotent). Archive 8 stale Phase-0 docs to docs/_archive/. Reduce CLAUDE.md to a 5-line pointer to PI.md.",
+  "fix_applied": "Wrote PI.md (~310 lines, 13 sections). Wrote scripts/refresh_pi.py with section-marker-aware regeneration: §4 reads STATUS.md + CHECKPOINTS + tickets + solutions + turn_log; §7 reads agent.tools.get_tool_definitions and groups; §8 reads tickets/open/*.json; §9 reads last 10 from solutions/SOLUTIONS.jsonl (handles both old and new schemas). Idempotent (proven by test). git mv'd CONTRADICTIONS, DEAD_CODE, FILE_INVENTORY, FINDINGS, RECONCILIATION, SCHEMA_MISMATCHES, PI_MASTER_PROMPT, STATUS, NEXT_SESSION, KNOWN_DEBT to docs/_archive/. Replaced CLAUDE.md with 5-line pointer.",
+  "closed": "2026-05-09T01:30:00Z",
+  "linked_solution": "S-039",
+  "tests": "testing/test_refresh_pi.py — 12 passing tests covering all renderers, marker replacement, idempotency, hand-curated section preservation, and CLI exit codes."
+}

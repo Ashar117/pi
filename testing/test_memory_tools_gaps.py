@@ -13,7 +13,7 @@ import sqlite3
 import tempfile
 import os
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call
 from datetime import datetime, timezone, timedelta
 
 
@@ -28,14 +28,12 @@ def _make_memory():
     tmp.close()
 
     supabase_mock = MagicMock()
-    # Silence the create_client call: patch at import site
-    with patch("tools.tools_memory.create_client", return_value=supabase_mock):
-        mt = MemoryTools.__new__(MemoryTools)
-        mt.supabase = supabase_mock
-        mt.sqlite_path = tmp.name
-        mt._last_sync = None
-        mt._sync_ttl_seconds = 300
-        mt._init_sqlite()
+    mt = MemoryTools.__new__(MemoryTools)
+    mt.supabase = supabase_mock
+    mt.sqlite_path = tmp.name
+    mt._last_sync = None
+    mt._sync_ttl_seconds = 300
+    mt._init_sqlite()
 
     return mt, supabase_mock, tmp.name
 

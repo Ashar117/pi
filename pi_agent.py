@@ -52,6 +52,33 @@ from agent.session import generate_session_summary, on_exit
 from agent.tools import get_tool_definitions, execute_tool
 from agent.prompt import build_system_prompt, minimal_consciousness
 from agent.modes import detect_mode_switch
+from agent.awareness_shortcut import try_answer_from_awareness
+
+# God mode — gitignored private layer. Graceful no-op if file absent.
+try:
+    from agent.god import GodMode
+    _god = GodMode()
+    GOD_AVAILABLE = _god.is_available()
+except ImportError:
+    _god = None
+    GOD_AVAILABLE = False
+
+# F-007 TTS / F-006 Telegram / F-008 Scheduler — lazy, graceful no-op on missing deps
+try:
+    from tools.tools_tts import TTSTools as _TTSTools
+    _tts_inst = _TTSTools()
+except Exception:
+    _tts_inst = None
+
+try:
+    from tools.tools_telegram import TelegramTools as _TelegramTools
+except Exception:
+    _TelegramTools = None
+
+try:
+    from tools.tools_scheduler import PiScheduler as _PiScheduler
+except Exception:
+    _PiScheduler = None
 
 
 class PiAgent:
@@ -81,6 +108,8 @@ class PiAgent:
         self.history = []    # Simplified string-only history for research mode context
         self.session_start = datetime.now(timezone.utc)
         self.session_id = uuid.uuid4().hex[:8]  # T-013: short ID for log correlation
+        # T-037: populated when switching normie→root; injected once into first root prompt
+        self._normie_handoff_context: str = ""
 
         # Initialize systems
         self.memory = MemoryTools(SUPABASE_URL, SUPABASE_KEY)
@@ -98,28 +127,66 @@ class PiAgent:
             alpha_vantage_key=ALPHA_VANTAGE_KEY or "",
             news_api_key=NEWS_API_KEY or "",
         )
-        print("[Pi] Loading live awareness data (weather, news, markets, research)...")
-        self.awareness_snapshot = self.awareness.get_awareness_snapshot()
-        print("[Pi] Awareness loaded")
+        # T-041: Lazy awareness — snapshot loads on first access (3-5s saved on
+        # cold start). --eager-awareness CLI flag forces eager load for parity
+        # with the old behaviour.
+        self._awareness_snapshot_cache: Optional[str] = None
+        if "--eager-awareness" in sys.argv:
+            self._awareness_snapshot_cache = self.awareness.get_awareness_snapshot()
 
         # T-024: L1 thread UUID — deterministic from session_id; shared by auto-log and tool-path writes
         self.l1_thread_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, self.session_id))
         self.turn_number = 0
+
+        # F-007 TTS — offline speech output
+        self.tts = _tts_inst
+
+        # F-006 Telegram bot — proxies messages to process_input(); None if token missing
+        self.telegram = None
+        if _TelegramTools is not None:
+            self.telegram = _TelegramTools(agent=self)
+
+        # F-008 Scheduler — background cron (daily briefing, L3 prune)
+        self.scheduler = None
+        if _PiScheduler is not None:
+            self.scheduler = _PiScheduler(
+                agent=self,
+                tts=self.tts,
+                telegram=self.telegram,
+            )
         
-        run_health_check(self.memory.supabase, self.memory.sqlite_path,
-                         ANTHROPIC_API_KEY, GROQ_API_KEY, SUPABASE_KEY)
-        print(f"[Pi] Agent initialized - {self.session_start.strftime('%Y-%m-%d %H:%M')}")
-        print(f"[Pi] Session ID: {self.session_id}")
-        print(f"[Pi] Mode: {self.mode}")
-        print(f"[Pi] Consciousness loaded: {len(self.consciousness)} chars")
-    
+        # T-041: Silent init — only health-check failures surface. Pass
+        # --verbose-init for the legacy multi-line startup.
+        run_health_check(
+            self.memory.supabase, self.memory.sqlite_path,
+            ANTHROPIC_API_KEY, GROQ_API_KEY, SUPABASE_KEY,
+            verbose=("--verbose-init" in sys.argv),
+        )
+        if "--verbose-init" in sys.argv:
+            print(f"[Pi] Agent initialized - {self.session_start.strftime('%Y-%m-%d %H:%M')}")
+            print(f"[Pi] Session ID: {self.session_id}")
+            print(f"[Pi] Mode: {self.mode}")
+            print(f"[Pi] Consciousness loaded: {len(self.consciousness)} chars")
+
+    @property
+    def awareness_snapshot(self) -> str:
+        """Lazy awareness — loads on first read, cached afterwards (T-041)."""
+        if self._awareness_snapshot_cache is None:
+            self._awareness_snapshot_cache = self.awareness.get_awareness_snapshot()
+        return self._awareness_snapshot_cache
+
+    @awareness_snapshot.setter
+    def awareness_snapshot(self, value: str) -> None:
+        """Allow tools (refresh_awareness) to overwrite the cache."""
+        self._awareness_snapshot_cache = value
+
     def _minimal_consciousness(self) -> str:
         """Thin wrapper preserving the method API; logic in agent.prompt."""
         return minimal_consciousness()
     
     def _get_system_prompt(self) -> str:
         base = build_system_prompt(self.consciousness, self.mode, self.memory)
-        if self.mode == "root" and self.awareness_snapshot:
+        if self.awareness_snapshot:
             return base + "\n\n" + self.awareness_snapshot
         return base
     
@@ -136,19 +203,91 @@ class PiAgent:
         return execute_tool(self, tool_name, tool_input)
     
     def process_input(self, user_input: str) -> str:
-        """Main processing - Claude decides, tools execute, evolution tracks"""
+        """Main entry point — wraps inner dispatch with universal turn logging.
+
+        T-039: Every turn (both modes, all return paths) is appended to
+        logs/turns.jsonl as a durable local record. Never gates on mode.
+        """
+        from agent.turn_log import append_turn
+
+        start_ts = datetime.now(timezone.utc)
+        error_str = None
+
+        try:
+            response = self._process_input_inner(user_input)
+        except Exception as e:
+            error_str = str(e)
+            response = f"[Pi] Internal error: {e}"
+
+        duration_ms = int((datetime.now(timezone.utc) - start_ts).total_seconds() * 1000)
+
+        try:
+            append_turn(
+                session_id=self.session_id,
+                mode=self.mode,
+                user_input=user_input,
+                response=response,
+                duration_ms=duration_ms,
+                tools_used=[],
+                cost=0.0,
+                model="",
+                error=error_str,
+            )
+        except Exception:
+            pass
+
+        return response
+
+    def _process_input_inner(self, user_input: str) -> str:
+        """Inner dispatch — Claude decides, tools execute, evolution tracks.
+
+        Wrapped by ``process_input`` so every turn is logged. Do not call this
+        directly from outside the class — go through ``process_input``.
+        """
 
         # Mode-switch detection (loose matcher, S-010/T-015) — never clear self.messages,
         # session context must survive mode changes (L-001).
         switch = detect_mode_switch(user_input)
         if switch is not None:
+            prev_mode = self.mode
             self.mode, response = switch
+            # T-037: On normie→root switch, snapshot the Groq conversation so Claude
+            # gets a framed handoff instead of starting cold on a raw message list.
+            if prev_mode == "normie" and self.mode == "root" and self.messages:
+                self._normie_handoff_context = self._build_normie_handoff()
+                self._archive_normie_session_to_vault()
+            if prev_mode == "god" and _god is not None:
+                try:
+                    _god.memory.sync_to_vault()
+                except Exception:
+                    pass
             return response
+
+        # God mode activation (handled separately — not in detect_mode_switch so
+        # the trigger stays out of committed modes.py)
+        if user_input.lower().strip() in ("god mode", "god"):
+            if _god is None:
+                return "God mode unavailable — agent/god.py not found."
+            if not _god.is_available():
+                return "God mode unavailable — no backend reachable (Groq key missing + Ollama offline)."
+            self.mode = "god"
+            return f"God mode active ({_god.backend_label()}, private, no restrictions)"
 
         cmd = user_input.lower().strip()
 
         if cmd == "analyze performance":
             return self._performance_report()
+        elif cmd == "help":
+            return (
+                "Commands:\n"
+                "  root mode        — switch to Claude (full tools)\n"
+                "  normie mode      — switch to Groq (fast, no tools)\n"
+                "  god mode         — private uncensored layer (gitignored)\n"
+                "  research mode    — 3-agent debate on a question\n"
+                "  briefing         — full daily briefing (weather/news/markets/HN/research)\n"
+                "  analyze performance  — last 7-day performance report\n"
+                "  exit             — save session and quit"
+            )
         elif cmd == "research mode":
             print("\n" + "="*60)
             print("  PI RESEARCH MODE - 3-Agent Debate")
@@ -175,6 +314,21 @@ class PiAgent:
         elif cmd == "exit":
             return "EXIT"
 
+        elif any(kw in cmd for kw in ("briefing", "morning briefing", "daily briefing", "what's today", "whats today")):
+            from tools.tools_briefing import BriefingTools
+            from tools.tools_obsidian import ObsidianTools
+            from tools.tools_calendar import CalendarTools
+            briefing = BriefingTools(
+                awareness=self.awareness,
+                memory=self.memory,
+                obsidian=ObsidianTools(),
+                calendar=CalendarTools(),
+            )
+            return briefing.generate(save_to_obsidian=True)
+
+        # File attachment detection — if message contains a file path, inject context
+        user_input = self._preprocess_file_refs(user_input)
+
         # Daily budget enforcement
         from app.config import DAILY_COST_LIMIT
         daily_cost = self.evolution.get_daily_cost()
@@ -189,6 +343,8 @@ class PiAgent:
         try:
             if self.mode == "root":
                 return self._respond_root(user_input, interaction_start, tool_calls_made)
+            elif self.mode == "god":
+                return self._respond_god(user_input, interaction_start)
             else:
                 return self._respond_normie(user_input, interaction_start)
 
@@ -266,7 +422,34 @@ class PiAgent:
 
     def _respond_root(self, user_input: str, interaction_start, tool_calls_made: list) -> str:
         """Root mode: Claude with full tool loop"""
+        shortcut = try_answer_from_awareness(user_input, self.awareness_snapshot)
+        if shortcut:
+            duration = (datetime.now(timezone.utc) - interaction_start).total_seconds()
+            self.messages.append({"role": "user", "content": user_input})
+            self.messages.append({"role": "assistant", "content": shortcut})
+            self.history.append({"role": "user", "content": user_input})
+            self.history.append({"role": "assistant", "content": shortcut})
+            self.evolution.log_interaction(
+                user_input=user_input, pi_response=shortcut, tool_calls=[],
+                success=True, mode=self.mode, cost=0.0, model="shortcut",
+                tokens_in=0, tokens_out=0,
+                metadata={"duration_seconds": duration, "session_id": self.session_id,
+                          "shortcircuit": True},
+            )
+            self.turn_number += 1
+            self.memory.log_turn(
+                thread_id=self.l1_thread_id, session_id=self.session_id,
+                turn_number=self.turn_number, user_content=user_input,
+                assistant_content=shortcut, mode=self.mode,
+            )
+            return shortcut
+
         system_prompt = self._get_system_prompt()
+
+        # T-037: Inject Groq session summary on first root response after mode switch.
+        if self._normie_handoff_context:
+            system_prompt = system_prompt + "\n\n" + self._normie_handoff_context
+            self._normie_handoff_context = ""
 
         # Proactive memory prefetch: search L3+L2 for terms in the user's message
         # and inject relevant hits into the system prompt before Claude sees it.
@@ -391,8 +574,136 @@ class PiAgent:
         """Thin wrapper preserving the method API; logic in agent.truncation."""
         return extract_text_from_messages(self.messages, n)
 
+    def _archive_normie_session_to_vault(self) -> None:
+        """T-037: Write the current normie messages to vault/notes/sessions/ as markdown.
+        Non-fatal — vault archival failure must not block the mode switch.
+        """
+        try:
+            from tools.tools_obsidian import _atomic_write, _project_root
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M%S")
+            vault = os.path.join(_project_root(), "vault", "notes", "sessions")
+            os.makedirs(vault, exist_ok=True)
+            path = os.path.join(vault, f"{ts}-normie.md")
+            lines = [f"# Groq Session — {ts}", ""]
+            for msg in self.messages:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    text_parts = [
+                        b.get("text", "") for b in content
+                        if isinstance(b, dict) and b.get("type") == "text"
+                    ]
+                    content = " ".join(text_parts).strip()
+                if content:
+                    label = "**Ash**" if role == "user" else "**Pi (Groq)**"
+                    lines.append(f"{label}: {content}")
+                    lines.append("")
+            _atomic_write(path, "\n".join(lines))
+        except Exception as e:
+            print(f"[Vault] normie session archive failed (non-fatal): {e}")
+
+    def _build_normie_handoff(self) -> str:
+        """T-037: Build a GROQ SESSION HANDOFF block from self.messages for injection
+        into the first root-mode system prompt after a normie→root switch.
+
+        Extracts the last ≤12 message turns (user+assistant pairs), skips tool-use
+        content blocks, and formats them as a plain-text summary so Claude understands
+        the prior Groq conversation without replaying it message-by-message.
+        """
+        turns = []
+        for msg in self.messages[-24:]:  # up to 12 pairs
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                # Extract text blocks only; skip tool_use/tool_result blocks
+                text_parts = [
+                    b.get("text", "") for b in content
+                    if isinstance(b, dict) and b.get("type") == "text"
+                ]
+                content = " ".join(text_parts).strip()
+            if not content:
+                continue
+            label = "Ash" if role == "user" else "Pi (Groq)"
+            turns.append(f"{label}: {content[:300]}")
+
+        if not turns:
+            return ""
+
+        lines = [
+            "=== GROQ SESSION HANDOFF ===",
+            "The following conversation happened in normie mode (Groq) before you took over.",
+            "You are now Pi in root mode (Claude). Continue naturally — no need to re-introduce yourself.",
+            "",
+        ] + turns + ["=== END HANDOFF ==="]
+        return "\n".join(lines)
+
+    def _respond_god(self, user_input: str, interaction_start) -> str:
+        """God mode: Groq/Ollama private LLM + full codebase tools + private memory."""
+        if _god is None or not _god.is_available():
+            self.mode = "normie"
+            return "[God] backend unreachable — falling back to normie mode."
+
+        # Load god consciousness (private, gitignored) as system prompt
+        god_prompt_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "prompts", "god_consciousness.txt"
+        )
+        try:
+            system = open(god_prompt_path, encoding="utf-8").read()
+        except FileNotFoundError:
+            system = self.consciousness  # fallback to base consciousness
+
+        # Inject L3 context so god mode has memory access
+        l3_ctx = self.memory.get_l3_context(max_tokens=600)
+        if l3_ctx:
+            system = system + "\n\n" + l3_ctx
+
+        self.messages.append({"role": "user", "content": user_input})
+        content = _god.respond(self.messages, system)
+        self.messages.append({"role": "assistant", "content": content})
+        self._truncate_messages_safely(20)
+
+        self.history.append({"role": "user", "content": user_input})
+        self.history.append({"role": "assistant", "content": content})
+
+        duration = (datetime.now(timezone.utc) - interaction_start).total_seconds()
+        self.evolution.log_interaction(
+            user_input=user_input, pi_response=content, tool_calls=[],
+            success=True, mode=self.mode, cost=0.0, model=f"god/{_god.backend_label()}",
+            tokens_in=0, tokens_out=0,
+            metadata={"duration_seconds": duration, "session_id": self.session_id},
+        )
+        self.turn_number += 1
+        self.memory.log_turn(
+            thread_id=self.l1_thread_id, session_id=self.session_id,
+            turn_number=self.turn_number, user_content=user_input,
+            assistant_content=content, mode=self.mode,
+        )
+        return content
+
     def _respond_normie(self, user_input: str, interaction_start) -> str:
         """Normie mode: Groq, no tools"""
+        shortcut = try_answer_from_awareness(user_input, self.awareness_snapshot)
+        if shortcut:
+            duration = (datetime.now(timezone.utc) - interaction_start).total_seconds()
+            self.messages.append({"role": "user", "content": user_input})
+            self.messages.append({"role": "assistant", "content": shortcut})
+            self.history.append({"role": "user", "content": user_input})
+            self.history.append({"role": "assistant", "content": shortcut})
+            self.evolution.log_interaction(
+                user_input=user_input, pi_response=shortcut, tool_calls=[],
+                success=True, mode=self.mode, cost=0.0, model="shortcut",
+                tokens_in=0, tokens_out=0,
+                metadata={"duration_seconds": duration, "session_id": self.session_id,
+                          "shortcircuit": True},
+            )
+            self.turn_number += 1
+            self.memory.log_turn(
+                thread_id=self.l1_thread_id, session_id=self.session_id,
+                turn_number=self.turn_number, user_content=user_input,
+                assistant_content=shortcut, mode=self.mode,
+            )
+            return shortcut
+
         system_prompt = self._get_system_prompt()
 
         # T-016: Build session context from prior messages BEFORE appending the
@@ -551,20 +862,107 @@ Failed by model:
         except Exception:
             return ""
 
+    def _preprocess_file_refs(self, user_input: str) -> str:
+        """
+        Detect file paths in the user message and append a media-awareness hint
+        so the LLM knows which tools to call. Does NOT process the file itself —
+        just signals presence so Claude knows to use read_document / analyze_image etc.
+
+        Supports:
+          - Windows: C:\\...\\file.ext or E:\\...\\file.ext
+          - Unix:    /path/to/file.ext
+          - Relative: ./file.ext or just file.ext if it exists
+        """
+        import re as _re
+        # Match quoted or unquoted paths with a known extension
+        _EXTS = r"\.(pdf|docx|pptx|doc|ppt|txt|jpg|jpeg|png|gif|webp|bmp|mp4|mov|avi|mkv|csv|json|py)"
+        patterns = [
+            r'"([A-Za-z]:[^"]+' + _EXTS + r')"',    # Windows quoted double
+            r"'([A-Za-z]:[^']+" + _EXTS + r")'",    # Windows quoted single
+            r'([A-Za-z]:\\[^\s,;"\']+' + _EXTS + r')',  # Windows unquoted
+            r'([/~][^\s,;"\']+' + _EXTS + r')',     # Unix absolute
+            r'(\./[^\s,;"\']+' + _EXTS + r')',      # Relative ./
+        ]
+        found = []
+        for pat in patterns:
+            for m in _re.finditer(pat, user_input, _re.IGNORECASE):
+                p = m.group(1)
+                if Path(p).exists():
+                    found.append(p)
+
+        if not found:
+            return user_input
+
+        hint_lines = ["[FILES ATTACHED — use appropriate tool to process each]"]
+        from tools.tools_media import MediaTools as _MT
+        _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+        _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv"}
+        _DOC_EXTS   = {".pdf", ".docx", ".pptx", ".doc", ".ppt", ".txt", ".csv"}
+
+        for p in found:
+            ext = Path(p).suffix.lower()
+            if ext in _IMAGE_EXTS:
+                hint_lines.append(f"  {p} → use analyze_image or ocr_image")
+            elif ext in _VIDEO_EXTS:
+                hint_lines.append(f"  {p} → use analyze_video")
+            elif ext in _DOC_EXTS:
+                hint_lines.append(f"  {p} → use read_document or analyze_document_smart")
+            else:
+                hint_lines.append(f"  {p} → use read_document")
+
+        return user_input + "\n\n" + "\n".join(hint_lines)
+
+    def _check_reminders(self) -> list:
+        """
+        Scan L3 for entries that are expiring today (due reminders).
+        Returns list of reminder strings to show Ash on startup.
+        Best-effort — never raises.
+        """
+        reminders = []
+        try:
+            import sqlite3 as _sq
+            conn = _sq.connect(str(self.memory.sqlite_path))
+            conn.row_factory = _sq.Row
+            today = datetime.now(timezone.utc).date().isoformat()
+            rows = conn.execute(
+                """SELECT content, category, active_until
+                   FROM l3_cache
+                   WHERE active_until IS NOT NULL
+                     AND active_until >= ? AND active_until <= ?
+                     AND (archived = 0 OR archived IS NULL)
+                   ORDER BY active_until""",
+                (today, today + "T23:59:59"),
+            ).fetchall()
+            conn.close()
+            for r in rows:
+                due = r["active_until"][:10]
+                reminders.append(f"[REMINDER due {due}] {r['content']}")
+        except Exception:
+            pass
+        return reminders
+
     def run(self):
-        """Main loop"""
+        """Main loop — compact startup banner (T-041)."""
 
-        print("\n" + "="*60)
-        print("PI AGENT v2.0 - Autonomous Intelligence")
-        print("="*60)
-        print(f"Mode: {self.mode}")
-        print("Commands: 'root mode', 'normie mode', 'research mode', 'analyze performance', 'exit'")
-        print("="*60)
+        # Start background services (non-blocking)
+        if self.scheduler is not None:
+            self.scheduler.start()
+        if self.telegram is not None and self.telegram.is_available():
+            self.telegram.start_polling(block=False)
 
-        briefing = self._daily_briefing()
-        if briefing:
-            print("\n" + briefing)
-        print()
+        from agent.turn_log import count_today
+        from agent.startup_banner import format_banner
+
+        banner = format_banner(
+            mode=self.mode,
+            session_id=self.session_id,
+            tool_count=len(self._get_tool_definitions()),
+            telegram_online=bool(self.telegram and self.telegram.is_available()),
+            scheduler_running=bool(self.scheduler),
+            turns_today=count_today(),
+            reminders=self._check_reminders(),
+        )
+        print(banner)
 
         while True:
             try:

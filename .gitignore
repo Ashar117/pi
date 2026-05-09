@@ -10,8 +10,19 @@ data/
 logs/
 evolution.jsonl
 
+# God mode — private implementation + private data, never push
+agent/god.py
+prompts/god_consciousness.txt
+tickets/god/
+vault/.god/
+
 # Obsidian vault config — personal settings, never commit
 .obsidian/
+
+# Vault personal content — L2/L3 memory and per-ticket notes contain personal data
+vault/memory/
+vault/notes/per-ticket/
+vault/.obsidian/
 
 # Engineering backlog — contains personal context/location references
 PI_ENGINEERING_PLAN.md
@@ -20,6 +31,9 @@ PI_ENGINEERING_PLAN.md
 # (the rest of analysis/ is public: README, WORKFLOW, SUMMARY, tickets.jsonl)
 analysis/chat_logs.txt
 analysis/chat_logs.*.txt
+
+# Local LLM model weights — large binaries, never commit
+local_models/
 
 # Cache and temp
 __pycache__/
