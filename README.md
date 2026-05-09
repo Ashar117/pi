@@ -1,141 +1,161 @@
 # Pi — Autonomous Intelligence Agent
 
-Pi is an evolving autonomous agent system built on Claude Sonnet 4.6, with a continuous engineering loop:
+Pi is a self-improving agent system built on Claude Sonnet 4.6 + Groq, with a continuous engineering loop:
 
-> build → test → ticket → run → execute → inspect → detect → build again
+> build → test → ticket → run → inspect → detect → build again
 
-Every fix produces a ticket, every ticket produces a solution record, every recurring failure becomes a lesson.
-
-**New here?** Start with [ABOUT.md](ABOUT.md) for the why, then [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the how. This README is the technical map.
+Every fix produces a ticket. Every ticket produces a solution record. Every recurring failure becomes a lesson. The goal: Pi runs the engineering loop on its own.
 
 ---
 
 ## Quick start
 
-1. Install dependencies: `pip install -r requirements.txt`
-2. Copy [.env.example](.env.example) → `.env` and fill in `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `SUPABASE_URL`, `SUPABASE_KEY`. `GEMINI_API_KEY` is optional (research mode falls back to a 2-agent debate without it).
-3. Run [SUPABASE_SETUP.sql](SUPABASE_SETUP.sql) in your Supabase SQL editor.
-4. `python pi_agent.py`
-5. Full operating instructions: [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
+```bash
+pip install -r requirements.txt
+cp .env.example .env          # fill in API keys (see below)
+# run SUPABASE_SETUP.sql in your Supabase SQL editor
+python pi_agent.py
+```
+
+**Required keys** (`.env`): `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `SUPABASE_URL`, `SUPABASE_KEY`
+
+**Optional**: `GEMINI_API_KEY` (research mode 3rd agent), `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` (sprint runner escalation + Pi-to-phone messages)
+
+Full setup: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
 
 ---
 
-## Architecture at a glance
+## Modes
 
-**Three modes**
-- **Root** — Claude Sonnet 4.6 + 8 tools (memory, execution, files). ~$0.003/msg.
-- **Normie** — Groq Llama 3.3 70B, no tools. Free.
-- **Research** — 3-agent debate (Claude + Gemini + Groq), 2 rounds + synthesis.
+| Mode | Model | Cost | Use for |
+| --- | --- | --- | --- |
+| **root** | Claude Sonnet 4.6 | ~$0.003–0.01/msg | Code edits, file ops, full 51-tool loop |
+| **normie** | Groq Llama 3.3 70B | Free | Fast chat, no tools |
+| **research** | Claude + Groq + Gemini | ~$0.02/run | Hard questions, multi-agent debate |
+| **god** | Groq (private) | Free | Private mode; fully gitignored |
 
-**Three-tier memory** (Supabase + SQLite cache)
-- **L3** active context, ~800 tokens, loaded every session, 5-minute Supabase sync TTL.
-- **L2** organized memory, unlimited, searchable by category + title (content-search is a known gap — see below).
-- **L1** raw archive, threaded by `session_id`.
+Switch by typing: `root mode`, `normie`, `research mode`.
 
-**Eight tools** (root mode only): `memory_read`, `memory_write`, `memory_delete`, `execute_python`, `execute_bash`, `read_file`, `modify_file`, `create_file`.
+---
 
-Full design rationale: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Memory invariants: [solutions/LESSONS.md](solutions/LESSONS.md) L-005 / L-006 / L-010.
+## Tools — 51 total (root mode)
+
+| Category | Tools |
+| --- | --- |
+| **Memory** | `memory_read` · `memory_write` · `memory_delete` |
+| **Execution** | `execute_python` · `execute_bash` · `read_file` · `modify_file` · `create_file` |
+| **Awareness** | `get_weather` · `get_news` · `get_stocks` · `get_tech_updates` · `refresh_awareness` |
+| **Project** | `search_codebase` · `create_ticket` · `get_session_stats` · `system_introspect` |
+| **Web** | `web_search` · `web_browse` · `reddit_browse` · `reddit_search` · `reddit_thread` · `scholar_search` · `discord_read` · `daily_briefing` |
+| **Obsidian** | `obsidian_read` · `obsidian_write` · `obsidian_append` · `obsidian_search` |
+| **Image** | `image_gen` |
+| **Gmail** | `gmail_inbox` · `gmail_search` · `gmail_read` · `gmail_send` |
+| **Calendar** | `calendar_today` · `calendar_upcoming` · `calendar_search` · `calendar_create` · `calendar_delete` |
+| **Documents** | `read_document` · `analyze_image` · `analyze_images` · `analyze_video` · `ocr_image` · `analyze_document_smart` |
+| **Faces** | `detect_faces` · `recognize_face` · `register_face` · `list_registered_faces` |
+| **Output** | `speak` · `telegram_send` |
+
+---
+
+## Memory architecture
+
+Three tiers backed by Supabase + SQLite:
+
+| Tier | Store | Contents | Lifetime |
+| --- | --- | --- | --- |
+| **L1** `raw_wiki` | Supabase | Full conversation log, every turn, both modes | 30-day prune |
+| **L2** `organized_memory` | Supabase | Distilled durable facts, populated by Groq at session-end | Permanent |
+| **L3** `l3_cache` | SQLite | Fast-recall ambient context, injected into system prompt | Rolling |
+
+Every turn (all modes, all return paths) also logs locally to `logs/turns.jsonl` — durable, offline-safe.
+
+---
+
+## Vault / Obsidian integration
+
+`vault/` is a local Obsidian-compatible knowledge base that mirrors session state.
+
+```text
+vault/
+  notes/            ← agent-written notes (tickets, status, sprints, retros)
+  memory/           ← L2/L3 snapshots  [gitignored]
+  notes/per-ticket/ ← one distilled brief per ticket  [gitignored]
+```
+
+**How it works:**
+
+- Pi can read/write vault notes during a session via `obsidian_read/write/append/search` tools
+- `sync_vault()` runs at session exit — one-way push from Supabase into `vault/`
+- MCP Obsidian server (`tools/mcp_obsidian_server.py`) available as an alternative real-time bridge
+- **VS Code graph view:** install the [Foam](https://foamresearch.io) extension (see [docs/vscode-setup.md](docs/vscode-setup.md)) for backlinks + graph across `PI.md`, `vault/`, `CHECKPOINTS/`, `docs/`
+
+---
+
+## Autonomy loop (Phase 7)
+
+```bash
+python scripts/sprint.py --dry-run          # plan next ticket, no edits
+python scripts/sprint.py --auto-implement   # full autonomous run
+python scripts/plan_sprint.py               # Monday: set week goal in PI.md §3
+python scripts/retro.py --stdout            # Friday: aggregate week stats
+python scripts/refresh_pi.py               # regenerate PI.md auto-sections
+```
+
+`sprint.py` picks the highest-priority open ticket, runs Claude with the full tool loop, blocks edits to risk-flagged components without a diff-first gate, runs `verify.py`, commits to a branch, escalates via Telegram on failure.
 
 ---
 
 ## Engineering loop
 
-| Stage | Where it lives |
-|---|---|
-| Tickets (open) | [tickets/open/](tickets/open/), candidate tickets in [analysis/tickets.jsonl](analysis/tickets.jsonl) |
-| Tickets (closed, audit trail) | [tickets/closed/](tickets/closed/) |
-| Solutions (S-NNN, append-only) | [solutions/SOLUTIONS.jsonl](solutions/SOLUTIONS.jsonl) |
-| Lessons (L-NNN, synthesised patterns) | [solutions/LESSONS.md](solutions/LESSONS.md) |
-| Conversation analysis pipeline | [analysis/](analysis/) — chat logs become tickets via [analysis/WORKFLOW.md](analysis/WORKFLOW.md) |
-| Per-interaction telemetry | `logs/evolution.jsonl` (gitignored) |
-
-The `analysis/` folder is what makes silent behaviour bugs (Pi forgot something it should have remembered, drifted between modes, mimed a tool call) become structured tickets — the kind of bug that doesn't produce a stack trace.
+| Stage | Location |
+| --- | --- |
+| Open tickets | [tickets/open/](tickets/open/) |
+| Closed tickets | [tickets/closed/](tickets/closed/) |
+| Solutions (S-NNN) | [solutions/SOLUTIONS.jsonl](solutions/SOLUTIONS.jsonl) |
+| Current sprint + state | [PI.md](PI.md) |
+| Last session exit | [CHECKPOINTS/current.md](CHECKPOINTS/current.md) |
+| CI | `python scripts/verify.py` |
 
 ---
 
 ## Repo map
 
-### Canonical (active)
-
 | Path | Role |
 |---|---|
-| [pi_agent.py](pi_agent.py) | Entry point — `python pi_agent.py` |
-| [tools/](tools/) | `MemoryTools`, `ExecutionTools` — wired into the runtime |
-| [evolution.py](evolution.py) | Telemetry tracker + reserved `SelfModifier` |
-| [core/research_mode.py](core/research_mode.py) | 3-agent debate |
-| [app/config.py](app/config.py) | Env loading, model strings, daily cost limit |
+| [PI.md](PI.md) | Single bootstrap doc — AI sessions start here |
+| [pi_agent.py](pi_agent.py) | Agent class, tool loop, mode switching |
+| [agent/](agent/) | Tool dispatch, prompt builder, turn log, startup banner |
+| [tools/](tools/) | 14 tool modules |
 | [prompts/consciousness.txt](prompts/consciousness.txt) | Pi's identity prompt |
-| [prompts/system.txt](prompts/system.txt) | Base prompt for Groq + research personas |
-| [SUPABASE_SETUP.sql](SUPABASE_SETUP.sql) | Authoritative cloud schema |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Canonical architecture doc |
-| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | How to run + every command |
-| [STATUS.md](STATUS.md) | One-page as-of repo state |
-| [PI_MASTER_PROMPT.md](PI_MASTER_PROMPT.md) | Operating protocol for VS Code Claude during engineering work |
-
-### Phase-0 audit deliverables
-
-| Path | Role |
-|---|---|
-| [STATUS.md](STATUS.md) | One-page synthesis (start here) |
-| [RECONCILIATION.md](RECONCILIATION.md) | Doc-vs-code reconciliation table |
-| [FILE_INVENTORY.md](FILE_INVENTORY.md) | Per-`.py` import graph and status |
-| [CONTRADICTIONS.md](CONTRADICTIONS.md) | 12 contradictions with citations |
-| [DEAD_CODE.md](DEAD_CODE.md) | Dead-code candidates with import-graph evidence |
-| [SCHEMA_MISMATCHES.md](SCHEMA_MISMATCHES.md) | Write/read schema drift ledger |
-
-### Audit trail (do not modify)
-
-[analysis/](analysis/), [solutions/](solutions/), [tickets/closed/](tickets/closed/), [logs/](logs/) (gitignored), [CHECKPOINTS/](CHECKPOINTS/), [docs/_archive/](docs/_archive/).
-
-### Legacy / pending archive
-
-- [llm/routing.py](llm/routing.py) — old multi-provider routing layer, no importers, model string `claude-haiku-4-6` unused at runtime. Phase-4 archive target.
-- [app/state.py](app/state.py) — old 10-table SQLite schema, no importers. Phase-4 archive target. Already acknowledged in [data/README.md](data/README.md).
-- [docs/_archive/2026-04-25/](docs/_archive/2026-04-25/) — 12 files archived during the Phase-1 docs collapse on this date. See the [README in that folder](docs/_archive/2026-04-25/README.md) for per-file rationale.
-
----
-
-## Status
-
-The honest, citation-backed picture is in [STATUS.md](STATUS.md). The very short version:
-
-**Working** — agent tool loop, mode switching (including loose-matched natural variants), cross-mode continuity, session ID propagation, safe message truncation, dynamic L3 category injection, sync TTL, dual-store write verification, session summary on exit, conversation analysis pipeline.
-
-**Broken** — evolution telemetry analytics are silently empty (the analyzer reads a field name the logger doesn't write — see [SCHEMA_MISMATCHES.md SM-001](SCHEMA_MISMATCHES.md)). `memory_read(tier=None)` excludes L1 despite docstring (T-017). L2 search filters on `title` only (SM-003). Normie mode prompt sometimes mimes tool effects (T-019).
-
-**Unverified** — the memory round-trip via the real Claude tool loop. Existing tests cover `MemoryTools` directly but never instantiate `PiAgent` and feed input through the agent loop. Phase 3 of [PI_MASTER_PROMPT.md](PI_MASTER_PROMPT.md) closes that gap.
+| [scripts/](scripts/) | `sprint.py`, `plan_sprint.py`, `retro.py`, `refresh_pi.py`, `verify.py` |
+| [vault/](vault/) | Obsidian-compatible knowledge base |
+| [CHECKPOINTS/](CHECKPOINTS/) | Per-session exit states |
+| [tickets/](tickets/) | Open + closed ticket queue |
+| [solutions/SOLUTIONS.jsonl](solutions/SOLUTIONS.jsonl) | Append-only solution record |
+| [testing/](testing/) | 29 tests across all components |
+| [docs/](docs/) | Architecture, user guide, Obsidian setup |
+| [docs/_archive/](docs/_archive/) | Phase-0 audit artifacts (superseded) |
+| [SUPABASE_SETUP.sql](SUPABASE_SETUP.sql) | Cloud schema |
 
 ---
 
 ## Testing
 
 ```bash
-cd testing
-python run_all_tests.py
+python scripts/verify.py    # full suite — must say PASS before any commit
+pytest testing/ -v          # individual suites
 ```
 
-Five suites: requirements / memory / persistence / modes / integration. They cover storage layer correctness, file presence, and Supabase reachability. They do **not** yet verify the agent's tool loop end-to-end. See `STATUS.md` for the gap and the plan.
+29 tests · 0 failures (last verify: PASS).
 
 ---
 
 ## Cost
 
-Default daily limit: **$0.50** ([app/config.py:28](app/config.py#L28)). When reached, root mode auto-switches to normie for the rest of the day. Per-mode costs:
-
-| Mode | ~ Cost / message |
-|---|---|
-| Normie | $0 |
-| Root | $0.003–0.01 |
-| Research (2-round) | ~$0.02 |
-
-Run `analyze performance` for a 7-day report. Caveat: the tool-usage breakdown inside that report is currently empty due to SM-001.
+Default daily limit: **$0.50** (`app/config.py`). At limit, root auto-switches to normie for the rest of the day.
 
 ---
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
-## Author
-
-Built by Ashar. Continuous evolution enabled.

@@ -22,36 +22,29 @@ Pi is my attempt at that. It started as a personal research project and has turn
 
 ## What Pi is, in one paragraph
 
-Pi is a multi-mode agent built on Claude Sonnet 4.6, with a three-tier memory backed by Supabase and SQLite, a continuous engineering loop that turns every failure into a structured ticket and lesson, and an architecture designed so that no component requires a rewrite to grow. It can read and write its own memory, execute code locally, edit files, run multi-agent debates for hard questions, and route between a paid root model and a free fallback model based on cost. Most importantly, it keeps a permanent record of what it has done, why, and what it learned — so the next version of Pi knows things this version had to learn the hard way.
+Pi is a multi-mode agent built on Claude Sonnet 4.6 and Groq, with a three-tier memory backed by Supabase and SQLite, 51 tools covering memory, execution, web, Gmail, Calendar, Obsidian, image gen, TTS, Telegram, and more, a continuous engineering loop that turns every failure into a structured ticket and lesson, and an autonomous sprint runner that picks tickets, plans, edits, tests, and commits to a branch — all without Ash in the seat. It routes between a paid root model and a free fallback based on cost, keeps a permanent record of what it has done and why, and syncs its knowledge base to a local Obsidian vault at session exit.
 
 ---
 
-## Capabilities — current honest state
+## Capabilities — current state
 
-This table tracks the *verified* state of each capability, not the design intent. A row is `✅ Working` only when there's an end-to-end test or runtime evidence of it working. Rows that work in unit tests but haven't been verified end-to-end are `🟡`.
-
-| Capability | Status | Evidence |
-|---|---|---|
-| Three-mode routing (Root / Normie / Research) | ✅ Working | [pi_agent.py:344-371 (mode switch)](pi_agent.py#L344-L371), [pi_agent.py:373-397 (research)](pi_agent.py#L373-L397). Closed tickets T-009, T-015 cover natural-language mode-switch matching. |
-| Real Claude tool loop (root mode) | ✅ Working | [pi_agent.py:454-482](pi_agent.py#L454-L482). Latest `logs/evolution.jsonl` entry shows live `tools_used: ["memory_read", "memory_read"]`. |
-| Three-tier memory storage layer | ✅ Working | `MemoryTools` write/read/delete in [tools/tools_memory.py](tools/tools_memory.py); 5 unit tests in [testing/test_memory.py](testing/test_memory.py); dual-store write verification at [tools_memory.py:401-422](tools/tools_memory.py#L401-L422). |
-| Memory round-trip through the agent (write via tool → restart → recall via tool) | 🟡 Working (needs round-trip test) | Storage works in isolation; the path Claude actually takes during a real session is not yet covered by an automated test. Phase 3 of [PI_MASTER_PROMPT.md](PI_MASTER_PROMPT.md) adds that test. |
-| Cross-mode continuity (normie → root preserves conversation) | ✅ Working | S-011 / T-016 closed. [pi_agent.py:548-572](pi_agent.py#L548-L572). |
-| Session persistence + summary on exit | ✅ Working | [pi_agent.py:766-777](pi_agent.py#L766-L777); S-006 closed. |
-| Session ID correlation across logs / L1 / summaries | ✅ Working | [pi_agent.py:68](pi_agent.py#L68). Verified in `logs/evolution.jsonl` — five consecutive entries from session `bfe9f64b` all carry the same `metadata.session_id`. |
-| Tool execution (Python / bash / file ops) | ✅ Working | [tools/tools_execution.py](tools/tools_execution.py); 30s subprocess timeout; verified write-back on `modify_file`/`create_file`. |
-| Engineering loop (tickets → solutions → lessons) | ✅ Working | 11 closed tickets, 6 solution records (S-006 to S-011), 10 lessons (L-001 to L-010). |
-| Conversation analysis pipeline | ✅ Working | [analysis/](analysis/) is operating. T-015–T-019 generated through it. |
-| Cost awareness + budget gating | ✅ Working | Daily limit $0.50, auto root → normie switch at limit ([pi_agent.py:402-406](pi_agent.py#L402-L406)). |
-| Health diagnostics on startup | ✅ Working | [pi_agent.py:629-655](pi_agent.py#L629-L655). |
-| Tool-usage analytics (`analyze performance`) | 🔴 Broken (silent) | Logger writes `tools_used`; analyzer reads `tool_calls`. Drift documented in [SCHEMA_MISMATCHES.md SM-001](SCHEMA_MISMATCHES.md). Fix in Phase 2. |
-| `memory_read(tier=None)` searches all tiers | 🔴 Broken (docstring lies) | Excludes L1. Open ticket T-017. Conservative fix is a docstring correction. |
-| L2 search by content keywords (vs. title) | 🔴 Limited | L2 search filters on `title` only; full content is in `content.text`. [SCHEMA_MISMATCHES.md SM-003](SCHEMA_MISMATCHES.md). |
-| Normie mode honesty (refuses tool-shaped requests) | 🟡 Mostly | Strong "Never Mime Tool Use" section in `consciousness.txt`, but prompt sometimes still slips. Open ticket T-019. |
-| Autonomous ticket generation from logs | 🚧 In progress | Pipeline architecture is in place; auto-conversion is not yet wired. |
-| Self-improvement loop (Pi reads SOLUTIONS before fixing) | 🚧 In progress | `SelfModifier` class exists ([evolution.py:261-356](evolution.py#L261-L356)) but is not yet invoked at runtime. |
-
-The most rigorous, citation-backed snapshot is in [STATUS.md](STATUS.md).
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Four-mode routing (root / normie / research / god) | ✅ Working | Natural-language switch detection |
+| Full tool loop — 51 tools (root mode) | ✅ Working | Memory, execution, web, Gmail, Calendar, Obsidian, image, TTS, Telegram, faces, documents |
+| Three-tier memory (L1/L2/L3) | ✅ Working | Supabase + SQLite; verified writes; 30-day L1 prune |
+| Universal turn log (`logs/turns.jsonl`) | ✅ Working | All modes, all return paths, offline-safe |
+| Vault / Obsidian sync | ✅ Working | `sync_vault()` at session exit; read/write tools during session |
+| Cross-mode continuity (normie → root) | ✅ Working | Conversation state preserved across mode switches |
+| Compact startup (3-line banner) | ✅ Working | Lazy awareness load; silent health check |
+| Autonomous sprint runner | ✅ Working | `scripts/sprint.py` — ticket → plan → edit → verify → branch commit → Telegram escalation |
+| Weekly planning + retro | ✅ Working | `plan_sprint.py` writes PI.md §3; `retro.py` aggregates 5 sources |
+| PI.md orchestrator | ✅ Working | 13-section master doc; auto-sections regenerated by `refresh_pi.py` |
+| Cost awareness + budget gating | ✅ Working | Daily $0.50 limit; auto root → normie at cap |
+| Engineering loop (tickets → solutions) | ✅ Working | 43 closed tickets, 43 solution records |
+| Telegram integration | ✅ Working | Pi can push messages; sprint runner escalates on failure |
+| TTS (offline voice output) | ✅ Working | `speak` tool via pyttsx3 |
+| Research mode (3-agent debate) | ✅ Working | Claude + Groq + Gemini; 2 rounds + synthesis |
 
 ---
 
@@ -67,31 +60,29 @@ build → test → create/fix ticket → run → execute → inspect output
 
 Every component writes to logs. Every failure produces a ticket. Every fix produces a solution record. Every recurring pattern produces a lesson. Pi's *engineering biography* — its tickets, solutions, and lessons — is what eventually lets it say "I've seen this failure before, here's what we tried, here's a better approach."
 
-The system is designed in layers:
+The system is built in layers:
 
 - **Identity layer** — `prompts/consciousness.txt` defines what Pi is, versioned across changes.
-- **Memory layer** — three-tier storage with strict invariants (verified writes go to the durable store, read paths must match write paths, sync is rate-limited).
-- **Tool layer** — replaceable tools that all auto-log to the run record.
+- **Memory layer** — three-tier storage (L1 raw archive → L2 distilled facts → L3 ambient context).
+- **Tool layer** — 51 replaceable tools, all auto-logged to the run record.
 - **Mode layer** — routing between models without breaking session state.
-- **Engineering loop layer** — tickets, solutions, lessons, diagnostics, conversation analysis.
-- **Self-observation layer** — Pi can read its own architecture docs, known limitations, and past solutions.
-
-Full design rationale: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The patterns Pi has already learned the hard way: [solutions/LESSONS.md](solutions/LESSONS.md).
+- **Vault layer** — Obsidian-compatible `vault/` synced from Supabase; readable in VS Code via Foam graph view.
+- **Engineering loop layer** — tickets, solutions, lessons, diagnostics.
+- **Autonomy layer** — `sprint.py` closes tickets without Ash driving every step.
 
 ---
 
 ## How this evolves
 
-I'm following a deliberate path toward autonomy. The constraint is not technical — it's trust earned through track record.
+The constraint is not technical — it's trust earned through track record.
 
-**Phase A (now)** — Pi generates great logs. I read them and act.
-**Phase B (next)** — Pi reads its own logs and proposes tickets and fixes. I approve.
-**Phase C (later)** — Pi executes approved fixes within a bounded scope. I review.
-**Phase D (long-term)** — Pi proposes architectural changes. I decide.
+- **Phase 1–6 (complete)** — memory, mode switching, tool loop, cross-mode continuity, turn logging, vault sync, compact UX.
+- **Phase 7 (complete)** — autonomy loop. `sprint.py` runs ticket→test→fix→close. `plan_sprint.py` + `retro.py` close the weekly cadence.
+- **Phase 8 (next)** — voice. Whisper STT + wake word + audio I/O.
+- **Phase 9** — distributed. Telegram as a peer (not just notifications), Discord bot, minimal web UI.
+- **Phase 10** — multi-agent. Internal researcher/coder/reviewer debate before Pi answers.
 
-At no point does Pi modify its own identity or core files without review. That's not a technical limit — it's a design choice. An autonomous agent that earns autonomy is more interesting than one that's given it.
-
-The historical record — every session trace, every ticket, every solution, every version of `consciousness.txt` — is preserved permanently. Six months from now, twelve months from now, that history is what makes Pi able to reason about its own development as a continuous arc rather than a series of disconnected fixes.
+At no point does Pi modify its own identity or core files without a diff-first review gate. That's not a technical limit — it's a design choice.
 
 ---
 
@@ -99,29 +90,28 @@ The historical record — every session trace, every ticket, every solution, eve
 
 A few overlapping things, honestly:
 
-- **A research substrate.** I'm a CS undergrad at GSU researching graph neural networks. Pi is where I get to test ideas about memory, structured reasoning, and autonomous systems in something that runs end-to-end, not just on a benchmark.
-- **An engineering exercise.** Building a system that survives its own bugs taught me more about disciplined engineering than any course has. Every entry in `LESSONS.md` is a habit I now have.
-- **A long-term collaborator.** Pi is being built so I can use it. The same agent that's logging this commit is the agent that will, eventually, help debug its own descendants.
-- **A portfolio of how I think.** If you're reading this, the architecture documents, tickets, and lessons are the most honest thing I can show you about the way I approach hard problems.
+- **A research substrate.** I'm a CS undergrad at GSU researching graph neural networks. Pi is where I test ideas about memory, structured reasoning, and autonomous systems in something that runs end-to-end.
+- **An engineering exercise.** Building a system that survives its own bugs taught me more about disciplined engineering than any course has.
+- **A long-term collaborator.** Pi is being built so I can use it. The same agent logging this commit is the one that will eventually help debug its own descendants.
+- **A portfolio of how I think.** The architecture docs, tickets, and lessons are the most honest thing I can show about the way I approach hard problems.
 
 ---
 
 ## What's intentionally not here
 
-- **Marketing claims I can't back.** Pi is not "AGI". It is not "conscious". It is a well-engineered agent system with persistent memory and a feedback loop. That's interesting on its own.
-- **A polished demo.** This is a working system, not a product. The UI is a terminal. The deployment is `python pi_agent.py`. That's a feature for now — every change is observable.
-- **Personal data.** Raw conversation logs, API keys, session traces — none of that lives in this repo. The `.gitignore` is strict on purpose. Public is engineering; local is personal.
+- **Marketing claims I can't back.** Pi is not "AGI". It is a well-engineered agent system with persistent memory and a feedback loop.
+- **A polished demo.** This is a working system, not a product. The UI is a terminal.
+- **Personal data.** Raw conversation logs, API keys, session traces, private memory — none of that lives in this repo.
 
 ---
 
 ## Status
 
-Continuous evolution enabled. The agent that committed yesterday's code is not the same one that's running today. The lessons file gets longer. The architecture stabilizes. The autonomy boundary moves outward, slowly, on purpose.
+Continuous evolution enabled. 43 tickets closed. 43 solutions on record. Sprint runner live.
 
-If you want the citation-backed snapshot of *right now*, read [STATUS.md](STATUS.md).
-If you want what's currently being worked on, read [analysis/tickets.jsonl](analysis/tickets.jsonl) and [analysis/SUMMARY.md](analysis/SUMMARY.md).
-If you want what's been learned along the way, read [solutions/LESSONS.md](solutions/LESSONS.md).
-Those four files are the real changelog.
+- Current state: [PI.md](PI.md)
+- Last session exit: [CHECKPOINTS/current.md](CHECKPOINTS/current.md)
+- What's been learned: [solutions/SOLUTIONS.jsonl](solutions/SOLUTIONS.jsonl)
 
 ---
 
@@ -129,6 +119,4 @@ Those four files are the real changelog.
 
 Built by **Ashar** — CS undergrad at Georgia State University, researching graph neural networks, building Pi in the hours that aren't class or research.
 
-Reach: via GitHub issues on this repo.
-
-Pi is MIT licensed. Use it, fork it, learn from it. If you build something with the same skeleton, I'd love to hear what you did differently.
+Pi is MIT licensed. Use it, fork it, learn from it.
