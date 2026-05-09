@@ -32,7 +32,6 @@ Full setup: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
 | **root** | Claude Sonnet 4.6 | ~$0.003–0.01/msg | Code edits, file ops, full 51-tool loop |
 | **normie** | Groq Llama 3.3 70B | Free | Fast chat, no tools |
 | **research** | Claude + Groq + Gemini | ~$0.02/run | Hard questions, multi-agent debate |
-| **god** | Groq (private) | Free | Private mode; fully gitignored |
 
 Switch by typing: `root mode`, `normie`, `research mode`.
 

@@ -30,7 +30,7 @@ Pi is a multi-mode agent built on Claude Sonnet 4.6 and Groq, with a three-tier 
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Four-mode routing (root / normie / research / god) | ✅ Working | Natural-language switch detection |
+| Three-mode routing (root / normie / research) | ✅ Working | Natural-language switch detection |
 | Full tool loop — 51 tools (root mode) | ✅ Working | Memory, execution, web, Gmail, Calendar, Obsidian, image, TTS, Telegram, faces, documents |
 | Three-tier memory (L1/L2/L3) | ✅ Working | Supabase + SQLite; verified writes; 30-day L1 prune |
 | Universal turn log (`logs/turns.jsonl`) | ✅ Working | All modes, all return paths, offline-safe |
