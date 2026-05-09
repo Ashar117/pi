@@ -1,3 +1,19 @@
+# Implementation — private, never publish
+agent/
+app/
+core/
+llm/
+memory/
+prompts/
+scripts/
+testing/
+tools/
+pi_agent.py
+evolution.py
+requirements.txt
+analysis/
+pi_dna.txt
+
 # API keys and credentials
 app/config.py
 .env
