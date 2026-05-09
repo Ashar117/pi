@@ -1,38 +1,19 @@
-# API keys and credentials — NEVER COMMIT
+# API keys and credentials
 app/config.py
 .env
 .env.local
 *.env
+.mcp.json
 
-# Personal data and session logs — NEVER COMMIT
-.claude/
+# Session data and local logs
 data/
 logs/
 evolution.jsonl
 
-# God mode — private implementation + private data, never push
-agent/god.py
-prompts/god_consciousness.txt
-tickets/god/
-vault/.god/
-
-# Obsidian vault config — personal settings, never commit
+# Obsidian vault config
 .obsidian/
 
-# Vault personal content — L2/L3 memory and per-ticket notes contain personal data
-vault/memory/
-vault/notes/per-ticket/
-vault/.obsidian/
-
-# Engineering backlog — contains personal context/location references
-PI_ENGINEERING_PLAN.md
-
-# Raw conversation transcripts — personal, never push
-# (the rest of analysis/ is public: README, WORKFLOW, SUMMARY, tickets.jsonl)
-analysis/chat_logs.txt
-analysis/chat_logs.*.txt
-
-# Local LLM model weights — large binaries, never commit
+# Local LLM model weights
 local_models/
 
 # Cache and temp
@@ -43,9 +24,6 @@ __pycache__/
 pi_env/
 *.backup.*
 temp_exec.py
-
-# MCP server config (contains API keys)
-.mcp.json
 
 # OS and IDE
 .DS_Store
