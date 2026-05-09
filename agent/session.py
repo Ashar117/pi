@@ -82,11 +82,7 @@ def on_exit(agent) -> None:
         except Exception as e:
             print(f"[Memory] Distillation failed (non-fatal): {e}")
 
-    # L1 TTL enforcement: prune raw_wiki rows older than 30 days.
-    try:
-        agent.memory.prune_l1(days=30)
-    except Exception as e:
-        print(f"[Memory] L1 prune failed (non-fatal): {e}")
+    # L1 is permanent — no pruning. Full raw history is kept forever.
 
     # L2 -> L3 promotion: elevate high-importance (>=8) L2 facts to ambient context.
     # Runs after distillation so facts written this session are eligible immediately.
