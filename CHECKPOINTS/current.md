@@ -1,17 +1,18 @@
 # CURRENT — pointer to active checkpoint
 
-**Phase:** 7 — Autonomy (week 1 complete)
-**Status:** Phase 7 deliverables shipped. PI.md is the single bootstrap. Sprint runner + planner + retro live. Verify PASS, 0 failures.
+**Phase:** 8 — Voice + Resilience + Health (complete)
+**Status:** Phase 8 + health-check fixes shipped. Consciousness self-healing ({{INCLUDE:}}), half-baked detector improvements, voice loop UX. 53 tools. 130 ok / 47 run / 0 failures.
 **Active checkpoint:** [phase-7-week-1.md](phase-7-week-1.md)
-**Last updated:** 2026-05-09
+**Last updated:** 2026-05-13
 
 ## At-a-glance state
 
-- **Verify:** PASS · 86 files clean · 29 tests · 9 skipped · 0 failures
+- **Verify:** PASS · 130 ok, 47 run, 0 failures
 - **Open tickets:** 0
-- **Closed this sprint:** T-039, T-040, T-041, T-042, T-043, T-044, T-045, T-046 (8 tickets, S-036 → S-043)
-- **Bootstrap file:** `PI.md` at repo root replaces CLAUDE.md/PI_MASTER_PROMPT/STATUS as the AI session entry point
-- **Autonomy:** `python scripts/sprint.py` picks a ticket, plans, optionally auto-implements (safe components only), runs verify, commits to a branch, escalates via Telegram
+- **Closed this sprint:** T-047 through T-059 (13 tickets)
+- **53 tools** across Memory·Execution·Awareness·Project·Web·Obsidian·Image·Gmail·Calendar·Documents·Faces·Output·STT
+- **LLMRouter:** Claude primary → Groq → Gemini fallback · 5-min brownout · health ping
+- **Voice:** `voice` / `voice vad` / `voice wake` commands in pi_agent · barge-in detection
 
 ## What's live
 

@@ -29,19 +29,30 @@
 
 ## §2 Read order at session start
 
-If you read nothing else:
+**Quick session (fewest tokens — use this by default):**
+
+1. **`vault/_hot.md`** — pre-compiled HOT-tier file (~60 lines); replaces reading PI.md + STATUS + CHECKPOINTS for ambient context
+
+**Full session (when doing real work):**
 
 1. **This file** — `PI.md` (you're here)
-2. **`docs/STATUS.md`** — last verify run (PASS/FAIL + which tests skipped/failed)
-3. **`CHECKPOINTS/current.md`** — last session's exit state + exact next step
+2. **`CHECKPOINTS/current.md`** — last session's exit state + exact next step
 
 If working on a specific closed ticket: also `vault/notes/per-ticket/T-NNN-slug.md` (one distilled brief per ticket, ~30 lines).
+
+**Context tier policy — prevents token waste:**
+
+| Tier | Files | Rule |
+|------|-------|------|
+| HOT  | `vault/_hot.md` | Load once at session start |
+| WARM | `vault/memory/L3/*.md` · `vault/notes/per-ticket/T-NNN.md` · `CHECKPOINTS/phase-*.md` | Query via `obsidian_search` or read individually on demand |
+| COLD | `vault/memory/L2/*.md` · `docs/_archive/**` · `tickets/closed/*.json` | Never auto-load; only if explicitly needed |
 
 **Do NOT** load:
 - `PI_MASTER_PROMPT.md` (archived — Phase 0–6 bootstrap, executed long ago)
 - `CONTRADICTIONS.md`, `DEAD_CODE.md`, `FILE_INVENTORY.md`, `FINDINGS.md`, `RECONCILIATION.md`, `SCHEMA_MISMATCHES.md` (archived — Phase 0 audit artifacts)
 - `tickets/closed/*.json` raw — the per-ticket vault notes are the indexed form
-- The full `vault/` tree at startup — pull individual notes as needed
+- The full `vault/` tree at startup — query individual files as needed
 
 ---
 
@@ -68,13 +79,13 @@ When closed: move into §6 of `CHECKPOINTS/current.md` and §9 of this file (aut
 ## §4 State (auto-generated)
 
 <!-- BEGIN AUTO §4 -->
-- **Phase:** 7 — Autonomy (week 1 complete)
-- **Last verify:** PASS · 86/86 files clean · 29 tests · 0 failures
+- **Phase:** 8 — Voice + Resilience (complete)
+- **Last verify:** PASS · 114/114 files clean · 39 tests · 0 failures
 - **Open tickets:** 0
-- **Closed tickets:** 43
-- **Solutions logged:** 38
-- **Turns today:** 124
-- **Last session end:** 2026-05-09
+- **Closed tickets:** 56
+- **Solutions logged:** 39
+- **Turns today:** 183
+- **Last session end:** 2026-05-10
 <!-- END AUTO §4 -->
 
 ---
@@ -138,8 +149,9 @@ For every meaningful change:
 **Documents** (6): read_document · analyze_image · analyze_images · analyze_video · ocr_image · analyze_document_smart
 **Faces** (4): detect_faces · recognize_face · register_face · list_registered_faces
 **Output** (2): speak · telegram_send
+**Other** (2): listen · transcribe_file
 
-**Total: 51 tools.**
+**Total: 53 tools.**
 <!-- END AUTO §7 -->
 
 ---
@@ -159,6 +171,7 @@ For every meaningful change:
 <!-- BEGIN AUTO §9 -->
 | Solution | Ticket | Title |
 |---|---|---|
+| S-044 | T-047 | Whisper STT via faster-whisper — listen + transcribe_file tools |
 | S-043 | T-046 | VS Code Foam graph for vault knowledge |
 | S-042 | T-045 | Weekly retrospective generator |
 | S-041 | T-044 | Weekly sprint planner |
@@ -168,7 +181,6 @@ For every meaningful change:
 | S-037 | T-040 | Verified normie L1 logging — no fix needed |
 | S-036 | T-039 | Universal turn log via process_input wrapper |
 | S-035 | T-038 | L3 write-time word-overlap dedup + conflict detection for conflicting facts |
-| S-034 | T-037 | Groq-to-Claude handoff: framed context injection + vault archival |
 <!-- END AUTO §9 -->
 
 ---

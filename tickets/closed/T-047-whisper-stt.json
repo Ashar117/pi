@@ -1,0 +1,13 @@
+{
+  "id": "T-047",
+  "title": "Whisper STT — speech-to-text input via faster-whisper",
+  "component": "tools/tools_stt.py + agent/tools.py",
+  "what_failed": "Pi has no speech input. All input is keyboard-only. Phase 8 goal is voice-first interface.",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-05-09T00:00:00Z",
+  "fix_applied": "tools/tools_stt.py: STTTools with transcribe_file(path) and transcribe_mic(seconds). Lazy model load via _get_model() singleton (faster-whisper, default base.en, auto-promotes to cuda+float16 if GPU available). Seconds clamped [1,120]. listen + transcribe_file wired into agent/tools.py dispatch and get_tool_definitions(). STT_MODEL env var for model size override.",
+  "closed": "2026-05-09T00:00:00Z",
+  "linked_solution": "S-044",
+  "tests": "10 tests in testing/test_stt.py — all pass"
+}

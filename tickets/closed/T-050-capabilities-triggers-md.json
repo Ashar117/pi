@@ -1,0 +1,11 @@
+{
+  "id": "T-050",
+  "title": "capabilities.md + triggers.md — inject tool awareness into system prompt",
+  "component": "agent/prompt.py + prompts/triggers.md + scripts/refresh_pi.py",
+  "what_failed": "Pi had no injected awareness of when to reach for specific tools. Tool triggers were buried in consciousness.txt or absent entirely.",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-05-09T00:00:00Z",
+  "fix_applied": "agent/prompt.py: added _resolve_includes() that replaces {{INCLUDE:filename}} directives in consciousness.txt with contents of prompts/<filename>. prompts/triggers.md: hand-curated per-tool trigger guide (when to fire each of 45+ tools). scripts/refresh_pi.py: emit_capabilities_md() auto-generates prompts/capabilities.md from live get_tool_definitions() on every refresh run.",
+  "closed": "2026-05-09T00:00:00Z"
+}

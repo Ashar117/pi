@@ -1,0 +1,11 @@
+{
+  "id": "T-056",
+  "title": "TTS barge-in detection — interrupt speech on new voice input",
+  "component": "agent/voice_loop.py::BargeinMonitor",
+  "what_failed": "TTS playback continued speaking even when the user started talking, causing overlap and bad UX.",
+  "severity": "P3",
+  "status": "closed",
+  "created": "2026-05-09T00:00:00Z",
+  "fix_applied": "agent/voice_loop.py: BargeinMonitor class. Runs silero-vad on a background thread during TTS playback. Sets interrupted=True when voice confidence > 0.5. VoiceLoop._speak() starts the monitor before TTS, stops it after, and logs if barge-in occurred. Graceful fallback if silero-vad unavailable.",
+  "closed": "2026-05-09T00:00:00Z"
+}

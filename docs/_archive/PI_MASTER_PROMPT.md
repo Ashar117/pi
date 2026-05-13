@@ -156,13 +156,21 @@ Proposal format: show `BEFORE` block, `AFTER` block, one-paragraph rationale, th
 ## 5. SESSION PROTOCOL
 
 ### 5.1 Session start
+
+**Vault-first protocol** (phases 0-6 are complete; use this going forward):
+1. `view` `vault/notes/status.md` — current state summary (synced from docs/STATUS.md + phase notes)
+2. `view` `vault/notes/tickets/open.md` — in-flight tickets at a glance
+3. `view` `CHECKPOINTS/current.md` — last known state + exact next step
+4. If working a specific ticket: `view` `vault/notes/per-ticket/T-NNN-slug.md`
+5. State to Ash: "Session start. Phase: N. Last checkpoint: {filename}. Next step: {one line}."
+6. Wait for confirmation before continuing.
+
+**Legacy bootstrap** (only needed if vault/ is absent or stale):
 1. `view` this file
 2. `view` `CHECKPOINTS/current.md`
 3. `view` the playbook for the phase named in `current.md` (§6)
 4. `view` `solutions/LESSONS.md`
 5. `view` `FINDINGS.md` if it exists
-6. State to Ash: "Session start. Phase: N. Last checkpoint: {filename}. Next step: {one line}."
-7. Wait for confirmation before continuing.
 
 ### 5.2 Session end
 1. Write `CHECKPOINTS/YYYY-MM-DD-HHMM.md` with the session template (see §6 appendix)

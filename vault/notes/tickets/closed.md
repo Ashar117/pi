@@ -1,5 +1,5 @@
 # Closed Tickets
-*30 tickets - synced 2026-05-04 20:59 UTC*
+*53 tickets - synced 2026-05-10 02:05 UTC*
 
 | ID | Title | Sev | Solution |
 |---|---|---|---|
@@ -33,6 +33,29 @@
 | T-031 | Inferred facts persisted to L3 without explicit user confirmation | P2 | S-028 |
 | T-032 | Startup import-chain hang — supabase eager import via tools_memory | P3 | S-029 |
 | T-033 | Obsidian integration — vault sync + live read/write tools | P2 | S-030 |
+| T-034 | get_l3_context() emits duplicate section headers when category aliases | P2 | S-031 |
+| T-035 | consciousness.txt Normie Mode section incorrectly states Pi has no mem | P2 | S-032 |
+| T-036 | memory_read fires on non-recall utterances in root mode | P2 | S-033 |
+| T-037 | Groqâ†’Claude mode switch: no context handoff, Claude starts cold | P2 | S-034 |
+| T-038 | L3 write path has no dedup or conflict detection â€” contradictory fac | P2 | S-035 |
+| T-039 | Universal per-turn log to logs/turns.jsonl (both modes, all return pat | P2 | S-036 |
+| T-040 | Confirm L1 auto-log fires in normie mode (originally suspected gap) | P2 | S-037 |
+| T-041 | Compact 3-line startup banner; lazy-load awareness; silent health chec | P3 | S-038 |
+| T-042 | PI.md master orchestrator + scripts/refresh_pi.py auto-regenerator | P1 | S-039 |
+| T-043 | scripts/sprint.py — autonomous ticket runner (Claude-driven, gated) | P1 | S-040 |
+| T-044 | scripts/plan_sprint.py — weekly sprint planning ritual | P3 | S-041 |
+| T-045 | scripts/retro.py — weekly retrospective generator | P3 | S-042 |
+| T-046 | VS Code Foam extension config for vault graph view | P4 | S-043 |
+| T-047 | Whisper STT — speech-to-text input via faster-whisper | P2 | S-044 |
+| T-048 | LLMRouter — multi-provider fallback (Claude → Groq → Gemini) | P1 |  |
+| T-049 | Wire LLMRouter into pi_agent.py — replace direct claude.messages.creat | P1 |  |
+| T-050 | capabilities.md + triggers.md — inject tool awareness into system prom | P2 |  |
+| T-051 | Two-pass PDF triage — smart page selection for vision analysis | P2 |  |
+| T-052 | OCR dual-path — strategy param + confidence scoring + Windows auto-ins | P2 |  |
+| T-053 | Web search router — Brave → Tavily → DuckDuckGo with SQLite cache | P2 |  |
+| T-054 | Wake-word detection via openwakeword | P2 |  |
+| T-055 | Voice loop — PTT / VAD / wake-word sub-modes with silero-vad | P2 |  |
+| T-056 | TTS barge-in detection — interrupt speech on new voice input | P3 |  |
 
 ## T-006 -- self.messages cleared on every mode switch — normie amnesia + session summary never saves
 
@@ -198,7 +221,7 @@
 
 ## T-031 -- Inferred facts persisted to L3 without explicit user confirmation
 
-**What failed:** Pi inferred 'F-1 visa' from 'I'm a student' and stored it on a one-word 'yup'. Earlier it inferred Lawrenceville was the user's home city (wrong — it's just current location). consciousness.txt had no stated-vs-inferred distinction. memory_write had no source field. Nothing blocked unconfirmed inferences from reaching L3.
+**What failed:** Pi inferred a visa status from 'I'm a student' and stored it on a one-word 'yup'. Earlier it inferred a city was the user's home city (wrong — it's just current location). consciousness.txt had no stated-vs-inferred distinction. memory_write had no source field. Nothing blocked unconfirmed inferences from reaching L3.
 
 **Fix:** Added `source: str = 'stated'` to MemoryTools.memory_write(). Rejection guard at top of L3 branch returns success=False with descriptive error when source='inferred_unconfirmed'. Added `source` enum field to memory_write tool schema in agent/tools.py with description guiding Claude on correct usage. Added 'INFERRED VS STATED FACTS' section to consciousness.txt with concrete rules and examples covering when one-word confirmations are acceptable, when to ask again, and that inferred_unconfirmed is tool-level blocked.
 
@@ -213,3 +236,141 @@
 **What failed:** No vault existed. Pi had no way to mirror memory to a human-readable format. VS Code Claude sessions had to load all docs at startup (~5K tokens overhead). The ObsidianTools class referenced in agent/tools.py did not exist.
 
 **Fix:** Created tools/tools_obsidian.py with two responsibilities: (1) ObsidianTools class wrapping the Obsidian Local REST API (port 27123) — obsidian_read/write/append/search, all gracefully degrade when Obsidian is closed; (2) sync functions for session-exit mirroring — sync_l3_to_vault (SQLite, offline), sync_l2_to_vault (Supabase), render_tickets_to_vault (JSON->markdown tables), render_status_to_vault (docs/STATUS.md copy), all atomic (.tmp->replace) and non-fatal. Created vault/ directory structure with README.md. Wired sync_vault() into agent/session.py::on_exit() after promotion/prune. Updated .gitignore: vault/memory/ and vault/notes/per-ticket/ stay local.
+
+## T-034 -- get_l3_context() emits duplicate section headers when category aliases collide
+
+**What failed:** Active context displays two PROFILE blocks, two PROJECTS blocks, two PREFERENCES blocks. Different L3 category names (e.g. 'profile' and 'permanent_profile', 'projects' and 'active_project') both render to the same display label. The code groups by raw key but outputs by label, so two separate keys that share a display label produce two identical headers.
+
+**Fix:** In get_l3_context(), after building sections{}, merge all entries that share the same DISPLAY label into one list before rendering. Also add within-section content dedup: skip entries whose words are a >80% subset of another entry in the same group.
+
+## T-035 -- consciousness.txt Normie Mode section incorrectly states Pi has no memory access
+
+**What failed:** Groq (normie mode) told Ash 'In normie mode, I don't have the ability to access or modify L1, L2, or L3 memory.' This is factually wrong. L3 context IS injected into the system prompt at startup â€” Pi can read it. What is true is that Pi cannot WRITE to memory (no tools in normie). The prompt's 'Normie Mode' entry says only 'No tool support (Groq limitation), Use for simple chat' with no mention of the L3 read context. Groq interprets this as 'no memory at all.'
+
+**Fix:** Update the Normie Mode section to explicitly state: 'L3 context is loaded into your system prompt (read-only). You can see and use it. You CANNOT write to memory â€” no tools available. If Ash asks you to store something, tell him to switch to root mode.'
+
+## T-036 -- memory_read fires on non-recall utterances in root mode
+
+**What failed:** In root mode, Claude triggered memory_read with queries 'lemme', 'restriction', and 'that' â€” none of which are recall queries. 'lemme' came from 'can you lemme know...', 'restriction' from a question about restricted AI, 'that' from a follow-up. The Step 2 reject list covers filler words like 'followed, planning, going, rn, atm' but not conversational connectors like 'lemme', 'know', 'tell', 'that', 'this', etc. The Step 1 check (is Ash asking me to recall?) is supposed to gate this, but isn't working reliably.
+
+**Fix:** Expand Step 1 with explicit no-search patterns. Expand Step 2 reject list with: lemme, know, tell, said, what, that, this, here, can, could, would, should, is, are, was, were, it, do, did, have, has, had. Add a positive-pattern check: only search if the query word would plausibly appear in a stored memory entry.
+
+## T-037 -- Groqâ†’Claude mode switch: no context handoff, Claude starts cold
+
+**What failed:** When Ash switches from normie (Groq) to root (Claude), the conversation messages are in self.messages (T-016 fix). But Claude receives no explicit signal that it's taking over from Groq, nor a summary of what transpired. Claude sees raw alternating user/assistant turns with no framing â€” it may miss context or personality continuity from the Groq session. Additionally, Groq normie responses are not archived to the Obsidian vault for later review.
+
+**Fix:** When a normieâ†’root switch is detected: (1) extract the last N normie turns from self.messages, (2) inject a 'GROQ SESSION HANDOFF' block into the system prompt for Claude's first root response, (3) clear the handoff flag after first root response. Separately: write the normie session turns to vault/notes/sessions/YYYY-MM-DD-HHMMSS-normie.md at mode switch for Obsidian archival.
+
+## T-038 -- L3 write path has no dedup or conflict detection â€” contradictory facts accumulate
+
+**What failed:** L3 contained contradictory location entries as active permanent_profile entries. Both were written at different times; the write path had no check for contradictions. Additionally, stale project entries remained active long after the work was done. The L3 write path only checks for exact-ID duplicates, not semantic/content duplicates.
+
+**Fix:** Before inserting a new L3 entry: (1) load existing entries in same category from SQLite, (2) compute word-overlap ratio between new content and each existing entry, (3) if overlap > 0.7 with a shorter entry, UPDATE that entry instead of inserting, (4) if new entry CONTRADICTS an existing entry (detectable by opposite-polarity keywords: 'lives in X' vs earlier 'lives in Y'), soft-delete the old entry and log the conflict. Return conflict_detected flag in memory_write result.
+
+## T-039 -- Universal per-turn log to logs/turns.jsonl (both modes, all return paths)
+
+**What failed:** Conversation turns were durably logged only via Supabase L1 (raw_wiki). When offline or when L1 insertion failed, the turn was silently lost. Normie shortcut paths and exception paths in process_input were also potentially missed.
+
+**Fix:** Wrap process_input with a thin outer that ALWAYS appends one line to logs/turns.jsonl regardless of return path or exception, capturing duration_ms, mode, response preview, and error.
+
+## T-040 -- Confirm L1 auto-log fires in normie mode (originally suspected gap)
+
+**What failed:** Initial audit suggested normie mode might not log to L1 raw_wiki, leaving ~50% of conversations off the cloud archive.
+
+**Fix:** If the gap is real, mirror the root-mode log_turn call in normie. Otherwise add a regression test asserting both paths log.
+
+## T-041 -- Compact 3-line startup banner; lazy-load awareness; silent health check
+
+**What failed:** Startup printed 12+ lines: 'Loading awareness…', 5-line health-check table, 4 init lines (Agent initialized / Session ID / Mode / Consciousness chars), full daily briefing, then reminders. Verbose, intimidating, made the project feel disorganised.
+
+**Fix:** Default to silent: only print on failure. Add agent/startup_banner.py with a compact 3-line format (mode/session/tools, telegram/scheduler/verify/turns, reminders/tickets/help). Make awareness lazy via @property — first read triggers the snapshot fetch. Provide --verbose-init and --eager-awareness flags for the legacy behaviour.
+
+## T-042 -- PI.md master orchestrator + scripts/refresh_pi.py auto-regenerator
+
+**What failed:** Bootstrap state was fragmented across CLAUDE.md, PI_MASTER_PROMPT.md, CHECKPOINTS/current.md, vault/notes/status.md, vault/notes/tickets/open.md. A new AI session had to read 4-5 files in the right order and STILL didn't have a single source of truth for current sprint, open tickets, recent solutions, or tool inventory. 12 stale Phase-0 .md files cluttered the repo root.
+
+**Fix:** Create PI.md at root with 13 sections (identity, read order, sprint, state, engineering loop, architecture, tools, open tickets, solutions, file-touch policy, session protocol, phase roadmap, fire drill). Mark §4/§7/§8/§9 as auto-generated between BEGIN/END markers. Build scripts/refresh_pi.py that regenerates only those sections (idempotent). Archive 8 stale Phase-0 docs to docs/_archive/. Reduce CLAUDE.md to a 5-line pointer to PI.md.
+
+## T-043 -- scripts/sprint.py — autonomous ticket runner (Claude-driven, gated)
+
+**What failed:** No mechanism existed for Pi to autonomously progress through the open ticket queue. Every ticket required Ash to drive plan → edit → test → close manually. The 'continuous engineering loop' goal was aspirational only.
+
+**Fix:** Build scripts/sprint.py with: (a) ticket selection by severity, (b) Claude-driven plan generation, (c) optional auto-implement via Anthropic tool-use loop with read_file/write_file/edit_file/run_bash tools, (d) hard gates: RISK_FLAGGED components escalate immediately, only SAFE_COMPONENTS auto-implement, (e) cost cap (default $0.50) and ticket cap (default 1) and 15-min per-ticket timeout, (f) verify.py must PASS, with 1 retry, (g) on success: append SOLUTIONS, move ticket open→closed, refresh_pi, commit on a NEW branch sprint/T-NNN-slug — NEVER push, (h) escalation via Telegram if available.
+
+## T-044 -- scripts/plan_sprint.py — weekly sprint planning ritual
+
+**What failed:** No structured way to set the week's goal + ticket selection. PI.md §3 (this week's sprint) needed a writer.
+
+**Fix:** Interactive script that loads open tickets sorted by severity, prompts for sprint goal + tickets (or auto-picks top N), writes them into PI.md §3 between the §3 and §4 headers, and snapshots to vault/notes/sprints/YYYY-Www.md.
+
+## T-045 -- scripts/retro.py — weekly retrospective generator
+
+**What failed:** No automated weekly summary of activity (tickets shipped, cost, errors, top tools). Ash had to inspect logs/SOLUTIONS manually to know how a week went.
+
+**Fix:** Script that pulls last 7 days from tickets/closed/, SOLUTIONS.jsonl, logs/turns.jsonl, logs/evolution.jsonl, and git log; aggregates by-mode turn counts, total cost, error rate, top tools; renders to vault/notes/retros/YYYY-Www.md. Optional --notify sends summary to Telegram. --stdout for quick check.
+
+## T-046 -- VS Code Foam extension config for vault graph view
+
+**What failed:** Vault knowledge graph (PI.md, vault/notes/, CHECKPOINTS, tickets) was visible only in standalone Obsidian — separate window from VS Code. Ash wanted it inside the IDE he codes in.
+
+**Fix:** Add .vscode/extensions.json recommending foam.foam-vscode (Roam-style backlinks + graph view + daily notes). Add .vscode/settings.json with foam.workspace.includeGlobs covering PI.md, vault/, CHECKPOINTS/, docs/, and ignoring docs/_archive/, pi_env/, data/, logs/. Document the setup in docs/vscode-setup.md so a fresh checkout (where .vscode/ is gitignored) knows what to do.
+
+## T-047 -- Whisper STT — speech-to-text input via faster-whisper
+
+**What failed:** Pi has no speech input. All input is keyboard-only. Phase 8 goal is voice-first interface.
+
+**Fix:** 
+
+## T-048 -- LLMRouter — multi-provider fallback (Claude → Groq → Gemini)
+
+**What failed:** All LLM calls went directly to Claude with no fallback. If Claude was down or rate-limited, Pi went silent.
+
+**Fix:** 
+
+## T-049 -- Wire LLMRouter into pi_agent.py — replace direct claude.messages.create calls
+
+**What failed:** pi_agent._respond_root called self.claude.messages.create() directly, bypassing the new router.
+
+**Fix:** 
+
+## T-050 -- capabilities.md + triggers.md — inject tool awareness into system prompt
+
+**What failed:** Pi had no injected awareness of when to reach for specific tools. Tool triggers were buried in consciousness.txt or absent entirely.
+
+**Fix:** 
+
+## T-051 -- Two-pass PDF triage — smart page selection for vision analysis
+
+**What failed:** analyze_document_with_vision only analyzed page 1 visually, missing charts/figures on other pages.
+
+**Fix:** 
+
+## T-052 -- OCR dual-path — strategy param + confidence scoring + Windows auto-install
+
+**What failed:** ocr_image had no strategy control, no confidence scoring, and failed silently on Windows if Tesseract binary path wasn't in PATH.
+
+**Fix:** 
+
+## T-053 -- Web search router — Brave → Tavily → DuckDuckGo with SQLite cache
+
+**What failed:** web_search used only DuckDuckGo with no fallback and no caching. Repeated queries hit the network every time.
+
+**Fix:** 
+
+## T-054 -- Wake-word detection via openwakeword
+
+**What failed:** Pi had no wake-word capability — voice mode required explicit PTT/VAD trigger.
+
+**Fix:** 
+
+## T-055 -- Voice loop — PTT / VAD / wake-word sub-modes with silero-vad
+
+**What failed:** Pi had no voice interaction loop — only keyboard input was supported.
+
+**Fix:** 
+
+## T-056 -- TTS barge-in detection — interrupt speech on new voice input
+
+**What failed:** TTS playback continued speaking even when the user started talking, causing overlap and bad UX.
+
+**Fix:** 
