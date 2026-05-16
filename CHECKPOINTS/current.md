@@ -1,17 +1,19 @@
 # CURRENT — pointer to active checkpoint
 
-**Phase:** 8 — Voice + Resilience + Health (complete)
-**Status:** Phase 8 + health-check fixes shipped. Consciousness self-healing ({{INCLUDE:}}), half-baked detector improvements, voice loop UX. 53 tools. 130 ok / 47 run / 0 failures.
+**Phase:** 8.5 — Hardening Track (R1–R10 from pi_architecture.md)
+**Status:** R1 closed (T-082). R2 (T-083) in progress: R2.1 step 2 pilot landed; steps 3-10 pending. Verify PASS.
 **Active checkpoint:** [phase-7-week-1.md](phase-7-week-1.md)
-**Last updated:** 2026-05-13
+**Last updated:** 2026-05-16
 
 ## At-a-glance state
 
-- **Verify:** PASS · 130 ok, 47 run, 0 failures
-- **Open tickets:** 0
-- **Closed this sprint:** T-047 through T-059 (13 tickets)
-- **53 tools** across Memory·Execution·Awareness·Project·Web·Obsidian·Image·Gmail·Calendar·Documents·Faces·Output·STT
-- **LLMRouter:** Claude primary → Groq → Gemini fallback · 5-min brownout · health ping
+- **Verify:** PASS · 151 syntax / 50 tests / 0 failures
+- **Open tickets:** 13 (R2-R10 + T-092/93/94/95)
+- **Closed total:** 72 tickets (T-001 through T-082)
+- **74 tools** across Memory·Execution·Awareness·Project·Web·Obsidian·Image·Gmail·Calendar·Documents·Faces·Output·STT·KnowledgeGraph·BrowserAuto·Watchers·ComputerUse
+- **New this session (batch 1):** BM25 hybrid retrieval · tree-sitter repo-map · cost tracker · reflect() · KG L4
+- **New this session (batch 2):** Browser automation (Playwright) · Background watchers (file/URL/price/schedule) · Anthropic Computer Use desktop control
+- **LLMRouter:** cost tracking + response cache added (`data/llm_cost.db`)
 - **Voice:** `voice` / `voice vad` / `voice wake` commands in pi_agent · barge-in detection
 
 ## What's live
@@ -27,9 +29,73 @@
 
 CONTRADICTIONS, DEAD_CODE, FILE_INVENTORY, FINDINGS, RECONCILIATION, SCHEMA_MISMATCHES, PI_MASTER_PROMPT, root-STATUS, NEXT_SESSION, KNOWN_DEBT — 10 stale Phase-0 audit/bootstrap docs. CLAUDE.md became a 5-line pointer to PI.md.
 
+## Perf overhaul shipped (2026-05-14)
+
+| Fix | What changed | Impact |
+|---|---|---|
+| T-060 L3 cleanup | Deleted 88 test-artifact rows from l3_cache; write-path PYTEST_CURRENT_TEST guard | Prompt shrinks immediately |
+| T-061 Prompt caching | `AnthropicProvider` sends `(static, dynamic)` tuple; static gets `cache_control: ephemeral`; last tool schema cached | ~5x TTFT on cache hit |
+| T-062 Tool def cache | `_tool_defs_cache` built once in `__init__`, returned by ref each turn | 50-100ms/turn saved |
+| T-064 Lazy imports | `agent/tools.py` uses `_LazyTool` proxy; tools imported only on first call | 16.59s → 0.09s import |
+| T-063 Pi daemon | `pi_daemon.py` + `pi.py` thin client; Pi stays warm across sessions | Cold start 6-10s → <200ms |
+| T-066 Sync coordinator | `_sync_lock` in `MemoryTools`; double-check TTL under lock in `get_l3_context` + `memory_read` | Eliminates double Supabase sync |
+| T-067 Bg awareness | `awareness_snapshot` property triggers background `threading.Thread` refresh at 25-min mark | No more 3-8s TTL cliff |
+| T-068 Async logging | `_log_queue` + `_log_worker` thread; `append_turn`, `evolution`, `memory.log_turn` all enqueued | 400-1500ms/turn saved |
+| T-069 L3 budget | `max_tokens` 800→300 in `build_system_prompt_split`; SESSION TIME moved to dynamic part | ~500 fewer tokens/turn |
+
+## OSS features added (2026-05-13)
+
+| Feature                        | Source recipe          | File(s)                                  | Status      |
+| ------------------------------ | ---------------------- | ---------------------------------------- | ----------- |
+| BM25 + entity hybrid retrieval | mem0 (Apache 2.0)      | `tools/tools_memory.py`                  | live        |
+| Tree-sitter repo-map           | Aider (Apache 2.0)     | `tools/tools_project.py`                 | live        |
+| Cost tracking + LLM cache      | LiteLLM (MIT)          | `core/cost_tracker.py` + `llm_router.py` | live        |
+| reflect() metacognitive tool   | Pi-original            | `tools/tools_project.py`                 | live        |
+| Knowledge Graph L4             | Pi-original + NetworkX | `core/knowledge_graph.py`                | live        |
+
+## New tools added (2026-05-13, batch 2)
+
+| Feature                         | File(s)                          | Status |
+| ------------------------------- | -------------------------------- | ------ |
+| Browser automation (Playwright) | `tools/tools_browser_auto.py`    | live   |
+| Background watchers daemon      | `agent/watchers.py`              | live   |
+| Anthropic Computer Use          | `tools/tools_computer_use.py`    | live   |
+
+## R1 (T-082) shipped 2026-05-16
+
+| What | Where |
+|---|---|
+| ModeConfig dataclass + registry | [agent/modes.py](agent/modes.py) |
+| Private MemoryTools (namespace + _NoopSupabase) | [tools/tools_memory.py](tools/tools_memory.py) |
+| LLMRouter tier=private + Ollama provider | [core/llm_router.py](core/llm_router.py) · [core/providers/ollama.py](core/providers/ollama.py) |
+| Unified `_respond_via_config` | [pi_agent.py](pi_agent.py) |
+| `execute_tool(memory_override=...)` | [agent/tools.py](agent/tools.py) |
+| Legacy schema → l3_cache migration | [scripts/migrate_god_memory.py](scripts/migrate_god_memory.py) |
+| 5 acceptance tests | [testing/test_god_uses_unified_path.py](testing/test_god_uses_unified_path.py) |
+| god.py archived (gitignored) | docs/_archive/_private/agent_god_v1.py |
+| ADR | [docs/adr/001-god-as-mode-config.md](docs/adr/001-god-as-mode-config.md) |
+
+Net active-code: −154 lines (god.py −633, additions +479). Tests +212. Privacy invariants tightened: `tickets/god/`, `vault/.god/`, `docs/_archive/_private/` excluded via `.git/info/exclude` (local-only, matches commit 41e37f2 pattern — god paths never named in public `.gitignore`).
+
+## R2 (T-083) in progress — R2.1 step 2 pilot landed 2026-05-16
+
+| What | Where |
+|---|---|
+| ADR-002: tool registry contract | [docs/adr/002-tool-registry-pattern.md](docs/adr/002-tool-registry-pattern.md) |
+| `ToolSpec` frozen dataclass | [agent/tool_spec.py](agent/tool_spec.py) |
+| Registry loader + dispatch (registry-first, elif-fallback) | [agent/tools.py](agent/tools.py) |
+| Pilot module: 3 memory tools exported as `TOOLS` | [tools/tools_memory.py](tools/tools_memory.py) |
+
+Pilot proves the contract end-to-end: registry dispatch, `memory_override` threading, `success_predicate` evaluation, telemetry intact. Tool count holds at 73 (no duplicates, no losses).
+
+**R2.1 remaining (steps 3-4):** migrate `TOOLS` export to the other 16 modules (~70 tools), then delete the elif ladder + archive snapshot of pre-R2.1 `agent/tools.py`. Each module migrates as its own commit; mid-state is safe because dispatch is registry-first with elif-fallback.
+
+**R2.2 (steps 5-8):** 4 mergers (analyze_media, fetch, watcher, computer_run_task removal). Deferred — these are semantic decisions that deserve a separate design conversation, not bundled in with the structural R2.1 work.
+
+**R2.3 (step 9):** weekly tool-invocation audit cron. Independent of R2.1/R2.2.
+
 ## Next step
 
-- **Plan next sprint** — `python scripts/plan_sprint.py` to set the week's goal + pick tickets. PI.md §3 will be rewritten in place.
-- **Try the sprint runner** — `python scripts/sprint.py --dry-run` first. Then with a real safe-component ticket: `python scripts/sprint.py --auto-implement --ticket T-XXX`.
-- **Install Foam** in VS Code: open command palette → "Extensions: Show Recommended Extensions" → install Foam.
-- **Telegram setup** (optional) — add `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` to `.env` to enable escalation messages from the sprint runner and retro `--notify`.
+- **Continue R2.1:** migrate remaining 16 tool modules (mechanical, one commit each), then step 4 cleanup. Pick up where we left off — `tools_execution` is the natural next module.
+- **R3 (T-084), R8 (T-089):** queue after R2 finishes.
+- **T-095** (cross-device god, Phase 9 work) waits on Phase 9 kickoff.

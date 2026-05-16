@@ -79,13 +79,13 @@ When closed: move into §6 of `CHECKPOINTS/current.md` and §9 of this file (aut
 ## §4 State (auto-generated)
 
 <!-- BEGIN AUTO §4 -->
-- **Phase:** 8 — Voice + Resilience (complete)
-- **Last verify:** PASS · 114/114 files clean · 39 tests · 0 failures
-- **Open tickets:** 0
-- **Closed tickets:** 56
-- **Solutions logged:** 39
-- **Turns today:** 183
-- **Last session end:** 2026-05-10
+- **Phase:** 8+ — Performance overhaul: daemon, caching, lazy imports, async logging
+- **Last verify:** PASS · 150/150 files clean · 50 tests · 0 failures
+- **Open tickets:** 13
+- **Closed tickets:** 72
+- **Solutions logged:** 54
+- **Turns today:** 347
+- **Last session end:** 2026-05-14
 <!-- END AUTO §4 -->
 
 ---
@@ -149,9 +149,9 @@ For every meaningful change:
 **Documents** (6): read_document · analyze_image · analyze_images · analyze_video · ocr_image · analyze_document_smart
 **Faces** (4): detect_faces · recognize_face · register_face · list_registered_faces
 **Output** (2): speak · telegram_send
-**Other** (2): listen · transcribe_file
+**Other** (22): browser_click · browser_close · browser_evaluate · browser_fill · browser_get_text · browser_open · browser_screenshot · browser_wait · computer_click · computer_key · computer_run_task · computer_screenshot · computer_scroll · computer_type · listen · reflect · repo_map · transcribe_file · watcher_add · watcher_list · watcher_remove · watcher_status
 
-**Total: 53 tools.**
+**Total: 73 tools.**
 <!-- END AUTO §7 -->
 
 ---
@@ -161,7 +161,19 @@ For every meaningful change:
 <!-- BEGIN AUTO §8 -->
 | ID | Title | Sev | Component |
 |---|---|---|---|
-| — | (none open) | — | — |
+| T-083 | Tool dispatch registry pattern + 73→~40 consolidation + weekly self-prune | P0 | agent/tools.py, tools/tools_*.py (all mo |
+| T-084 | LLMRouter — promote Cerebras, add tier param, TPD-budget-aware brownout | P1 | core/llm_router.py, core/providers/cereb |
+| T-085 | Make session exit resumable; move 5 of 8 ops out of exit into mid-session or cro | P1 | agent/session.py, pi_daemon.py, pi_agent |
+| T-086 | Hard isolation: sprint.py refuses god tickets; god mode requires interactive ent | P1 | scripts/sprint.py, tests/, PI.md |
+| T-087 | Memory replication log (pre-work for partition recovery) | P3 | tools/tools_memory.py |
+| T-088 | Archive evolution.py::SelfModifier (Phase 5 cruft, zero callers, attractive nuis | P3 | evolution.py, docs/_archive/ |
+| T-089 | ModeConfig dataclass — collapse 3 response paths into 1 | P2 | agent/modes.py, pi_agent.py |
+| T-090 | Dropped log queue entries write to local file; distillation reads union of Supab | P2 | pi_agent.py, memory/pipeline.py, logs/ |
+| T-091 | Three-segment system prompt: static (cached hours) · warm/L3 (cached minutes) ·  | P3 | agent/prompt.py, pi_agent.py, core/provi |
+| T-092 | History compression — add Claude Haiku fallback when Groq is rate-limited (mirro | P3 | agent/truncation.py::compress_messages_w |
+| T-093 | Backfill embeddings for pre-T-080 L2 rows (one-shot migration so semantic dedup  | P3 | scripts/backfill_l2_embeddings.py (new), |
+| T-094 | Verify Cerebras is actually serving normie traffic (formalize the 30-sec sanity  | P2 | pi_agent.py::_respond_normie, tests/, sc |
+| T-095 | God memory cross-device — point private namespace at a separate Supabase project | P3 | MemoryTools (private namespace wiring),  |
 <!-- END AUTO §8 -->
 
 ---
@@ -171,16 +183,16 @@ For every meaningful change:
 <!-- BEGIN AUTO §9 -->
 | Solution | Ticket | Title |
 |---|---|---|
-| S-044 | T-047 | Whisper STT via faster-whisper — listen + transcribe_file tools |
-| S-043 | T-046 | VS Code Foam graph for vault knowledge |
-| S-042 | T-045 | Weekly retrospective generator |
-| S-041 | T-044 | Weekly sprint planner |
-| S-040 | T-043 | Autonomous sprint runner with cost+risk gates |
-| S-039 | T-042 | PI.md master orchestrator + scripts/refresh_pi.py |
-| S-038 | T-041 | Compact 3-line startup banner + lazy awareness |
-| S-037 | T-040 | Verified normie L1 logging — no fix needed |
-| S-036 | T-039 | Universal turn log via process_input wrapper |
-| S-035 | T-038 | L3 write-time word-overlap dedup + conflict detection for conflicting facts |
+| S-059 | T-082 | God mode collapse — ModeConfig + unified _respond_via_config (R1) |
+| S-058 | T-080 | Semantic L2 dedup — Gemini embeddings + cosine + Haiku tiebreaker |
+| S-057 | T-082 | Full memory audit system — rules, digest, CLI, banner, Telegram, 24 tests |
+| S-056 | T-081 | Per-fact L2 vault sync with Foam-graph entity auto-linking |
+| S-055 | T-079 | Deprecate knowledge_graph layer — 0 invocations in 24 days |
+| S-054 | T-078 | L3 temporal validity windows — invalidate-not-delete on supersession |
+| S-053 | T-077 | Cerebras as normie primary, Groq fallback |
+| S-052 | T-076 | Migrate Gemini provider from google.generativeai to google.genai |
+| S-051 | T-075 | Lazy Supabase client + background health check |
+| S-050 | T-074 | Slim normie consciousness — 89.6% prompt reduction |
 <!-- END AUTO §9 -->
 
 ---

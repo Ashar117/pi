@@ -1,0 +1,42 @@
+{
+  "id": "T-095",
+  "r_id": null,
+  "title": "God memory cross-device — point private namespace at a separate Supabase project",
+  "type": "feature",
+  "component": "MemoryTools (private namespace wiring), pi_agent.py (god namespace init), .env (new GOD_SUPABASE_URL/KEY)",
+  "severity": "P3",
+  "effort_estimate": "1-2 hours infra + ~30 min code",
+  "depends_on": ["T-082"],
+  "blocks": [],
+  "adr_required": null,
+  "current_state": "After T-082 closes, MemoryTools accepts `db_path` and `namespace` kwargs. For namespace != 'pi' (god), the constructor installs a _NoopSupabase shim, so god memory lives in local SQLite (data/god_memory.db) only. Ash's daily Pi access is multi-surface — desktop, Telegram bot, future web UI. Public memory (L1/L2 on Supabase) syncs across surfaces. God memory does not: switch to god mode from phone via Telegram → the local SQLite on the desktop is invisible → blank slate.",
+  "structural_problem": "Three constraints in tension: (1) god is private, (2) god memory persists across sessions, (3) Pi is multi-surface. Current code satisfies 1+2 by making god desktop-local. The right answer for 1+2+3 is a *separate* Supabase project (or self-hosted Postgres) under Ash's private account that god namespace points at. Same schema, same MemoryTools code, different credentials.",
+  "target_state": "Set GOD_SUPABASE_URL + GOD_SUPABASE_KEY in .env. When pi_agent constructs the private MemoryTools for god namespace, pass these instead of empty strings. The existing T-082 code path then uses a *real* Supabase client (no noop shim), and god memory becomes cross-device. Privacy boundary moves from 'never leaves the box' to 'separate account, gitignored credentials' — same privacy posture used everywhere else in this project.",
+  "files_affected": [
+    "pi_agent.py — when building MemoryTools for namespace='god', read GOD_SUPABASE_URL/GOD_SUPABASE_KEY from env; fall back to empty (local-only) if absent",
+    "app/config.py — declare GOD_SUPABASE_URL, GOD_SUPABASE_KEY",
+    ".env.example — document the optional keys (do NOT add real creds)",
+    "tests/test_god_cross_device.py (new) — assert private MemoryTools uses real client when creds set, noop when absent"
+  ],
+  "success_criteria": [
+    "GOD_SUPABASE_URL + GOD_SUPABASE_KEY in .env opt into cross-device god; absent keys = current behavior (local-only)",
+    "Switch to god mode on machine A, write a memory; switch to god mode on machine B (different physical device, same .env), read it back successfully",
+    "Real Supabase client is used when creds present; _NoopSupabase shim still used when absent",
+    "Public Supabase project never sees god rows (verify via row-count diff on raw_wiki/organized_memory)",
+    "verify.py PASS",
+    ".env.example explicitly documents these as separate-account credentials"
+  ],
+  "risk_notes": "Privacy regression risk if Ash accidentally points GOD_SUPABASE_URL at the same project as the public one. Mitigation: a fail-loud check in MemoryTools.__init__ that errors when namespace != 'pi' but the URL equals the public Supabase URL. Or simpler: docs make it explicit. Cost: zero on Supabase free tier; second project sits under the same Ash-account dashboard.",
+  "migration_plan": [
+    "1. Create a new private Supabase project (Ash, manual). Note URL + service_role key.",
+    "2. Apply the same SQL schema (raw_wiki, organized_memory, l3_active_memory tables) to the new project.",
+    "3. Add GOD_SUPABASE_URL + GOD_SUPABASE_KEY to .env (gitignored).",
+    "4. app/config.py declares them; pi_agent.py wires them into the private MemoryTools instance for namespace='god'.",
+    "5. Add fail-loud check: if GOD_SUPABASE_URL == SUPABASE_URL, refuse to start in god mode.",
+    "6. Write tests/test_god_cross_device.py mocking both URL pairs to assert isolation.",
+    "7. Manual cross-device test: write god memory on desktop, read on phone via Telegram bot, verify same content.",
+    "8. Append SOLUTIONS.jsonl with not_done (encrypted-in-public alternative, deferred indefinitely)."
+  ],
+  "status": "open",
+  "created": "2026-05-15T14:30:00Z"
+}
