@@ -80,11 +80,11 @@ When closed: move into §6 of `CHECKPOINTS/current.md` and §9 of this file (aut
 
 <!-- BEGIN AUTO §4 -->
 - **Phase:** 8.5 — Hardening Track (R1–R10 from pi_architecture.md)
-- **Last verify:** PASS · 152/152 files clean · 51 tests · 0 failures
-- **Open tickets:** 11
-- **Closed tickets:** 76
-- **Solutions logged:** 59
-- **Turns today:** 215
+- **Last verify:** PASS · 156/156 files clean · 52 tests · 0 failures
+- **Open tickets:** 9
+- **Closed tickets:** 78
+- **Solutions logged:** 61
+- **Turns today:** 397
 - **Last session end:** 2026-05-17
 <!-- END AUTO §4 -->
 
@@ -162,9 +162,7 @@ For every meaningful change:
 | ID | Title | Sev | Component |
 |---|---|---|---|
 | T-083 | Tool dispatch registry pattern + 73→~40 consolidation + weekly self-prune | P0 | agent/tools.py, tools/tools_*.py (all mo |
-| T-086 | Hard isolation: sprint.py refuses god tickets; god mode requires interactive ent | P1 | scripts/sprint.py, tests/, PI.md |
 | T-087 | Memory replication log (pre-work for partition recovery) | P3 | tools/tools_memory.py |
-| T-088 | Archive evolution.py::SelfModifier (Phase 5 cruft, zero callers, attractive nuis | P3 | evolution.py, docs/_archive/ |
 | T-089 | ModeConfig dataclass — collapse 3 response paths into 1 | P2 | agent/modes.py, pi_agent.py |
 | T-090 | Dropped log queue entries write to local file; distillation reads union of Supab | P2 | pi_agent.py, memory/pipeline.py, logs/ |
 | T-091 | Three-segment system prompt: static (cached hours) · warm/L3 (cached minutes) ·  | P3 | agent/prompt.py, pi_agent.py, core/provi |
@@ -181,6 +179,8 @@ For every meaningful change:
 <!-- BEGIN AUTO §9 -->
 | Solution | Ticket | Title |
 |---|---|---|
+| S-066 | T-086 | Sprint × god isolation — sprint.py refuses god tickets; AST-checked interactive- |
+| S-065 | T-088 | Archive SelfModifier — Phase 5 cruft removed (R7) |
 | S-064 | T-085 | Resumable session exit + 5 ops moved to mid-session/cron — R4 closed |
 | S-063 | T-084 | LLMRouter tier matrix + TPD-budget brownout — R3 closed |
 | S-062 | T-097 | memory_search_semantic tool — Gemini cosine retrieval exposed to the planner |
@@ -189,8 +189,6 @@ For every meaningful change:
 | S-059 | T-082 | God mode collapse — ModeConfig + unified _respond_via_config (R1) |
 | S-058 | T-080 | Semantic L2 dedup — Gemini embeddings + cosine + Haiku tiebreaker |
 | S-057 | T-082 | Full memory audit system — rules, digest, CLI, banner, Telegram, 24 tests |
-| S-056 | T-081 | Per-fact L2 vault sync with Foam-graph entity auto-linking |
-| S-055 | T-079 | Deprecate knowledge_graph layer — 0 invocations in 24 days |
 <!-- END AUTO §9 -->
 
 ---
@@ -210,6 +208,19 @@ For every meaningful change:
 
 **Risk-flagged components** (require diff-first when sprint runner picks them):
 `pi_agent.py`, `agent/tools.py`, `agent/prompt.py`, `prompts/consciousness.txt`, `app/config.py`, `requirements.txt`, anything under `memory/`.
+
+**God-path forbidden list** (R5, T-086): the sprint runner refuses tickets that mention any of these paths in `component`, `files_affected`, `current_state`, `target_state`, `migration_plan`, `title`, or `risk_notes`. Autonomy × privacy is a footgun — god work requires explicit interactive entry, never sprint dispatch.
+
+```text
+tickets/god/
+vault/.god/
+prompts/god_consciousness.txt
+data/god_memory.db
+agent/god.py                              (archived in T-082; path stays forbidden)
+docs/_archive/_private/agent_god_v1.py    (the archived god.py)
+```
+
+`scripts/sprint.py` enforces this via `GOD_FORBIDDEN_PATHS` + `_ticket_touches_god_paths()`. A god ticket dropped into `tickets/open/` is silently excluded from `list_open_tickets()`. A `tickets/open/god/` directory triggers a fail-fast refusal at startup (`return 3`). Tests in [testing/test_sprint_isolation.py](testing/test_sprint_isolation.py) guard the invariant.
 
 ---
 

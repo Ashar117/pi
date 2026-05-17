@@ -1,0 +1,40 @@
+{
+  "id": "T-086",
+  "r_id": "R5",
+  "title": "Hard isolation: sprint.py refuses god tickets; god mode requires interactive entry",
+  "type": "hardening",
+  "component": "scripts/sprint.py, tests/, PI.md",
+  "severity": "P1",
+  "effort_estimate": "2-4 hours",
+  "depends_on": [],
+  "blocks": [],
+  "adr_required": null,
+  "current_state": "sprint.py (autonomy loop) and god mode (privacy/uncensored layer) coexist. Nothing prevents sprint.py from picking up a god ticket. Currently god tickets live in tickets/god/ which sprint.py does not scan by default, but the invariant is not enforced in code. God mode entry currently requires interactive 'god mode' input (pi_agent.py:497-503) but no test guards this invariant.",
+  "structural_problem": "Autonomy × privacy is a footgun. A god ticket like 'search private intel weekly + auto-write god_memory' picked up by sprint.py = uncensored content generated under autonomous code path, violating the 'user must explicitly opt in' privacy assumption. Currently prevented by convention, not by code.",
+  "target_state": "sprint.py asserts at startup that no god paths are in scope. A unit test enforces that god mode only activates via interactive 'god mode' input — fails CI if any code path can flip self.mode='god' without user input.",
+  "files_affected": [
+    "scripts/sprint.py (startup assertion + path guard in ticket loader)",
+    "tests/test_sprint_isolation.py (new — verifies sprint refuses god tickets, asserts god entry is interactive-only)",
+    "PI.md §10 (document boundary: sprint.py is forbidden from anything under tickets/god/, vault/.god/, prompts/god_consciousness.txt, data/god_memory.db, agent/god.py)"
+  ],
+  "success_criteria": [
+    "scripts/sprint.py refuses to load any ticket from tickets/god/ (raises if found)",
+    "scripts/sprint.py refuses to read or modify any path matching the gitignored god list",
+    "tests/test_sprint_isolation.py contains test that places a fake god ticket in tickets/open/ and asserts sprint rejects it",
+    "tests/test_sprint_isolation.py contains test that scans pi_agent.py for any non-interactive god-mode entry path (e.g. self.mode='god' outside the literal 'god mode' command match) and fails if found",
+    "PI.md §10 updated with explicit god-path forbidden list",
+    "verify.py PASS"
+  ],
+  "risk_notes": "Cheap, high-value. Do this BEFORE wiring sprint.py to autonomy in production, not after.",
+  "migration_plan": [
+    "1. Add list GOD_FORBIDDEN_PATHS at top of scripts/sprint.py",
+    "2. Add assertion: at startup, assert no ticket files under tickets/god/ are in the picked-up set; assert no GOD_FORBIDDEN_PATHS are in the touched-files plan",
+    "3. Write tests/test_sprint_isolation.py with the two tests above",
+    "4. Add §10 amendment to PI.md listing god-path forbidden set",
+    "5. Append SOLUTIONS.jsonl"
+  ],
+  "status": "closed",
+  "created": "2026-05-15T12:00:00Z",
+  "closed": "2026-05-17T02:45:00+00:00",
+  "linked_solution": "S-066"
+}

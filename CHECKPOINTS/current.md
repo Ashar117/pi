@@ -1,15 +1,15 @@
 # CURRENT — pointer to active checkpoint
 
 **Phase:** 8.5 — Hardening Track (R1–R10 from pi_architecture.md)
-**Status:** R1 ✅ R2.1 ✅ R3 ✅ R4 ✅. Next: R5 (T-086, sprint × god isolation, 2-4h) or R7 (T-088, archive SelfModifier, 1h).
+**Status:** R1 ✅ R2.1 ✅ R3 ✅ R4 ✅ R5 ✅ R7 ✅. Next: R8 (T-089, ModeConfig dataclass for all 3 response paths, 3d, **unblocked by R1**).
 **Active checkpoint:** [phase-7-week-1.md](phase-7-week-1.md)
 **Last updated:** 2026-05-17
 
 ## At-a-glance state
 
-- **Verify:** PASS · 153 syntax / 52 tests / 0 failures
-- **Open tickets:** 11 (R5..R10 + T-092..T-094 + T-083-residual + T-095)
-- **Closed total:** 76 tickets (T-085 added)
+- **Verify:** PASS · 157 syntax / 53 tests / 0 failures
+- **Open tickets:** 9 (R6 + R8 + R9 + R10 + T-092..T-094 + T-083-residual + T-095)
+- **Closed total:** 78 tickets (T-086, T-088 added)
 - **74 tools** across Memory·Execution·Awareness·Project·Web·Obsidian·Image·Gmail·Calendar·Documents·Faces·Output·STT·KnowledgeGraph·BrowserAuto·Watchers·ComputerUse
 - **New this session (batch 1):** BM25 hybrid retrieval · tree-sitter repo-map · cost tracker · reflect() · KG L4
 - **New this session (batch 2):** Browser automation (Playwright) · Background watchers (file/URL/price/schedule) · Anthropic Computer Use desktop control
@@ -76,6 +76,22 @@ CONTRADICTIONS, DEAD_CODE, FILE_INVENTORY, FINDINGS, RECONCILIATION, SCHEMA_MISM
 | ADR | [docs/adr/001-god-as-mode-config.md](docs/adr/001-god-as-mode-config.md) |
 
 Net active-code: −154 lines (god.py −633, additions +479). Tests +212. Privacy invariants tightened: `tickets/god/`, `vault/.god/`, `docs/_archive/_private/` excluded via `.git/info/exclude` (local-only, matches commit 41e37f2 pattern — god paths never named in public `.gitignore`).
+
+## R5 + R7 shipped 2026-05-17
+
+**R7 (T-088, S-065)** — SelfModifier class removed from `evolution.py` and archived to `docs/_archive/evolution_self_modifier_v1.py`. Zero callers, Phase 5 cruft. Header in the archive documents why: a future LLM-wired `modify_consciousness()` could produce an unbootable daemon by the time the user notices. Autonomous improvement now lives in `scripts/sprint.py` with proper LLM-edit + diff-review + verify gates.
+
+**R5 (T-086, S-066)** — sprint × god isolation in 3 defence layers:
+
+| Layer | Where |
+|---|---|
+| `GOD_FORBIDDEN_PATHS` constant + `_ticket_touches_god_paths()` recursive scanner | [scripts/sprint.py](scripts/sprint.py) |
+| `list_open_tickets()` filters any match with `[sprint] excluding ...` log | [scripts/sprint.py](scripts/sprint.py) |
+| `main()` returns rc=3 fail-fast when `tickets/open/god/` exists | [scripts/sprint.py](scripts/sprint.py) |
+| AST scan asserts every `self.mode = "god"` sits inside the interactive handler | [testing/test_sprint_isolation.py](testing/test_sprint_isolation.py) |
+| PI.md §10 amended with explicit forbidden-list table + policy statement | [PI.md](PI.md) |
+
+6/6 isolation tests pass. The invariant — "god mode requires interactive entry, sprint never picks up god work" — is now code-enforced, not convention-only.
 
 ## R4 (T-085) shipped 2026-05-17
 
