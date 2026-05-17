@@ -1,14 +1,14 @@
 # CURRENT — pointer to active checkpoint
 
 **Phase:** 8.5 — Hardening Track (R1–R10 from pi_architecture.md)
-**Status:** R1 closed (T-082). R2 (T-083) in progress: R2.1 step 2 pilot landed; steps 3-10 pending. Verify PASS.
+**Status:** R1 closed (T-082). R2 in progress: **R2.1 complete** (S-060) — 74 tools migrated to ToolSpec registry, agent/tools.py 1681→235 lines. R2.2 (mergers) + R2.3 (audit cron) deferred. T-096 + T-097 also shipped.
 **Active checkpoint:** [phase-7-week-1.md](phase-7-week-1.md)
-**Last updated:** 2026-05-16
+**Last updated:** 2026-05-17
 
 ## At-a-glance state
 
 - **Verify:** PASS · 151 syntax / 50 tests / 0 failures
-- **Open tickets:** 13 (R2-R10 + T-092/93/94/95)
+- **Open tickets:** 15 (R2-R10 + T-092..T-097, T-083 still open pending R2.2/R2.3)
 - **Closed total:** 72 tickets (T-001 through T-082)
 - **74 tools** across Memory·Execution·Awareness·Project·Web·Obsidian·Image·Gmail·Calendar·Documents·Faces·Output·STT·KnowledgeGraph·BrowserAuto·Watchers·ComputerUse
 - **New this session (batch 1):** BM25 hybrid retrieval · tree-sitter repo-map · cost tracker · reflect() · KG L4
@@ -77,25 +77,31 @@ CONTRADICTIONS, DEAD_CODE, FILE_INVENTORY, FINDINGS, RECONCILIATION, SCHEMA_MISM
 
 Net active-code: −154 lines (god.py −633, additions +479). Tests +212. Privacy invariants tightened: `tickets/god/`, `vault/.god/`, `docs/_archive/_private/` excluded via `.git/info/exclude` (local-only, matches commit 41e37f2 pattern — god paths never named in public `.gitignore`).
 
-## R2 (T-083) in progress — R2.1 step 2 pilot landed 2026-05-16
+## R2.1 (T-083 partial) shipped 2026-05-17
 
 | What | Where |
 |---|---|
 | ADR-002: tool registry contract | [docs/adr/002-tool-registry-pattern.md](docs/adr/002-tool-registry-pattern.md) |
 | `ToolSpec` frozen dataclass | [agent/tool_spec.py](agent/tool_spec.py) |
-| Registry loader + dispatch (registry-first, elif-fallback) | [agent/tools.py](agent/tools.py) |
-| Pilot module: 3 memory tools exported as `TOOLS` | [tools/tools_memory.py](tools/tools_memory.py) |
+| Registry loader + dispatch | [agent/tools.py](agent/tools.py) (1681 → 235 lines, −86%) |
+| 74 tools migrated across 18 modules | tools_memory · tools_execution · tools_awareness · tools_project · tools_obsidian · tools_gmail · tools_calendar · tools_image · tools_briefing · tools_web · tools_browse · tools_media · tools_telegram · tools_tts · tools_stt · tools_browser_auto · tools_computer_use · agent/watchers.py |
+| Each module's TOOLS export demonstrates the contract | `_handle_*` functions + ToolSpec list at end of module |
 
-Pilot proves the contract end-to-end: registry dispatch, `memory_override` threading, `success_predicate` evaluation, telemetry intact. Tool count holds at 73 (no duplicates, no losses).
+Adding a new tool = 1 ToolSpec append in the owning module. Already paid back this session: T-097 added `memory_search_semantic` as one ToolSpec append in tools_memory.py — no edit to agent/tools.py needed.
 
-**R2.1 remaining (steps 3-4):** migrate `TOOLS` export to the other 16 modules (~70 tools), then delete the elif ladder + archive snapshot of pre-R2.1 `agent/tools.py`. Each module migrates as its own commit; mid-state is safe because dispatch is registry-first with elif-fallback.
+## Other tickets shipped this session
 
-**R2.2 (steps 5-8):** 4 mergers (analyze_media, fetch, watcher, computer_run_task removal). Deferred — these are semantic decisions that deserve a separate design conversation, not bundled in with the structural R2.1 work.
+- **T-096** vault patterns — templates + north_star + entity hubs (`sync_entity_hubs_to_vault()` in tools/tools_obsidian.py)
+- **T-097** semantic memory search — `memory_search_semantic` tool wrapping the T-080 embedding engine
 
-**R2.3 (step 9):** weekly tool-invocation audit cron. Independent of R2.1/R2.2.
+## Open ticket queue
+
+- **T-083** stays open — R2.2 (4 mergers, 73→~42 tool count) and R2.3 (audit cron) remain. Progress note in ticket.
+- **R3 (T-084), R4 (T-085) …** R8 (T-089) — Hardening Track queue.
+- **T-092, T-093, T-094, T-095, T-096, T-097** — feature/verification work.
 
 ## Next step
 
-- **Continue R2.1:** migrate remaining 16 tool modules (mechanical, one commit each), then step 4 cleanup. Pick up where we left off — `tools_execution` is the natural next module.
-- **R3 (T-084), R8 (T-089):** queue after R2 finishes.
-- **T-095** (cross-device god, Phase 9 work) waits on Phase 9 kickoff.
+- **R2.2 mergers** when ready: each merger gets its own design check before code (decision on which old names alias, what the unified signature looks like).
+- **R2.3 audit cron** independent; ~half-day job.
+- **R3 (T-084)** after R2 ships fully — router-tier work no longer has to step around the elif ladder.

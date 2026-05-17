@@ -79,13 +79,13 @@ When closed: move into §6 of `CHECKPOINTS/current.md` and §9 of this file (aut
 ## §4 State (auto-generated)
 
 <!-- BEGIN AUTO §4 -->
-- **Phase:** 8+ — Performance overhaul: daemon, caching, lazy imports, async logging
-- **Last verify:** PASS · 150/150 files clean · 50 tests · 0 failures
-- **Open tickets:** 13
+- **Phase:** 8.5 — Hardening Track (R1–R10 from pi_architecture.md)
+- **Last verify:** PASS · 151/151 files clean · 50 tests · 0 failures
+- **Open tickets:** 15
 - **Closed tickets:** 72
-- **Solutions logged:** 54
-- **Turns today:** 347
-- **Last session end:** 2026-05-14
+- **Solutions logged:** 55
+- **Turns today:** 66
+- **Last session end:** 2026-05-16
 <!-- END AUTO §4 -->
 
 ---
@@ -149,9 +149,9 @@ For every meaningful change:
 **Documents** (6): read_document · analyze_image · analyze_images · analyze_video · ocr_image · analyze_document_smart
 **Faces** (4): detect_faces · recognize_face · register_face · list_registered_faces
 **Output** (2): speak · telegram_send
-**Other** (22): browser_click · browser_close · browser_evaluate · browser_fill · browser_get_text · browser_open · browser_screenshot · browser_wait · computer_click · computer_key · computer_run_task · computer_screenshot · computer_scroll · computer_type · listen · reflect · repo_map · transcribe_file · watcher_add · watcher_list · watcher_remove · watcher_status
+**Other** (23): browser_click · browser_close · browser_evaluate · browser_fill · browser_get_text · browser_open · browser_screenshot · browser_wait · computer_click · computer_key · computer_run_task · computer_screenshot · computer_scroll · computer_type · listen · memory_search_semantic · reflect · repo_map · transcribe_file · watcher_add · watcher_list · watcher_remove · watcher_status
 
-**Total: 73 tools.**
+**Total: 74 tools.**
 <!-- END AUTO §7 -->
 
 ---
@@ -174,6 +174,8 @@ For every meaningful change:
 | T-093 | Backfill embeddings for pre-T-080 L2 rows (one-shot migration so semantic dedup  | P3 | scripts/backfill_l2_embeddings.py (new), |
 | T-094 | Verify Cerebras is actually serving normie traffic (formalize the 30-sec sanity  | P2 | pi_agent.py::_respond_normie, tests/, sc |
 | T-095 | God memory cross-device — point private namespace at a separate Supabase project | P3 | MemoryTools (private namespace wiring),  |
+| T-096 | Vault polish: lift 3 patterns from obsidian-mind survey (north star, templates,  | P2 | tools/tools_obsidian.py, vault/notes/tem |
+| T-097 | Expose semantic memory search as a tool — wraps existing T-080 embedding engine | P2 | tools/tools_memory.py (new memory_search |
 <!-- END AUTO §8 -->
 
 ---
@@ -183,6 +185,7 @@ For every meaningful change:
 <!-- BEGIN AUTO §9 -->
 | Solution | Ticket | Title |
 |---|---|---|
+| S-060 | T-083 (R2.1 only — R2.2/R2.3 deferred) | Tool dispatch registry pattern shipped — 74 tools migrated, agent/tools.py 1681→ |
 | S-059 | T-082 | God mode collapse — ModeConfig + unified _respond_via_config (R1) |
 | S-058 | T-080 | Semantic L2 dedup — Gemini embeddings + cosine + Haiku tiebreaker |
 | S-057 | T-082 | Full memory audit system — rules, digest, CLI, banner, Telegram, 24 tests |
@@ -192,7 +195,6 @@ For every meaningful change:
 | S-053 | T-077 | Cerebras as normie primary, Groq fallback |
 | S-052 | T-076 | Migrate Gemini provider from google.generativeai to google.genai |
 | S-051 | T-075 | Lazy Supabase client + background health check |
-| S-050 | T-074 | Slim normie consciousness — 89.6% prompt reduction |
 <!-- END AUTO §9 -->
 
 ---

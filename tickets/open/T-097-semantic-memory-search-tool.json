@@ -1,0 +1,39 @@
+{
+  "id": "T-097",
+  "r_id": null,
+  "title": "Expose semantic memory search as a tool — wraps existing T-080 embedding engine",
+  "type": "feature",
+  "component": "tools/tools_memory.py (new memory_search_semantic method + TOOLS entry), agent/modes.py (add to god allowlist)",
+  "severity": "P2",
+  "effort_estimate": "30-60 minutes",
+  "depends_on": ["T-080", "T-083 (R2.1 pilot — registry pattern)"],
+  "blocks": [],
+  "adr_required": null,
+  "current_state": "T-080 shipped Gemini embeddings + cosine similarity for L2 duplicate detection (memory/semantic_dedup.py). The engine works (16/16 tests pass). But the planner can't call it for retrieval — semantic similarity only fires inside the write-path dedup check. Result: 'what did we decide about caching' misses an L2 row titled 'Redis Migration ADR' because BM25 + entity matching share zero tokens.",
+  "structural_problem": "Pi has 3 search layers (obsidian_search file grep, memory_read BM25+entity, semantic_dedup cosine) but only 2 are tools the planner sees. The most powerful one is internal-only. Adding it as a tool is a 1-ToolSpec entry in the new registry — proves the value of T-083 R2.1.",
+  "target_state": "memory_search_semantic(query, limit=5, threshold=0.5) registered as a ToolSpec in tools/tools_memory.py::TOOLS. Wraps get_embedding() + cosine_similarity() from memory.semantic_dedup. Pulls all L2 rows with stored embeddings (metadata.embedding from T-080), scores each, returns top N >= threshold. Graceful degrade when GEMINI_API_KEY missing or no embeddings stored.",
+  "files_affected": [
+    "tools/tools_memory.py (new memory_search_semantic method + TOOLS entry)",
+    "agent/modes.py (add memory_search_semantic to god tool_allowlist)",
+    "testing/test_semantic_dedup.py (extend with retrieval test, or new file)"
+  ],
+  "success_criteria": [
+    "memory_search_semantic('caching decisions', limit=3) returns L2 rows by cosine descending",
+    "Returns [] gracefully when GEMINI_API_KEY missing (no exception)",
+    "Returns [] when no L2 rows have stored embeddings (pre-T-080 vault)",
+    "ToolSpec registered with success_predicate handling empty results vs errors",
+    "Added to god ModeConfig tool_allowlist (read-only, no privacy leak)",
+    "verify.py PASS"
+  ],
+  "risk_notes": "Low risk. New tool, no replacement. Cost per call ~$0.00002 (Gemini embed). T-080 engine already battle-tested via 16-test suite.",
+  "migration_plan": [
+    "1. Add memory_search_semantic() method to MemoryTools (queries supabase L2 where metadata.embedding exists, computes cosine vs query embedding, returns top N)",
+    "2. Add _handle_memory_search_semantic to TOOLS section of tools_memory.py",
+    "3. Append ToolSpec(name='memory_search_semantic', ...) to TOOLS list",
+    "4. Add 'memory_search_semantic' to god tool_allowlist in agent/modes.py",
+    "5. Smoke test: mock supabase rows with known embeddings, assert top-N ordering matches expected cosine ranks",
+    "6. verify.py PASS, then close as part of T-096 vault-polish sweep or its own solution"
+  ],
+  "status": "open",
+  "created": "2026-05-16T08:00:00+00:00"
+}
