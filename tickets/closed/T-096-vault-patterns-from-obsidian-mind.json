@@ -35,6 +35,8 @@
     "6. Add north_star.md + vault/notes/memory/entities/ to .git/info/exclude (privacy)",
     "7. Append solution entry (S-060 or wait until T-083 closes, decide at close-time)"
   ],
-  "status": "open",
-  "created": "2026-05-16T07:30:00+00:00"
+  "status": "closed",
+  "created": "2026-05-16T07:30:00+00:00",
+  "closed": "2026-05-17T01:03:56+00:00",
+  "linked_solution": "S-061"
 }

@@ -34,6 +34,8 @@
     "5. Smoke test: mock supabase rows with known embeddings, assert top-N ordering matches expected cosine ranks",
     "6. verify.py PASS, then close as part of T-096 vault-polish sweep or its own solution"
   ],
-  "status": "open",
-  "created": "2026-05-16T08:00:00+00:00"
+  "status": "closed",
+  "created": "2026-05-16T08:00:00+00:00",
+  "closed": "2026-05-17T01:03:56+00:00",
+  "linked_solution": "S-062"
 }

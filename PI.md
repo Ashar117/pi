@@ -80,12 +80,12 @@ When closed: move into §6 of `CHECKPOINTS/current.md` and §9 of this file (aut
 
 <!-- BEGIN AUTO §4 -->
 - **Phase:** 8.5 — Hardening Track (R1–R10 from pi_architecture.md)
-- **Last verify:** PASS · 151/151 files clean · 50 tests · 0 failures
-- **Open tickets:** 15
-- **Closed tickets:** 72
-- **Solutions logged:** 55
-- **Turns today:** 66
-- **Last session end:** 2026-05-16
+- **Last verify:** FAIL · 151/151 files clean · 50 tests · 1 failure
+- **Open tickets:** 12
+- **Closed tickets:** 75
+- **Solutions logged:** 58
+- **Turns today:** 110
+- **Last session end:** 2026-05-17
 <!-- END AUTO §4 -->
 
 ---
@@ -162,7 +162,6 @@ For every meaningful change:
 | ID | Title | Sev | Component |
 |---|---|---|---|
 | T-083 | Tool dispatch registry pattern + 73→~40 consolidation + weekly self-prune | P0 | agent/tools.py, tools/tools_*.py (all mo |
-| T-084 | LLMRouter — promote Cerebras, add tier param, TPD-budget-aware brownout | P1 | core/llm_router.py, core/providers/cereb |
 | T-085 | Make session exit resumable; move 5 of 8 ops out of exit into mid-session or cro | P1 | agent/session.py, pi_daemon.py, pi_agent |
 | T-086 | Hard isolation: sprint.py refuses god tickets; god mode requires interactive ent | P1 | scripts/sprint.py, tests/, PI.md |
 | T-087 | Memory replication log (pre-work for partition recovery) | P3 | tools/tools_memory.py |
@@ -174,8 +173,6 @@ For every meaningful change:
 | T-093 | Backfill embeddings for pre-T-080 L2 rows (one-shot migration so semantic dedup  | P3 | scripts/backfill_l2_embeddings.py (new), |
 | T-094 | Verify Cerebras is actually serving normie traffic (formalize the 30-sec sanity  | P2 | pi_agent.py::_respond_normie, tests/, sc |
 | T-095 | God memory cross-device — point private namespace at a separate Supabase project | P3 | MemoryTools (private namespace wiring),  |
-| T-096 | Vault polish: lift 3 patterns from obsidian-mind survey (north star, templates,  | P2 | tools/tools_obsidian.py, vault/notes/tem |
-| T-097 | Expose semantic memory search as a tool — wraps existing T-080 embedding engine | P2 | tools/tools_memory.py (new memory_search |
 <!-- END AUTO §8 -->
 
 ---
@@ -185,6 +182,9 @@ For every meaningful change:
 <!-- BEGIN AUTO §9 -->
 | Solution | Ticket | Title |
 |---|---|---|
+| S-063 | T-084 | LLMRouter tier matrix + TPD-budget brownout — R3 closed |
+| S-062 | T-097 | memory_search_semantic tool — Gemini cosine retrieval exposed to the planner |
+| S-061 | T-096 | Vault patterns from breferrari/obsidian-mind survey — 5 templates, north_star, e |
 | S-060 | T-083 (R2.1 only — R2.2/R2.3 deferred) | Tool dispatch registry pattern shipped — 74 tools migrated, agent/tools.py 1681→ |
 | S-059 | T-082 | God mode collapse — ModeConfig + unified _respond_via_config (R1) |
 | S-058 | T-080 | Semantic L2 dedup — Gemini embeddings + cosine + Haiku tiebreaker |
@@ -192,9 +192,6 @@ For every meaningful change:
 | S-056 | T-081 | Per-fact L2 vault sync with Foam-graph entity auto-linking |
 | S-055 | T-079 | Deprecate knowledge_graph layer — 0 invocations in 24 days |
 | S-054 | T-078 | L3 temporal validity windows — invalidate-not-delete on supersession |
-| S-053 | T-077 | Cerebras as normie primary, Groq fallback |
-| S-052 | T-076 | Migrate Gemini provider from google.generativeai to google.genai |
-| S-051 | T-075 | Lazy Supabase client + background health check |
 <!-- END AUTO §9 -->
 
 ---

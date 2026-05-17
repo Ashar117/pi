@@ -1,15 +1,15 @@
 # CURRENT — pointer to active checkpoint
 
 **Phase:** 8.5 — Hardening Track (R1–R10 from pi_architecture.md)
-**Status:** R1 closed (T-082). R2 in progress: **R2.1 complete** (S-060) — 74 tools migrated to ToolSpec registry, agent/tools.py 1681→235 lines. R2.2 (mergers) + R2.3 (audit cron) deferred. T-096 + T-097 also shipped.
+**Status:** R1 ✅ (T-082). R2.1 ✅ (T-083, R2.2/R2.3 deferred). R3 ✅ (T-084). T-096 + T-097 ✅. Next: R4 (T-085, resumable session exit) or R5 (T-086, sprint × god isolation).
 **Active checkpoint:** [phase-7-week-1.md](phase-7-week-1.md)
 **Last updated:** 2026-05-17
 
 ## At-a-glance state
 
-- **Verify:** PASS · 151 syntax / 50 tests / 0 failures
-- **Open tickets:** 15 (R2-R10 + T-092..T-097, T-083 still open pending R2.2/R2.3)
-- **Closed total:** 72 tickets (T-001 through T-082)
+- **Verify:** PASS · 152 syntax / 51 tests / 0 failures
+- **Open tickets:** 12 (R4..R10 + T-092..T-094 + T-083-residual + T-095)
+- **Closed total:** 75 tickets (T-082, T-084, T-096, T-097 added)
 - **74 tools** across Memory·Execution·Awareness·Project·Web·Obsidian·Image·Gmail·Calendar·Documents·Faces·Output·STT·KnowledgeGraph·BrowserAuto·Watchers·ComputerUse
 - **New this session (batch 1):** BM25 hybrid retrieval · tree-sitter repo-map · cost tracker · reflect() · KG L4
 - **New this session (batch 2):** Browser automation (Playwright) · Background watchers (file/URL/price/schedule) · Anthropic Computer Use desktop control
@@ -76,6 +76,20 @@ CONTRADICTIONS, DEAD_CODE, FILE_INVENTORY, FINDINGS, RECONCILIATION, SCHEMA_MISM
 | ADR | [docs/adr/001-god-as-mode-config.md](docs/adr/001-god-as-mode-config.md) |
 
 Net active-code: −154 lines (god.py −633, additions +479). Tests +212. Privacy invariants tightened: `tickets/god/`, `vault/.god/`, `docs/_archive/_private/` excluded via `.git/info/exclude` (local-only, matches commit 41e37f2 pattern — god paths never named in public `.gitignore`).
+
+## R3 (T-084) shipped 2026-05-17
+
+| What | Where |
+|---|---|
+| ADR-003: router tier matrix + TPD budget | [docs/adr/003-router-tier-and-tpd-budget.md](docs/adr/003-router-tier-and-tpd-budget.md) |
+| Tier matrix (private/premium/balanced/cheap/fast + default alias) | [core/llm_router.py](core/llm_router.py) `_TIER_ORDERS` |
+| `self.cerebras` direct client removed; `_respond_normie` collapsed to one router call | [pi_agent.py](pi_agent.py) |
+| `distill_session(router=...)` migrated; legacy kwargs back-compat | [memory/pipeline.py](memory/pipeline.py), [agent/session.py](agent/session.py) |
+| `CostTracker.tokens_today()` + `tier` column (idempotent schema migration) | [core/cost_tracker.py](core/cost_tracker.py) |
+| TPD-budget preemptive brownout @ 90% utilization | [core/llm_router.py](core/llm_router.py) `_is_browned_out` |
+| 9 new tests + 4 updated provider-error tests | [testing/test_router_tier_and_tpd.py](testing/test_router_tier_and_tpd.py), [testing/test_provider_error_handling.py](testing/test_provider_error_handling.py) |
+
+Per-provider daily budgets (env-overridable): groq=100k, cerebras=1M, gemini=1M, openrouter=50k, anthropic=ollama=None. S-053's `better_future_fix` is now satisfied — one failover code path, cost-aware routing, TPD-aware brownout.
 
 ## R2.1 (T-083 partial) shipped 2026-05-17
 
