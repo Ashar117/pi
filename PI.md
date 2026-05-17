@@ -80,11 +80,11 @@ When closed: move into §6 of `CHECKPOINTS/current.md` and §9 of this file (aut
 
 <!-- BEGIN AUTO §4 -->
 - **Phase:** 8.5 — Hardening Track (R1–R10 from pi_architecture.md)
-- **Last verify:** FAIL · 151/151 files clean · 50 tests · 1 failure
-- **Open tickets:** 12
-- **Closed tickets:** 75
-- **Solutions logged:** 58
-- **Turns today:** 110
+- **Last verify:** PASS · 152/152 files clean · 51 tests · 0 failures
+- **Open tickets:** 11
+- **Closed tickets:** 76
+- **Solutions logged:** 59
+- **Turns today:** 215
 - **Last session end:** 2026-05-17
 <!-- END AUTO §4 -->
 
@@ -162,7 +162,6 @@ For every meaningful change:
 | ID | Title | Sev | Component |
 |---|---|---|---|
 | T-083 | Tool dispatch registry pattern + 73→~40 consolidation + weekly self-prune | P0 | agent/tools.py, tools/tools_*.py (all mo |
-| T-085 | Make session exit resumable; move 5 of 8 ops out of exit into mid-session or cro | P1 | agent/session.py, pi_daemon.py, pi_agent |
 | T-086 | Hard isolation: sprint.py refuses god tickets; god mode requires interactive ent | P1 | scripts/sprint.py, tests/, PI.md |
 | T-087 | Memory replication log (pre-work for partition recovery) | P3 | tools/tools_memory.py |
 | T-088 | Archive evolution.py::SelfModifier (Phase 5 cruft, zero callers, attractive nuis | P3 | evolution.py, docs/_archive/ |
@@ -182,6 +181,7 @@ For every meaningful change:
 <!-- BEGIN AUTO §9 -->
 | Solution | Ticket | Title |
 |---|---|---|
+| S-064 | T-085 | Resumable session exit + 5 ops moved to mid-session/cron — R4 closed |
 | S-063 | T-084 | LLMRouter tier matrix + TPD-budget brownout — R3 closed |
 | S-062 | T-097 | memory_search_semantic tool — Gemini cosine retrieval exposed to the planner |
 | S-061 | T-096 | Vault patterns from breferrari/obsidian-mind survey — 5 templates, north_star, e |
@@ -191,7 +191,6 @@ For every meaningful change:
 | S-057 | T-082 | Full memory audit system — rules, digest, CLI, banner, Telegram, 24 tests |
 | S-056 | T-081 | Per-fact L2 vault sync with Foam-graph entity auto-linking |
 | S-055 | T-079 | Deprecate knowledge_graph layer — 0 invocations in 24 days |
-| S-054 | T-078 | L3 temporal validity windows — invalidate-not-delete on supersession |
 <!-- END AUTO §9 -->
 
 ---

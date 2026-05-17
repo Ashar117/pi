@@ -1,0 +1,50 @@
+{
+  "id": "T-085",
+  "r_id": "R4",
+  "title": "Make session exit resumable; move 5 of 8 ops out of exit into mid-session or cron",
+  "type": "refactor",
+  "component": "agent/session.py, pi_daemon.py, pi_agent.py, tools/tools_obsidian.py, scripts/passive/",
+  "severity": "P1",
+  "effort_estimate": "5-7 working days",
+  "depends_on": [],
+  "blocks": [],
+  "adr_required": "docs/adr/005-resumable-exit.md",
+  "current_state": "agent/session.py::on_exit runs 8 ops sequentially: flush_logs → session_summary → distill L1→L2 → promote L2→L3 → prune L3 expired → prune L2 stale → weekly_audit (gated) → vault_sync. Each wrapped try/except 'non-fatal'. Mid-session distillation (T-072) partially covers L1→L2 but everything else is exit-only. SIGKILL or daemon crash mid-exit loses: session summary, vault sync, audit, prune work, L2→L3 promotion. The last one is the worst — a high-importance fact written in this session won't be in tomorrow's ambient L3 context.",
+  "structural_problem": "Exit-heavy workflows assume clean shutdown. Real systems crash. Each non-fatal try/except masks the cumulative loss. No resumption logic means an unclean exit silently degrades memory consistency.",
+  "target_state": "on_exit reduced to 3 ops: flush_logs → session_summary → write exit_state.json marker. The other 5 ops run mid-session (L2→L3, vault sync) or on cron (audit, prunes). On daemon startup, check data/session_exit_state.json — if last exit incomplete, finish remaining steps before accepting connections.",
+  "files_affected": [
+    "agent/session.py (refactor on_exit into 3 named steps; add resumable state file writes)",
+    "pi_daemon.py (on startup: check data/session_exit_state.json; complete unfinished steps before listen)",
+    "pi_agent.py (_maybe_mid_session_distill gains L2→L3 promotion call after distillation)",
+    "tools/tools_obsidian.py (vault sync becomes mid-session-callable; per S-056 better_future_fix)",
+    "scripts/passive/weekly_memory_audit.py (new; replaces in-exit audit call)",
+    "scripts/passive/__init__.py (register weekly audit cron)",
+    "scripts/passive/memory_prune.py (new; replaces in-exit L2/L3 prune; runs daily)"
+  ],
+  "success_criteria": [
+    "agent/session.py::on_exit body ≤ 3 operations",
+    "Test: kill -9 daemon mid-exit; restart; verify remaining exit steps complete before first chat accepted",
+    "Test: write a high-importance L2 fact mid-session; without exit, verify L3 promotion happens within N turns",
+    "scripts/passive/ contains weekly_memory_audit.py and memory_prune.py registered on cron",
+    "data/session_exit_state.json schema documented in agent/session.py module docstring",
+    "Exit duration drops by ≥50%",
+    "verify.py PASS"
+  ],
+  "risk_notes": "Mid-session promotion + vault sync run in background threads. Use existing _async_log queue pattern + ensure idempotency (multiple promotions of same L2 fact must be safe — temporal validity window from S-054 makes this true).",
+  "migration_plan": [
+    "1. Write docs/adr/005-resumable-exit.md",
+    "2. Define data/session_exit_state.json schema: {session_id, started_at, steps: [{name, status, completed_at}]}",
+    "3. Add writer in agent/session.py that records step progress; refactor on_exit to update state after each step",
+    "4. Add startup check in pi_daemon.py::_get_agent: read exit_state, if incomplete call resume_exit(state)",
+    "5. Move L2→L3 promotion from on_exit into pi_agent.py::_maybe_mid_session_distill (after distill_session call)",
+    "6. Move vault_sync out of on_exit; hook into _maybe_mid_session_distill for L2/L3 vault writes, leave L1/ticket vault sync at exit (cheap)",
+    "7. Extract weekly audit into scripts/passive/weekly_memory_audit.py with should_run_weekly gate moved into the script",
+    "8. Extract L2/L3 prunes into scripts/passive/memory_prune.py running daily",
+    "9. Trim on_exit to flush_logs → session_summary → finalize exit_state",
+    "10. Append SOLUTIONS.jsonl"
+  ],
+  "status": "closed",
+  "created": "2026-05-15T12:00:00Z",
+  "closed": "2026-05-17T02:00:00+00:00",
+  "linked_solution": "S-064"
+}

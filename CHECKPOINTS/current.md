@@ -1,15 +1,15 @@
 # CURRENT — pointer to active checkpoint
 
 **Phase:** 8.5 — Hardening Track (R1–R10 from pi_architecture.md)
-**Status:** R1 ✅ (T-082). R2.1 ✅ (T-083, R2.2/R2.3 deferred). R3 ✅ (T-084). T-096 + T-097 ✅. Next: R4 (T-085, resumable session exit) or R5 (T-086, sprint × god isolation).
+**Status:** R1 ✅ R2.1 ✅ R3 ✅ R4 ✅. Next: R5 (T-086, sprint × god isolation, 2-4h) or R7 (T-088, archive SelfModifier, 1h).
 **Active checkpoint:** [phase-7-week-1.md](phase-7-week-1.md)
 **Last updated:** 2026-05-17
 
 ## At-a-glance state
 
-- **Verify:** PASS · 152 syntax / 51 tests / 0 failures
-- **Open tickets:** 12 (R4..R10 + T-092..T-094 + T-083-residual + T-095)
-- **Closed total:** 75 tickets (T-082, T-084, T-096, T-097 added)
+- **Verify:** PASS · 153 syntax / 52 tests / 0 failures
+- **Open tickets:** 11 (R5..R10 + T-092..T-094 + T-083-residual + T-095)
+- **Closed total:** 76 tickets (T-085 added)
 - **74 tools** across Memory·Execution·Awareness·Project·Web·Obsidian·Image·Gmail·Calendar·Documents·Faces·Output·STT·KnowledgeGraph·BrowserAuto·Watchers·ComputerUse
 - **New this session (batch 1):** BM25 hybrid retrieval · tree-sitter repo-map · cost tracker · reflect() · KG L4
 - **New this session (batch 2):** Browser automation (Playwright) · Background watchers (file/URL/price/schedule) · Anthropic Computer Use desktop control
@@ -76,6 +76,20 @@ CONTRADICTIONS, DEAD_CODE, FILE_INVENTORY, FINDINGS, RECONCILIATION, SCHEMA_MISM
 | ADR | [docs/adr/001-god-as-mode-config.md](docs/adr/001-god-as-mode-config.md) |
 
 Net active-code: −154 lines (god.py −633, additions +479). Tests +212. Privacy invariants tightened: `tickets/god/`, `vault/.god/`, `docs/_archive/_private/` excluded via `.git/info/exclude` (local-only, matches commit 41e37f2 pattern — god paths never named in public `.gitignore`).
+
+## R4 (T-085) shipped 2026-05-17
+
+| What | Where |
+|---|---|
+| ADR-005: resumable exit + op-moves | [docs/adr/005-resumable-exit.md](docs/adr/005-resumable-exit.md) |
+| `_ExitState` + atomic JSON state machine | [agent/session.py](agent/session.py) |
+| `resume_exit_if_needed()` wired in daemon startup | [pi_daemon.py](pi_daemon.py) |
+| L2→L3 promote + vault_sync moved mid-session | [pi_agent.py](pi_agent.py) `_maybe_mid_session_distill` |
+| Daily memory prune cron (03:00) | [tools/tools_scheduler.py](tools/tools_scheduler.py) `_memory_prune_job` + [scripts/passive/memory_prune.py](scripts/passive/memory_prune.py) |
+| Weekly audit cron (Sun 02:00) | [tools/tools_scheduler.py](tools/tools_scheduler.py) `_weekly_audit_job` + [scripts/passive/weekly_memory_audit.py](scripts/passive/weekly_memory_audit.py) |
+| 10 acceptance tests + legacy-state tolerance | [testing/test_resumable_exit.py](testing/test_resumable_exit.py) |
+
+Exit reduced from 8 → 3 ops (`flush_logs` + `session_summary` + `finalize`). Estimated exit duration: was 5-15s, now ≤2s. Crash-safe: SIGKILL mid-exit resumes on next daemon startup before `server.listen()`.
 
 ## R3 (T-084) shipped 2026-05-17
 
