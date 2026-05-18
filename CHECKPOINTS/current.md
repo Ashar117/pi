@@ -1,15 +1,15 @@
 # CURRENT — pointer to active checkpoint
 
 **Phase:** 8.5 — Hardening Track (R1–R10 from pi_architecture.md)
-**Status:** R1 ✅ R2.1 ✅ R3 ✅ R4 ✅ R5 ✅ R7 ✅. Next: R8 (T-089, ModeConfig dataclass for all 3 response paths, 3d, **unblocked by R1**).
+**Status:** R1 ✅ R2.1 ✅ R3 ✅ R4 ✅ R5 ✅ R7 ✅. R8 Stage A landed (T-089 stays open; B+C next session). Next session: R8 Stages B+C, then R6 (30m) + R9 (4h) + R10 (1d) to close the track.
 **Active checkpoint:** [phase-7-week-1.md](phase-7-week-1.md)
-**Last updated:** 2026-05-17
+**Last updated:** 2026-05-18
 
 ## At-a-glance state
 
-- **Verify:** PASS · 157 syntax / 53 tests / 0 failures
+- **Verify:** PASS (R8 Stage A)
 - **Open tickets:** 9 (R6 + R8 + R9 + R10 + T-092..T-094 + T-083-residual + T-095)
-- **Closed total:** 78 tickets (T-086, T-088 added)
+- **Closed total:** 78 tickets
 - **74 tools** across Memory·Execution·Awareness·Project·Web·Obsidian·Image·Gmail·Calendar·Documents·Faces·Output·STT·KnowledgeGraph·BrowserAuto·Watchers·ComputerUse
 - **New this session (batch 1):** BM25 hybrid retrieval · tree-sitter repo-map · cost tracker · reflect() · KG L4
 - **New this session (batch 2):** Browser automation (Playwright) · Background watchers (file/URL/price/schedule) · Anthropic Computer Use desktop control
