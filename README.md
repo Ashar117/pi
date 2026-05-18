@@ -37,22 +37,30 @@ Switch by typing: `root mode`, `normie`, `research mode`.
 
 ---
 
-## Tools — 51 total (root mode)
+## Tools — 74 total (root mode)
+
+Auto-regenerated section in [PI.md §7](PI.md) is the source of truth. Snapshot:
 
 | Category | Tools |
 | --- | --- |
-| **Memory** | `memory_read` · `memory_write` · `memory_delete` |
-| **Execution** | `execute_python` · `execute_bash` · `read_file` · `modify_file` · `create_file` |
-| **Awareness** | `get_weather` · `get_news` · `get_stocks` · `get_tech_updates` · `refresh_awareness` |
-| **Project** | `search_codebase` · `create_ticket` · `get_session_stats` · `system_introspect` |
-| **Web** | `web_search` · `web_browse` · `reddit_browse` · `reddit_search` · `reddit_thread` · `scholar_search` · `discord_read` · `daily_briefing` |
-| **Obsidian** | `obsidian_read` · `obsidian_write` · `obsidian_append` · `obsidian_search` |
-| **Image** | `image_gen` |
-| **Gmail** | `gmail_inbox` · `gmail_search` · `gmail_read` · `gmail_send` |
-| **Calendar** | `calendar_today` · `calendar_upcoming` · `calendar_search` · `calendar_create` · `calendar_delete` |
-| **Documents** | `read_document` · `analyze_image` · `analyze_images` · `analyze_video` · `ocr_image` · `analyze_document_smart` |
-| **Faces** | `detect_faces` · `recognize_face` · `register_face` · `list_registered_faces` |
-| **Output** | `speak` · `telegram_send` |
+| **Memory** (4) | `memory_read` · `memory_write` · `memory_delete` · `memory_search_semantic` *(Gemini-cosine retrieval)* |
+| **Execution** (5) | `execute_python` · `execute_bash` · `read_file` · `modify_file` · `create_file` |
+| **Awareness** (5) | `get_weather` · `get_news` · `get_stocks` · `get_tech_updates` · `refresh_awareness` |
+| **Project** (6) | `search_codebase` · `create_ticket` · `get_session_stats` · `system_introspect` · `repo_map` · `reflect` |
+| **Web** (8) | `web_search` · `web_browse` · `reddit_browse` · `reddit_search` · `reddit_thread` · `scholar_search` · `discord_read` · `daily_briefing` |
+| **Obsidian** (4) | `obsidian_read` · `obsidian_write` · `obsidian_append` · `obsidian_search` |
+| **Image** (1) | `image_gen` |
+| **Gmail** (4) | `gmail_inbox` · `gmail_search` · `gmail_read` · `gmail_send` |
+| **Calendar** (5) | `calendar_today` · `calendar_upcoming` · `calendar_search` · `calendar_create` · `calendar_delete` |
+| **Documents** (6) | `read_document` · `analyze_image` · `analyze_images` · `analyze_video` · `ocr_image` · `analyze_document_smart` |
+| **Faces** (4) | `detect_faces` · `recognize_face` · `register_face` · `list_registered_faces` |
+| **Output** (2) | `speak` · `telegram_send` |
+| **Voice** (2) | `listen` · `transcribe_file` |
+| **Browser** (8) | `browser_open` · `browser_screenshot` · `browser_click` · `browser_fill` · `browser_get_text` · `browser_close` · `browser_evaluate` · `browser_wait` |
+| **Watchers** (4) | `watcher_add` · `watcher_list` · `watcher_remove` · `watcher_status` |
+| **Computer Use** (6) | `computer_screenshot` · `computer_click` · `computer_type` · `computer_key` · `computer_scroll` · `computer_run_task` |
+
+Each tool is a `ToolSpec` registered with `agent/tools.py` — adding a new tool is one entry in the owning module's `TOOLS = [...]` list (see [docs/adr/002-tool-registry-pattern.md](docs/adr/002-tool-registry-pattern.md)).
 
 ---
 
@@ -100,7 +108,28 @@ python scripts/retro.py --stdout            # Friday: aggregate week stats
 python scripts/refresh_pi.py               # regenerate PI.md auto-sections
 ```
 
-`sprint.py` picks the highest-priority open ticket, runs Claude with the full tool loop, blocks edits to risk-flagged components without a diff-first gate, runs `verify.py`, commits to a branch, escalates via Telegram on failure.
+`sprint.py` picks the highest-priority open ticket, runs Claude with the full tool loop, blocks edits to risk-flagged components without a diff-first gate, runs `verify.py`, commits to a branch, escalates via Telegram on failure. Refuses any ticket touching `tickets/god/` / `vault/.god/` / `prompts/god_consciousness.txt` / `data/god_memory.db` / `agent/god.py` (R5, ADR / [PI.md §10](PI.md)).
+
+---
+
+## Hardening Track (Phase 8.5)
+
+Structural refactor track between Phase 8 (Voice) and Phase 9 (Distributed). R1–R10 closes the architectural debt accumulated through vibe-coding, with one R-ticket per week + ADRs.
+
+| R# | Ticket | Status | What |
+| --- | --- | --- | --- |
+| R1 | [T-082](tickets/closed/T-082-r1-god-mode-collapse.json) | ✅ | God mode → `ModeConfig` instance; `agent/god.py` archived; unified `_respond_via_config`. [ADR-001](docs/adr/001-god-as-mode-config.md) |
+| R2.1 | [T-083](tickets/open/T-083-r2-tool-registry-and-consolidation.json) | ✅ partial | 74 tools migrated to `ToolSpec` registry; `agent/tools.py` 1681→235 lines. R2.2/R2.3 deferred. [ADR-002](docs/adr/002-tool-registry-pattern.md) |
+| R3 | [T-084](tickets/closed/T-084-r3-router-tier-and-tpd-budget.json) | ✅ | `LLMRouter` tier matrix (private/premium/balanced/cheap/fast) + per-provider TPD-budget brownout. [ADR-003](docs/adr/003-router-tier-and-tpd-budget.md) |
+| R4 | [T-085](tickets/closed/T-085-r4-resumable-session-exit.json) | ✅ | Session exit ≤3 ops, resumable via `data/session_exit_state.json`. 5 ops moved to mid-session/cron. [ADR-005](docs/adr/005-resumable-exit.md) |
+| R5 | [T-086](tickets/closed/T-086-r5-sprint-god-isolation.json) | ✅ | `sprint.py` refuses god tickets; AST-checked interactive-only god entry |
+| R6 | [T-087](tickets/open/T-087-r6-partition-recovery-prework.json) | open · 30m | partition-recovery pre-work |
+| R7 | [T-088](tickets/closed/T-088-r7-archive-selfmodifier.json) | ✅ | Phase-5 SelfModifier class archived |
+| R8 | [T-089](tickets/open/T-089-r8-modeconfig-dataclass.json) | 🟡 Stage A | `ModeConfig` 5 new behavior fields wired into all 3 response paths. [ADR-004](docs/adr/004-modeconfig-unifies-response-paths.md) |
+| R9 | [T-090](tickets/open/T-090-r9-dropped-log-local-fallback.json) | open · 4h | dropped-log local fallback |
+| R10 | [T-091](tickets/open/T-091-r10-l3-prompt-cache-segment.json) | open · 1d | L3 prompt-cache segment |
+
+Full plan: [docs/PI_ENGINEERING_LAYOUT.md](docs/PI_ENGINEERING_LAYOUT.md).
 
 ---
 
