@@ -1,9 +1,9 @@
 {
   "id": "T-153",
   "source": "Claude session audit (2026-05-29)",
-  "title": "Capability docs drift from reality — ABOUT.md marks everything working while P2 coherence bugs are open",
+  "title": "Capability docs drift from reality \u2014 ABOUT.md marks everything working while P2 coherence bugs are open",
   "component": "ABOUT.md, README.md, scripts/passive/doc_drift_watcher.py",
-  "what_failed": "ABOUT.md's capability table marks every row '✅ Working' — including 'Cross-mode continuity', 'Three-tier memory', and the full tool loop — while open tickets T-141/T-142/T-143 say the core conversation is incoherent, has no session isolation, and contradicts itself. The marketing surface and the ticket queue describe two different products. doc_drift_watcher checks for stale docs but has no notion of 'capability claimed working vs open P2 bug against that capability'.",
+  "what_failed": "ABOUT.md's capability table marks every row '\u2705 Working' \u2014 including 'Cross-mode continuity', 'Three-tier memory', and the full tool loop \u2014 while open tickets T-141/T-142/T-143 say the core conversation is incoherent, has no session isolation, and contradicts itself. The marketing surface and the ticket queue describe two different products. doc_drift_watcher checks for stale docs but has no notion of 'capability claimed working vs open P2 bug against that capability'.",
   "where_failed": "ABOUT.md:33-52 (all-green capability table), README.md status lines, no reconciliation in doc_drift_watcher.py",
   "why_likely": "ABOUT.md is hand-curated and aspirational; the ticket queue is the truth. Nothing forces them to agree, so the doc rots toward optimism with every feature added and never gets marked down when something breaks.",
   "severity": "P3",
@@ -12,11 +12,12 @@
   "closed": null,
   "linked_solution": null,
   "migration_plan": [
-    "1. Replace the binary ✅ column in ABOUT.md with three states: Working / Flaky / Broken.",
+    "1. Replace the binary \u2705 column in ABOUT.md with three states: Working / Flaky / Broken.",
     "2. Mark any capability that has an open P1/P2 ticket against its component as Flaky or Broken, with the ticket id inline.",
     "3. Extend doc_drift_watcher.py: for each capability row, map to a component; if an open P1/P2 ticket names that component, flag a WARN when the row still says Working.",
     "4. Run it in /pi-passive so the drift surfaces before any commit that touches docs."
   ],
-  "implementation_notes": "Honesty is the cheaper long-term position, especially for a portfolio repo. A status table that admits 'Flaky — see T-143' reads as more credible engineering than a wall of green that the open tickets contradict.",
-  "analysis": "PERSPECTIVE: For a project whose stated purpose is 'the most honest thing I can show about how I think,' an all-green capability table that your own tickets contradict is the one thing that undercuts the whole pitch. Anyone senior reads the gap immediately. Make the docs tell the truth automatically — tie them to the ticket queue so they can't drift back to optimism."
+  "implementation_notes": "Honesty is the cheaper long-term position, especially for a portfolio repo. A status table that admits 'Flaky \u2014 see T-143' reads as more credible engineering than a wall of green that the open tickets contradict.",
+  "analysis": "PERSPECTIVE: For a project whose stated purpose is 'the most honest thing I can show about how I think,' an all-green capability table that your own tickets contradict is the one thing that undercuts the whole pitch. Anyone senior reads the gap immediately. Make the docs tell the truth automatically \u2014 tie them to the ticket queue so they can't drift back to optimism.",
+  "progress": "2026-05-29: docs made honest - ABOUT.md legend (Working/Partial/Known-issue) + reality rows; public README recipe-free + honest. REMAINING (optional): automate capability-vs-open-ticket drift in doc_drift_watcher.py."
 }

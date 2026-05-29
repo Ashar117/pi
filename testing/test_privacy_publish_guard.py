@@ -71,6 +71,17 @@ class TestCheckPrivateImpl:
         assert status == Status.FAIL
         assert any("agent/tools.py" in l for l in lines)
 
+    def test_private_impl_ok_when_repo_private(self):
+        """T-155: in a private repo, tracked implementation is by design → PASS."""
+        tracked = ["agent/tools.py", "pi_agent.py", "tools/web.py"]
+        status, lines = ppg.check_private_impl(tracked, repo_private=True)
+        assert status == Status.PASS
+        assert any("private" in l.lower() for l in lines)
+
+    def test_private_impl_still_fails_when_repo_public(self):
+        status, _ = ppg.check_private_impl(["agent/tools.py"], repo_private=False)
+        assert status == Status.FAIL
+
     def test_passive_scripts_are_allowed(self):
         tracked = ["scripts/passive/__init__.py",
                    "scripts/passive/common.py",

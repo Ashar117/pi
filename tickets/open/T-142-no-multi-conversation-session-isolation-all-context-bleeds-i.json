@@ -1,7 +1,7 @@
 {
   "id": "T-142",
   "source": "Pi self-report (session tool call)",
-  "title": "No multi-conversation / session isolation — all context bleeds into one stream",
+  "title": "No multi-conversation / session isolation \u2014 all context bleeds into one stream",
   "component": "pi_agent.py, core/session_manager.py",
   "what_failed": "Pi has no concept of separate conversation threads. Everything is one flat context. User wants ChatGPT/Claude-style isolated chats with their own memory bubbles.",
   "where_failed": "",
@@ -18,7 +18,8 @@
     "3. _get_system_prompt_split warm_p scopes session_history by current conversation_id.",
     "4. new-chat command: reset self.messages/self.history, generate new conversation_id, clear session_history in SQLite (set invalid_at=now for session_history rows), keep all other L3 categories intact.",
     "5. Telegram: /newchat command wired.",
-    "6. This is a 1-week effort — do not implement mid-sprint."
+    "6. This is a 1-week effort \u2014 do not implement mid-sprint."
   ],
-  "implementation_notes": "Architectural — minimum 1 week. Do not implement in isolation. Dependency: L3 must support conversation_id column (PRAGMA add). Requires /newchat command in pi_agent.py run loop."
+  "implementation_notes": "Architectural \u2014 minimum 1 week. Do not implement in isolation. Dependency: L3 must support conversation_id column (PRAGMA add). Requires /newchat command in pi_agent.py run loop.",
+  "progress": "2026-05-29: /newchat increment SHIPPED - conversation_id field + new-chat command resets self.messages/history without wiping L3 (tests in test_conversation_golden.py). REMAINING: per-conversation L3 scoping + Telegram /newchat wiring."
 }

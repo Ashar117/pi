@@ -122,6 +122,10 @@ class PiAgent:
         self.history = []    # Simplified string-only history for research mode context
         self.session_start = datetime.now(timezone.utc)
         self.session_id = uuid.uuid4().hex[:8]  # T-013: short ID for log correlation
+        # T-142: a conversation is a thread of short-term context. /newchat starts
+        # a fresh one (clears self.messages/history) without wiping L3 long-term
+        # memory. Full per-conversation L3 scoping is a follow-up (T-142 remainder).
+        self.conversation_id = uuid.uuid4().hex[:8]
         # T-037: populated when switching normie→root; injected once into first root prompt
         self._normie_handoff_context: str = ""
 
@@ -596,6 +600,18 @@ class PiAgent:
                     print("[Research] Results saved to memory")
                 return "[Research complete. Continue conversation or 'exit']"
             return "[No research question provided]"
+        elif cmd in ("new chat", "newchat", "/newchat", "/new"):
+            # T-142: reset short-term conversation context without touching L3
+            # (durable facts) — like opening a fresh chat in ChatGPT/Claude.
+            self.messages = []
+            self.history = []
+            self._normie_handoff_context = ""
+            self.conversation_id = uuid.uuid4().hex[:8]
+            return (
+                f"New chat started (conversation {self.conversation_id}). "
+                "Short-term context cleared; long-term memory kept."
+            )
+
         elif cmd == "exit":
             return "EXIT"
 

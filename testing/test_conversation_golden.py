@@ -201,5 +201,26 @@ def test_normie_fact_survives_within_window():
     assert "Pixel" in saw, "normie lost a fact that is well within its context window"
 
 
+# ── T-142: /newchat resets short-term context, keeps conversation_id fresh ───
+
+def test_newchat_resets_short_term_context():
+    agent = _agent_in_mode("root", ["r1", "r2"])
+    _drive(agent, ["remember the codename is BLUEHERON", "and the deadline is friday"])
+    assert len(agent.messages) > 0 and len(agent.history) > 0
+    old_cid = agent.conversation_id
+    out = agent.process_input("/newchat")
+    assert "new chat" in out.lower()
+    assert agent.messages == [], "short-term messages not cleared"
+    assert agent.history == [], "history not cleared"
+    assert agent.conversation_id != old_cid, "conversation_id did not rotate"
+
+
+def test_newchat_natural_phrasing():
+    agent = _agent_in_mode("normie", ["r1"])
+    _drive(agent, ["hello there"])
+    out = agent.process_input("new chat")
+    assert "new chat" in out.lower() and agent.messages == []
+
+
 def teardown_module(module):
     builtins.input = _real_input

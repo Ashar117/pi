@@ -81,10 +81,10 @@ When closed: move into §6 of `CHECKPOINTS/current.md` and §9 of this file (aut
 <!-- BEGIN AUTO §4 -->
 - **Phase:** Coherence track (interrupts roadmap per T-156 freeze)
 - **Last verify:** PASS · 221/221 files clean · 96 tests · 0 failures
-- **Open tickets:** 11
-- **Closed tickets:** 139
-- **Solutions logged:** 88
-- **Turns today:** 488
+- **Open tickets:** 9
+- **Closed tickets:** 141
+- **Solutions logged:** 90
+- **Turns today:** 527
 - **Last session end:** 2026-05-29
 <!-- END AUTO §4 -->
 
@@ -169,11 +169,9 @@ For every meaningful change:
 | T-129 | Thinking layer (full) — add recall-merge + clarifier + memory-id extraction | P3 | agent/thinking.py (extend) |
 | T-136 | Idle replay — sleep-consolidation analogue; pick random past episodes during use | P3 | agent/idle_replay.py (new) + pi_agent.py |
 | T-137 | Context-cued recall — boost retrieval for same-mode and same-scope matches (enco | P3 | tools/tools_memory.py memory_read + _hyb |
-| T-142 | No multi-conversation / session isolation � all context bleeds into one stream | P2 | pi_agent.py, core/session_manager.py |
-| T-143 | Pi replies lack semantic coherence � responses don't follow naturally from conte | P2 | pi_agent.py, core/context_manager.py |
+| T-142 | No multi-conversation / session isolation — all context bleeds into one stream | P2 | pi_agent.py, core/session_manager.py |
 | T-152 | Test suite validates plumbing, not conversation fidelity — no end-to-end multi-t | P2 | testing/ (new test_conversation_golden.p |
 | T-153 | Capability docs drift from reality — ABOUT.md marks everything working while P2  | P3 | ABOUT.md, README.md, scripts/passive/doc |
-| T-155 | VCS hygiene — 90+ uncommitted files, 11 days since last commit; source of truth  | P2 | process / git, scripts/passive/session_e |
 | T-156 | Phase freeze — no new tools or phases until conversation coherence is verified e | P1 | PI.md (§3 sprint goal, §12 roadmap), str |
 | T-158 | PRIVACY INCIDENT — public GitHub repo leaks architecture/flowcharts, archived co | P0 | .gitignore, .git/info/exclude, github.co |
 <!-- END AUTO §8 -->
@@ -185,6 +183,8 @@ For every meaningful change:
 <!-- BEGIN AUTO §9 -->
 | Solution | Ticket | Title |
 |---|---|---|
+| S-095 | T-155 | privacy guard FAILed on tracked impl — wrong now repo is private. |
+| S-094 | T-143 | Pi replies lacked semantic coherence. |
 | S-093 | T-157 | privacy_publish_guard flagged api_key=CEREBRAS_API_KEY (a variable ref) as a cre |
 | S-092 | T-154 | Self-report tickets carried authoritative-but-wrong fixes (T-143); sprint runner |
 | S-091 | T-151 | _prefetch_memory queried only keywords[0] via single-keyword lexical read; multi |
@@ -193,8 +193,6 @@ For every meaningful change:
 | S-088 | T-148, T-143 | Pi could not see its own prior replies. extract_text_from_messages and _build_co |
 | S-087 | T-141 | Pi claims inability (cant analyze docs) then provides accurate details anyway —  |
 | S-086 | T-146, T-147 | Awareness shortcut returned Atlanta weather when user asked about Multan; awaren |
-| S-085 | T-115 | Groq 400 tool_use_failed triggered 300s brownout — provider healthy, model just  |
-| S-084 | T-139, T-140 | memory_delete wiped entire L3 (20 entries) on a single call — _l3_fast_path retu |
 <!-- END AUTO §9 -->
 
 ---

@@ -136,10 +136,29 @@ _PRIVATE_MODE_PATS: List[re.Pattern] = [
 ]
 
 
+def repo_is_private() -> bool:
+    """T-155: is this repo private? If so, tracked implementation is BY DESIGN,
+    not a leak. Signalled by env PI_REPO_PRIVATE=1 or git config
+    `pi.repoVisibility=private`. Defaults to False (public) — the safe
+    assumption, so an unconfigured repo still gets the strict impl-tracked FAIL.
+    """
+    import os
+    if os.environ.get("PI_REPO_PRIVATE", "").lower() in ("1", "true", "yes"):
+        return True
+    r = run_git(["config", "--get", "pi.repoVisibility"])
+    return r.returncode == 0 and r.stdout.strip().lower() == "private"
+
+
 # ── Individual checks (accept root so tests can inject tmp_path) ──────────────
 
-def check_private_impl(tracked: List[str]) -> Tuple[Status, List[str]]:
-    """FAIL if any private implementation path is tracked."""
+def check_private_impl(tracked: List[str], repo_private: bool = False) -> Tuple[Status, List[str]]:
+    """FAIL if private implementation is tracked — UNLESS the repo is private.
+
+    T-155: in a private repo, tracking the implementation is intentional (it
+    gives the code version history), not a leak. There we report PASS with an
+    informational count instead of FAIL. In a public repo (default), tracked
+    implementation is still a hard FAIL.
+    """
     hits: List[str] = []
     for f in tracked:
         if f.startswith("scripts/") and not f.startswith(SCRIPTS_EXEMPT_PREFIX):
@@ -157,6 +176,12 @@ def check_private_impl(tracked: List[str]) -> Tuple[Status, List[str]]:
                 break
     if not hits:
         return Status.PASS, ["✅ No private implementation files tracked"]
+    if repo_private:
+        return Status.PASS, [
+            f"ℹ Repo is private — implementation tracked by design "
+            f"({len(hits)} files). This is expected (T-155); secrets and the "
+            f"god-mode layer remain excluded via .gitignore."
+        ]
     return Status.FAIL, hits
 
 
@@ -326,9 +351,10 @@ def run_check(strict: bool = False, root: Path = _DEFAULT_ROOT) -> Status:
     # Resolve staged paths relative to root for content scanning
     staged_paths: List[Path] = [root / f for f in staged]
 
+    private = repo_is_private()
     checks = [
         ("## 1. Private Implementation Tracked",
-         lambda: check_private_impl(tracked)),
+         lambda: check_private_impl(tracked, repo_private=private)),
         ("## 2. Private Data / Logs Tracked",
          lambda: check_private_data(tracked)),
         ("## 3. Credential Patterns",

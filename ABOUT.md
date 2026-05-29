@@ -28,6 +28,8 @@ Pi is a multi-mode agent built on Claude Sonnet 4.6 and Groq, with a three-tier 
 
 ## Capabilities — current state
 
+*Legend: ✅ Working · ◐ Partial · ⚠ Known issue. This table reflects reality, including what isn't done — see the ticket queue for the truth, not marketing.*
+
 | Capability | Status | Notes |
 | --- | --- | --- |
 | Multi-mode routing (root / normie / research) | ✅ Working | Natural-language switch detection |
@@ -49,6 +51,9 @@ Pi is a multi-mode agent built on Claude Sonnet 4.6 and Groq, with a three-tier 
 | Browser automation | ✅ Working | Playwright-backed; screenshot, click, fill, evaluate |
 | Computer control | ✅ Working | pyautogui + mss; screenshot, click, type, key, scroll |
 | Video generation | ✅ Working | Replicate → HuggingFace fallback chain |
+| Conversation coherence | ✅ Working | Fixed 2026-05 (T-148/T-149); model now sees its own prior turns. Regression harness T-152 |
+| Session isolation (`/newchat`) | ◐ Partial | Short-term reset works; per-conversation L3 scoping still pending (T-142) |
+| Self-report ticket safety | ✅ Working | Sprint runner won't auto-implement unverified self-diagnoses (T-154) |
 
 ---
 
