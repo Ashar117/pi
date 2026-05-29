@@ -58,5 +58,5 @@
   ],
   "status": "open",
   "created": "2026-05-26T00:00:00+00:00",
-  "progress": "2026-05-30: FOUNDATION shipped - l3_cache.mode column added (idempotent migration); memory_write records mode. Tests in test_memory_context_columns.py. REMAINING: _hybrid_search_l3 + _l3_fast_path same-mode boost behind PI_CONTEXT_CUED_RECALL; memory_read current_mode kwarg; pi_agent passes self.mode at write sites."
+  "progress": "2026-05-30: FOUNDATION shipped - l3_cache.mode column added (idempotent migration); memory_write records mode. Tests in test_memory_context_columns.py. REMAINING: _hybrid_search_l3 + _l3_fast_path same-mode boost behind PI_CONTEXT_CUED_RECALL; memory_read current_mode kwarg; pi_agent passes self.mode at write sites. | 2026-05-30: SAME-MODE BOOST shipped + tested (test_context_cued_recall.py) \u2014 _mode_map_for_cued_recall + boost in _hybrid_search_l3 AND _l3_fast_path, behind PI_CONTEXT_CUED_RECALL (default off). memory_read current_mode kwarg; pi_agent prefetch passes self.mode. REMAINING: scope boost (blocked on current_scope field dependency)."
 }

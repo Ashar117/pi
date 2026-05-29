@@ -229,7 +229,8 @@ class MemoryTools:
         conn.commit()
         conn.close()
     
-    def memory_read(self, query: str = "", tier: Optional[str] = None, limit: int = 20) -> List[Dict]:
+    def memory_read(self, query: str = "", tier: Optional[str] = None, limit: int = 20,
+                    current_mode=None) -> List[Dict]:
         """
         Search memory. Empty query returns all recent entries.
 
@@ -256,7 +257,7 @@ class MemoryTools:
                     return results
                 # tier is None — fall through to L2 below
             else:
-                rows = self._hybrid_search_l3(query, limit)
+                rows = self._hybrid_search_l3(query, limit, current_mode=current_mode)
 
                 # If nothing in cache and we haven't synced recently, sync and retry
                 if not rows and (self._last_sync is None or
@@ -265,7 +266,7 @@ class MemoryTools:
                         now2 = datetime.now(timezone.utc)
                         if self._last_sync is None or (now2 - self._last_sync).total_seconds() > self._sync_ttl_seconds:
                             self._sync_l3()
-                    rows = self._hybrid_search_l3(query, limit)
+                    rows = self._hybrid_search_l3(query, limit, current_mode=current_mode)
 
                 l3_results = [
                     {"id": r[0], "content": r[1], "importance": r[2],
@@ -382,7 +383,32 @@ class MemoryTools:
             track_silent("config.invalid_env", ValueError(f"{var}={raw!r}: {e}"))
             return default
 
-    def _l3_fast_path(self, query: str, limit: int) -> list:
+    # T-137: same-mode retrieval boost (encoding-specificity). Additive on the
+    # combined score so a same-mode match outranks an equally-relevant
+    # other-mode row, but never overrides a much-more-relevant off-mode row.
+    _SAME_MODE_BOOST = 0.15
+
+    def _mode_map_for_cued_recall(self, current_mode) -> dict:
+        """Return {id: mode} for context-cued recall, or {} when disabled.
+
+        Gated by PI_CONTEXT_CUED_RECALL (default off, per T-137 soak plan) and
+        only built when a current_mode is supplied. Best-effort: any failure
+        (legacy schema, locked db) returns {} so retrieval is never broken.
+        """
+        if not current_mode or os.environ.get(
+            "PI_CONTEXT_CUED_RECALL", ""
+        ).lower() not in ("1", "true", "on", "yes"):
+            return {}
+        try:
+            conn = sqlite3.connect(self.sqlite_path)
+            m = {r[0]: r[1] for r in conn.execute(
+                "SELECT id, mode FROM l3_cache WHERE mode IS NOT NULL")}
+            conn.close()
+            return m
+        except Exception:
+            return {}
+
+    def _l3_fast_path(self, query: str, limit: int, current_mode=None) -> list:
         """LIKE + score fast-path for small L3 caches (< threshold rows).
 
         Score formula: 1.0 if query term in content + 0.1 * importance +
@@ -429,6 +455,7 @@ class MemoryTools:
             except Exception:
                 pass
 
+        mode_map = self._mode_map_for_cued_recall(current_mode)
         q_lower = query.lower()
         scored = []
         for row in rows:
@@ -458,6 +485,8 @@ class MemoryTools:
                 except (ValueError, TypeError):
                     pass
             score = match_score + imp_score + recency_bonus
+            if mode_map.get(id_) == current_mode:  # T-137 same-mode boost
+                score += self._SAME_MODE_BOOST
             # T-145: only include rows with an actual content match; returning all
             # rows (match_score=0) caused memory_delete to wipe entire L3.
             if match_score > 0:
@@ -466,7 +495,7 @@ class MemoryTools:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [row for _, row in scored[:limit]]
 
-    def _hybrid_search_l3(self, query: str, limit: int) -> list:
+    def _hybrid_search_l3(self, query: str, limit: int, current_mode=None) -> list:
         """BM25 + entity hybrid search over l3_cache.
 
         T-111: fast-path for small caches (< PI_L3_FAST_PATH_THRESHOLD rows);
@@ -495,7 +524,7 @@ class MemoryTools:
         conn_count.close()
 
         if row_count < threshold:
-            return self._l3_fast_path(query, limit)
+            return self._l3_fast_path(query, limit, current_mode=current_mode)
 
         # Load active entries up to BM25 cap
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -562,6 +591,7 @@ class MemoryTools:
         # from polluting recall.
         BM25_FLOOR = 0.5
 
+        mode_map = self._mode_map_for_cued_recall(current_mode)
         scored = []
         for i, row in enumerate(all_rows):
             if bm25_scores[i] < BM25_FLOOR:
@@ -588,6 +618,8 @@ class MemoryTools:
                 # importance nudge (1-10 -> 0.0-0.09)
                 importance_nudge = (row[2] or 5) * 0.01
             combined = bm25_norm + entity_bonus + importance_nudge
+            if mode_map.get(row[0]) == current_mode:  # T-137 same-mode boost
+                combined += self._SAME_MODE_BOOST
             scored.append((combined, row[:5]))
 
         scored.sort(key=lambda x: x[0], reverse=True)

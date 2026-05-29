@@ -27,7 +27,7 @@ class FakeMem:
         self.semantic_calls.append(query)
         return list(self.semantic)
 
-    def memory_read(self, query="", tier=None, limit=20):
+    def memory_read(self, query="", tier=None, limit=20, current_mode=None):
         self.read_calls.append(query)
         return list(self.by_kw.get(query, []))
 

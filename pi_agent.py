@@ -722,7 +722,7 @@ class PiAgent:
                 merged: List[Dict] = []
                 for kw in keywords[:3]:
                     q = kw[:-1] if (kw.endswith("s") and len(kw) > 4) else kw
-                    for h in (self.memory.memory_read(query=q, limit=4) or []):
+                    for h in (self.memory.memory_read(query=q, limit=4, current_mode=self.mode) or []):
                         key = h.get("id") or (h.get("content") or "")[:80]
                         if key in seen:
                             continue
