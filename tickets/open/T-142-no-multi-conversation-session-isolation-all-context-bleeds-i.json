@@ -21,5 +21,5 @@
     "6. This is a 1-week effort \u2014 do not implement mid-sprint."
   ],
   "implementation_notes": "Architectural \u2014 minimum 1 week. Do not implement in isolation. Dependency: L3 must support conversation_id column (PRAGMA add). Requires /newchat command in pi_agent.py run loop.",
-  "progress": "2026-05-29: /newchat increment SHIPPED - conversation_id field + new-chat command resets self.messages/history without wiping L3 (tests in test_conversation_golden.py). REMAINING: per-conversation L3 scoping + Telegram /newchat wiring."
+  "progress": "2026-05-29: /newchat increment SHIPPED - conversation_id field + new-chat command resets self.messages/history without wiping L3 (tests in test_conversation_golden.py). REMAINING: per-conversation L3 scoping + Telegram /newchat wiring. | 2026-05-30: FOUNDATION shipped - l3_cache.conversation_id column added; memory_write records conversation_id (composes with the /newchat conversation_id from prior increment). REMAINING: scope L3 reads by conversation_id + pi_agent stamps self.conversation_id on writes + Telegram /newchat."
 }

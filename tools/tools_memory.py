@@ -216,6 +216,16 @@ class MemoryTools:
         if "last_accessed_at" not in existing_cols:
             cursor.execute("ALTER TABLE l3_cache ADD COLUMN last_accessed_at TEXT")
 
+        # T-137: encoding context — which mode wrote this fact. Enables
+        # context-cued recall (same-mode retrieval boost). NULL = legacy/global.
+        if "mode" not in existing_cols:
+            cursor.execute("ALTER TABLE l3_cache ADD COLUMN mode TEXT")
+        # T-142: conversation thread this fact was written in. Enables
+        # per-conversation scoping / same-conversation retrieval boost.
+        # NULL = global (visible to all conversations).
+        if "conversation_id" not in existing_cols:
+            cursor.execute("ALTER TABLE l3_cache ADD COLUMN conversation_id TEXT")
+
         conn.commit()
         conn.close()
     
@@ -591,7 +601,9 @@ class MemoryTools:
         category: str = "note",
         expiry: Optional[datetime] = None,
         session_id: Optional[str] = None,
-        source: str = "stated"
+        source: str = "stated",
+        mode: Optional[str] = None,
+        conversation_id: Optional[str] = None,
     ) -> Dict:
         """
         Write to memory.
@@ -698,8 +710,9 @@ class MemoryTools:
                 cursor.execute("""
                     INSERT INTO l3_cache
                         (id, content, importance, category, active_until, created_at,
-                         surprise_score, goal_alignment, affect_tag, decay_rate)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         surprise_score, goal_alignment, affect_tag, decay_rate,
+                         mode, conversation_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, [
                     entry_id,
                     content,
@@ -711,6 +724,8 @@ class MemoryTools:
                     _goal,
                     _affect,
                     _decay,
+                    mode,                # T-137: encoding-context mode
+                    conversation_id,     # T-142: conversation thread
                 ])
                 conn.commit()
             except Exception as e:

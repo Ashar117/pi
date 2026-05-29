@@ -1,43 +1,43 @@
 {
   "id": "T-137",
   "phase": "9.0-brain",
-  "title": "Context-cued recall — boost retrieval for same-mode and same-scope matches (encoding-specificity principle)",
+  "title": "Context-cued recall \u2014 boost retrieval for same-mode and same-scope matches (encoding-specificity principle)",
   "type": "feature",
   "component": "tools/tools_memory.py memory_read + _hybrid_search_l3",
   "severity": "P3",
   "effort_estimate": "1d",
   "depends_on": [
-    "U10 / future ticket — per-ticket/project scope must ship first (current_scope field on agent)",
+    "U10 / future ticket \u2014 per-ticket/project scope must ship first (current_scope field on agent)",
     "T-134 (composes with salience score)"
   ],
   "blocks": [],
   "adr_required": null,
-  "current_state": "L2 + L3 retrieval treats every fact identically regardless of which mode or scope the user is currently in. A fact written in god mode about a side-project ranks the same as a fact written in root mode about Pi infrastructure when both match the query semantically. Pi already logs mode at L1 write time (raw_wiki.metadata.mode) and L2 metadata.session_id, so the data exists — it's just not used during retrieval.",
+  "current_state": "L2 + L3 retrieval treats every fact identically regardless of which mode or scope the user is currently in. A fact written in god mode about a side-project ranks the same as a fact written in root mode about Pi infrastructure when both match the query semantically. Pi already logs mode at L1 write time (raw_wiki.metadata.mode) and L2 metadata.session_id, so the data exists \u2014 it's just not used during retrieval.",
   "structural_problem": "Encoding-specificity (Tulving, 1973) is one of the most robust findings in memory research: recall is best when retrieval context matches encoding context. Without context-cued recall, Pi treats every fact as context-free even though context is the strongest disambiguator at small scale.",
   "target_state": "memory_read accepts optional current_mode and current_scope kwargs. _hybrid_search_l3 applies retrieval boosts: +0.15 to cosine score for same-mode match, +0.20 for same-scope match. Composes with salience (T-134) and decay (T-135). PiAgent passes self.mode + self.current_scope to all memory_read calls. Env-toggleable PI_CONTEXT_CUED_RECALL=on (default on after 1-week soak).",
   "files_affected": [
-    "tools/tools_memory.py — memory_read accepts current_mode + current_scope; _hybrid_search_l3 applies boosts in scoring loop",
-    "pi_agent.py — _prefetch_memory and any other memory_read call sites pass current context",
+    "tools/tools_memory.py \u2014 memory_read accepts current_mode + current_scope; _hybrid_search_l3 applies boosts in scoring loop",
+    "pi_agent.py \u2014 _prefetch_memory and any other memory_read call sites pass current context",
     "testing/test_context_cued_recall.py (NEW)"
   ],
   "design_notes": [
     "Boost values: same_mode_boost=0.15, same_scope_boost=0.20 (scope is stronger context signal than mode)",
-    "Boosts are ADDITIVE on cosine score (0-1 range) — never override semantic relevance for off-context-but-highly-relevant rows",
+    "Boosts are ADDITIVE on cosine score (0-1 range) \u2014 never override semantic relevance for off-context-but-highly-relevant rows",
     "Privacy invariant: god mode reads from god_memory.db only (existing namespace isolation); boosts compose within namespace",
     "scope_match: row.scope == current_scope (exact). NULL scope (global) = no boost, no penalty",
     "mode_match: row.metadata.mode == current_mode. NULL mode = no boost, no penalty (handles legacy rows pre-T-024)",
-    "Order of composition: cosine_score + entity_bonus + importance_nudge + same_mode_boost + same_scope_boost → final score",
-    "Wrap in try/except (Inv. 9) — on boost-computation failure, fall back to pre-boost score"
+    "Order of composition: cosine_score + entity_bonus + importance_nudge + same_mode_boost + same_scope_boost \u2192 final score",
+    "Wrap in try/except (Inv. 9) \u2014 on boost-computation failure, fall back to pre-boost score"
   ],
   "success_criteria": [
-    "Two L2 rows with equal cosine to query, different mode → same-mode row wins on retrieval order",
-    "Same setup with different scope → same-scope row wins (stronger boost than mode)",
+    "Two L2 rows with equal cosine to query, different mode \u2192 same-mode row wins on retrieval order",
+    "Same setup with different scope \u2192 same-scope row wins (stronger boost than mode)",
     "Off-context-but-highly-semantically-relevant row still surfaces (high cosine beats moderate boost)",
     "god mode retrieval never returns public-namespace rows (existing test guard, double-check still holds)",
     "PI_CONTEXT_CUED_RECALL=off preserves legacy ordering",
     "verify.py PASS"
   ],
-  "risk_notes": "Low risk — order-only change, no schema migration, no new infra. Risk: boost values miscalibrated → off-context relevant facts ranked too low. Mitigation: env flag instant revert; A/B logging shows which retrievals changed ordering under cued vs legacy.",
+  "risk_notes": "Low risk \u2014 order-only change, no schema migration, no new infra. Risk: boost values miscalibrated \u2192 off-context relevant facts ranked too low. Mitigation: env flag instant revert; A/B logging shows which retrievals changed ordering under cued vs legacy.",
   "migration_plan": [
     "1. Add current_mode + current_scope optional kwargs to memory_read.",
     "2. Modify _hybrid_search_l3 scoring loop to apply boosts when kwargs present.",
@@ -57,5 +57,6 @@
     "test_boost_failure_falls_back_to_unboosted_score"
   ],
   "status": "open",
-  "created": "2026-05-26T00:00:00+00:00"
+  "created": "2026-05-26T00:00:00+00:00",
+  "progress": "2026-05-30: FOUNDATION shipped - l3_cache.mode column added (idempotent migration); memory_write records mode. Tests in test_memory_context_columns.py. REMAINING: _hybrid_search_l3 + _l3_fast_path same-mode boost behind PI_CONTEXT_CUED_RECALL; memory_read current_mode kwarg; pi_agent passes self.mode at write sites."
 }
