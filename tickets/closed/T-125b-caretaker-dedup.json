@@ -1,0 +1,57 @@
+{
+  "id": "T-125b",
+  "phase": "8.8",
+  "title": "Caretaker stage B — embedding-based L3 dedup (full mode)",
+  "type": "infrastructure",
+  "component": "agent/caretaker.py (extend)",
+  "severity": "P2",
+  "effort_estimate": "2h",
+  "depends_on": [
+    "T-125a (lite mode + filelock + formula plumbing)",
+    "T-080 (embedding dedup machinery)"
+  ],
+  "blocks": [
+    "T-125c"
+  ],
+  "adr_required": null,
+  "current_state": "T-125a covers derived recompute. Near-identical L3 entries ('User likes coffee' / 'User loves coffee') still accumulate independently.",
+  "structural_problem": "Without dedup, L3 grows redundant; search noise increases; the subway-order class of recall confusion gets worse over time.",
+  "target_state": "caretaker.full() = caretaker.lite() + embedding dedup pass. Walks active L3; for each entry, finds neighbours with cosine > 0.92; merges keeping highest-importance; sets superseded_by on the rest. Runs session-exit + daily cron (NOT per-bubble — too expensive).",
+  "files_affected": [
+    "agent/caretaker.py (extend with full mode)",
+    "testing/test_caretaker_full.py (NEW)"
+  ],
+  "design_notes": [
+    "Reuse T-080 sentence-transformers embedding machinery",
+    "Cosine threshold: 0.92 (more conservative than recall's 0.85 — fewer false merges)",
+    "Merge policy: keep highest importance; if tie, keep newest created_at",
+    "Loser entries set superseded_by = winner_id; remain in DB for audit",
+    "Batch by category (only compare entries in same category) to bound O(N²) cost",
+    "Bound: max 500 entries scanned per run; resume from last_processed_id"
+  ],
+  "success_criteria": [
+    "Two near-identical writes ('User likes coffee' / 'User loves coffee') merged after full pass",
+    "Higher-importance entry wins; loser has superseded_by set",
+    "Full mode completes in <30s on 1000-row L3",
+    "verify.py PASS"
+  ],
+  "risk_notes": "False merge risk: distinct meanings collapsed. Mitigation: same-category requirement + 0.92 threshold + dry-run flag for first deploy.",
+  "migration_plan": [
+    "1. Extend caretaker.py with full() function.",
+    "2. Tests with synthetic L3 corpus.",
+    "3. Wire as session-exit step + daily cron.",
+    "4. verify.py PASS"
+  ],
+  "test_plan": [
+    "test_full_dedup_merges_high_cosine_pair",
+    "test_full_skips_low_cosine_pair",
+    "test_winner_is_higher_importance",
+    "test_loser_marked_superseded_by_winner",
+    "test_dry_run_no_mutations",
+    "test_resume_from_last_processed_id"
+  ],
+  "status": "closed",
+  "created": "2026-05-24T05:24:26.288661+00:00",
+  "effort_actual_minutes": 80,
+  "closed": "2026-05-26T12:19:45.096376+00:00"
+}

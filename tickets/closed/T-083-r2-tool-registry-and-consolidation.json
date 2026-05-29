@@ -1,0 +1,13 @@
+{
+  "id": "T-083",
+  "r_id": "R2",
+  "title": "Tool dispatch registry pattern + 73→~40 consolidation + weekly self-prune",
+  "type": "refactor",
+  "component": "agent/tools.py, tools/tools_*.py (all modules), scripts/passive/",
+  "severity": "P0",
+  "status": "closed",
+  "created": "2026-05-15T12:00:00Z",
+  "closed": "2026-05-23T00:00:00Z",
+  "resolution": "All three sub-tasks complete. R2.1 (shipped 2026-05-17, S-060): agent/tools.py 1681→235 lines, 74 tools migrated to ToolSpec registry. R2.2 (2026-05-23): 4 mergers landed — (A) analyze_image/images/video/ocr_image/analyze_document_smart → analyze_media, (B) web_browse/reddit_browse/reddit_search/reddit_thread/discord_read → fetch, (C) watcher_add/list/remove/status → watcher, (D) computer_run_task removed. Tool count 74→62. All old names remain as backward-compat aliases for 1 release cycle. R2.3 (2026-05-23): scripts/passive/tool_usage_audit.py written — reads logs/patterns.jsonl, auto-files P3 prune tickets (<3 calls/30d) and P2 fix tickets (>50% failure/≥10 calls). Registered as Friday 02:00 cron in tools_scheduler.py._tool_usage_audit_job. verify.py PASS.",
+  "linked_solution": "S-063"
+}

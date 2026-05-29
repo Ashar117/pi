@@ -1,0 +1,61 @@
+{
+  "id": "T-115",
+  "phase": "8.7+",
+  "title": "Groq 400 tool_use_failed must not trigger 300s brownout",
+  "type": "bug",
+  "component": "core/llm_router.py:_mark_brownout, core/llm_router.py:chat",
+  "severity": "P1",
+  "effort_estimate": "1-2h",
+  "depends_on": [],
+  "blocks": [],
+  "adr_required": null,
+  "current_state": "Observed live 2026-05-24: in god mode, Ash asked 'can you do browsing?'. Groq (llama-3.3-70b-versatile) returned HTTP 400 with code='tool_use_failed' and failed_generation='<function=web_fetch{\"url\": \"https://www.example.com\"}</function>' — the model generated a malformed XML-style tool call instead of proper JSON function-calling format. core/llm_router.py:265-267 catches all exceptions identically and calls _mark_brownout() unconditionally, producing a 300s Groq brownout. Then Ollama (not running) also fails. God mode has no more providers → 'All LLM providers failed or browned out.' The session is blocked from using Groq for 5 minutes because of one bad model generation, not a provider outage.",
+  "structural_problem": "LLMRouter._mark_brownout() is called on every exception with no error classification. HTTP 4xx errors have two fundamentally different causes: (a) provider outage / rate-limit / auth failure — brownout is correct; (b) model generation quality failure (tool_use_failed, context_length_exceeded, content_policy) — brownout is wrong because the provider is fully healthy. Treating them identically punishes god mode users for a recoverable model error.",
+  "target_state": "Introduce _is_retryable_generation_error(e) classifier. Errors that are generation-quality failures (400 tool_use_failed, 400 context_length_exceeded) do NOT trigger brownout and instead trigger a single no-tools retry. Only connection errors, 429, 401, 403, 5xx trigger brownout as before.",
+  "files_affected": [
+    "core/llm_router.py (classify errors before brownout decision)",
+    "testing/test_llm_router.py (add tests for the new classifier)"
+  ],
+  "audit_refs": [
+    "Live incident 2026-05-24 — god mode disabled for 5 min after one browse attempt"
+  ],
+  "design_notes": [
+    "Error classifier: _is_generation_error(e) -> bool — checks str(e) for 'tool_use_failed', 'context_length_exceeded', 'content_policy_violation'; also detects HTTP 400 status on groq/anthropic SDK exceptions",
+    "On generation error: do NOT call _mark_brownout(). Log as warning not error. Append to errors list with a 'generation_error' tag.",
+    "No-tools retry: if the failed call had tools and got tool_use_failed, retry once with tools=[] (or tools=None). This lets the model answer in plain text instead of trying to call a tool.",
+    "If the no-tools retry also fails, THEN treat as a full error (but still do not brownout unless it's a different error class).",
+    "Groq SDK exception type: groq.BadRequestError (inherits from groq.APIStatusError). Check e.status_code == 400 and 'tool_use_failed' in str(e).",
+    "BROWNOUT_SECS stays 300 — only the classification changes. Existing rate-limit and connection-error brownout behavior unchanged.",
+    "Separate log levels: generation errors → WARNING, real provider errors → ERROR (current behavior).",
+    "Also fix: the 'All LLM providers failed' RuntimeError message contains raw Groq/Ollama error strings including URLs — this leaks via '[Pi] god router error:' in pi_agent.py. That site should use safe_error (T-104 wiring); note it here as a non-goal for this ticket."
+  ],
+  "success_criteria": [
+    "Groq 400 tool_use_failed → no brownout recorded; Groq available immediately for next call",
+    "No-tools retry issued when tool_use_failed received with tools in the original request",
+    "Groq 429 rate-limit → brownout fires as before (300s)",
+    "Groq 500 → brownout fires as before",
+    "verify.py PASS",
+    "test_groq_tool_use_failed_no_brownout passes: mock Groq to raise BadRequestError(status_code=400, 'tool_use_failed'); assert brownout dict empty after call"
+  ],
+  "risk_notes": "No-tools retry could surface a degraded but successful response (plain text, no tool use). This is strictly better than 'Something went wrong' for 5 minutes. The classifier must not over-match — a Groq 400 with 'invalid_api_key' in message is still a brownout trigger.",
+  "migration_plan": [
+    "1. Read core/llm_router.py lines 260-272 (the catch block) + understand provider exception types",
+    "2. Add _is_generation_error(e: Exception) -> bool classifier function near top of file",
+    "3. In chat() catch block: if _is_generation_error(e): log.warning(...), append error, and if tools were passed, issue one no-tools retry before moving to next provider. Do NOT call _mark_brownout.",
+    "4. Else: existing behavior (log.error + _mark_brownout + errors.append)",
+    "5. Add tests in testing/test_llm_router.py: tool_use_failed → no brownout, 429 → brownout, retry with tools=None on tool_use_failed",
+    "6. Run scripts/verify.py — PASS"
+  ],
+  "test_plan": [
+    "test_tool_use_failed_no_brownout — mock provider raises BadRequestError(400, 'tool_use_failed'); call chat(); assert router._brownout is empty",
+    "test_tool_use_failed_triggers_no_tools_retry — mock raises on first call (with tools), succeeds on second call (no tools); assert second call attempted with tools=[]",
+    "test_rate_limit_still_brownouts — mock raises 429; assert brownout recorded",
+    "test_server_error_still_brownouts — mock raises 500; assert brownout recorded",
+    "test_generation_error_classifier_does_not_overfire — exception message 'invalid_api_key status_code=400'; assert _is_generation_error returns False"
+  ],
+  "status": "closed",
+  "created": "2026-05-24T00:00:00Z",
+  "closed": "2026-05-28T00:00:00Z",
+  "resolution": "Added _is_generation_error(exc) classifier to LLMRouter — checks for tool_use_failed, context_length_exceeded, content_policy_violation in exception message. In chat() catch block: generation errors skip _mark_brownout (no 300s penalty), log as WARNING. If tools were passed and failure was tool_use_failed, issues one no-tools retry before moving to next provider. Rate-limit 429 and 5xx still brownout as before. 9 new tests in test_llm_router.py.",
+  "linked_solution": "S-085"
+}

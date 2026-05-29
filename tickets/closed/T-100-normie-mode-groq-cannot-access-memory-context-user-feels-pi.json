@@ -1,0 +1,14 @@
+{
+  "id": "T-100",
+  "source": "Pi self-report (session tool call)",
+  "title": "Normie mode (Groq) cannot access memory context — user feels Pi \"doesn't remember\" things",
+  "component": "core/llm_router.py, prompts/, L3 context injection",
+  "what_failed": "In normie mode, Pi told Ash \"I can't recall\" about visa/university details that are stored in L3 memory. L3 context IS injected into the normie system prompt, but Groq's response didn't reflect it — either the context wasn't surfaced properly or Groq ignored it. User experience: Pi feels amnesiac even though data is stored.",
+  "where_failed": "Normie mode session — Groq handoff, L3 context not being utilized",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-05-22T09:47:39.513996+00:00",
+  "closed": "2026-05-23T00:00:00Z",
+  "resolution": "Three-part fix: (1) Updated prompts/consciousness_normie.txt — added explicit 'Memory access' section instructing normie to USE the ACTIVE CONTEXT block, changed 'recall past sessions' limitation to only gate deep search beyond ACTIVE CONTEXT. (2) Set use_split_prompt=True for normie ModeConfig so it routes through build_system_prompt_split() which includes mode block, timestamp, awareness inline, and L3 prefetch injection — same rich prompt as root. (3) Set prefetch_memory=True for normie ModeConfig so L3 memory is actually fetched and injected. Previously normie used _load_mode_prompt() (raw file read, no L3 injection). Now L3 ACTIVE CONTEXT appears in every normie turn.",
+  "linked_solution": "S-062"
+}

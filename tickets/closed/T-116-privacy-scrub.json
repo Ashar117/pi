@@ -1,0 +1,23 @@
+{
+  "id": "T-116",
+  "phase": "8.7.D",
+  "title": "Privacy scrub — strip god mode + personal foam references from public surface",
+  "type": "security",
+  "component": "ABOUT.md, docs/STATUS.md, scripts/verify.py, testing/test_god_*.py",
+  "severity": "P1",
+  "effort_estimate": "30min",
+  "current_state": "ABOUT.md listed god mode alongside root/normie/research in capability table and phase history; mentioned Foam graph view (personal vault tool). docs/STATUS.md (auto-generated) included test_god_*.py file names in passing-tests list. Together these revealed the existence of the private god mode in the public repo.",
+  "target_state": "ABOUT.md mentions only root/normie/research; vault description drops Foam reference. verify.py filters out any test name containing 'god' from STATUS.md output. Four test files renamed test_god_*.py to test_priv_*.py so even a grep of the public repo finds nothing.",
+  "fix_summary": [
+    "ABOUT.md: removed 'god' from mode list (line 33), removed Foam graph view (line 73), removed 'god isolation' from Phase 8.5 description (line 86)",
+    "scripts/verify.py: added _PRIVATE = ('god',) filter so any test name containing 'god' is excluded from the run/skipped lists in STATUS.md",
+    "Renamed testing/test_god_cross_device.py to test_priv_cross_device.py",
+    "Renamed testing/test_god_log_isolation.py to test_priv_log_isolation.py",
+    "Renamed testing/test_god_preflight.py to test_priv_preflight.py",
+    "Renamed testing/test_god_uses_unified_path.py to test_priv_unified_path.py"
+  ],
+  "verify_pass": true,
+  "status": "closed",
+  "created": "2026-05-24T05:07:07.732244+00:00",
+  "closed": "2026-05-24T05:07:07.732244+00:00"
+}

@@ -1,0 +1,15 @@
+{
+  "id": "T-073",
+  "source": "Pi architecture review 2026-05-14",
+  "title": "L2 organized_memory needs a two-stage prune (archive + hard-delete)",
+  "component": "tools/tools_memory.py + agent/session.py",
+  "what_failed": "L3 had prune_l3_expired; L1 had prune_l1; L2 had no cleanup whatsoever. Every distilled fact stayed in L2 forever. Over months, low-importance noise accumulates and slows L2 search.",
+  "where_failed": "tools/tools_memory.py — no prune_l2_* function existed.",
+  "why_likely": "Phase 6 focused on getting L2 writes durable. Cleanup was deferred and never followed up.",
+  "severity": "P3",
+  "suggested_fix": "Add prune_l2_stale(): stage 1 — mark status='archived' for rows older than 60 days with importance < 6 (hides from default queries which filter status='active'). Stage 2 — hard DELETE rows already archived for 90+ days (storage actually shrinks). Hook into on_exit alongside prune_l3_expired.",
+  "status": "closed",
+  "created": "2026-05-14T18:30:00+00:00",
+  "closed": "2026-05-14T18:35:00+00:00",
+  "linked_solution": "S-049"
+}

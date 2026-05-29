@@ -1,0 +1,16 @@
+{
+  "id": "T-147",
+  "source": "Pi self-report (session tool call)",
+  "title": "Low-confidence intent classification falling through to cached awareness output instead of clarifying or inferring",
+  "component": "pi_agent.py / intent classifier",
+  "what_failed": "When thinking layer returns low confidence (e.g. 0.80 on \"wb multan\"), the system defaults to outputting cached awareness data verbatim instead of (a) inferring the obvious intent or (b) asking for clarification. User had to repeat themselves multiple times.",
+  "where_failed": "Intent routing on low-confidence classification",
+  "why_likely": "",
+  "severity": "P2",
+  "suggested_fix": "When confidence < 0.85 on short messages, Pi should attempt to infer from context (e.g. prior message was about weather → \"wb multan\" = weather query) before falling back. Never default to raw awareness output.",
+  "status": "closed",
+  "created": "2026-05-27T19:55:22.235285+00:00",
+  "closed": "2026-05-28T00:00:00Z",
+  "linked_solution": "S-086",
+  "resolution": "awareness_shortcut.try_answer_from_awareness now requires user message to have at least 2 words before firing — single-word/fragment messages like wb go to LLM instead of shortcut. Prevents low-confidence intent (short messages) from hitting awareness cache path."
+}

@@ -1,0 +1,15 @@
+{
+  "id": "T-079",
+  "source": "Deep research (May 2026) — audit of evolution.jsonl + turns.jsonl",
+  "title": "Knowledge graph layer is dead code — audit confirmed 0 invocations across 2834 log records",
+  "component": "tools/tools_kg.py (or equivalent) + agent/tools.py dispatch + any kg_* tool defs in get_tool_definitions",
+  "what_failed": "Pi exposes four KG tools (kg_add_triple, kg_query, kg_search, plus knowledge_graph table). The deep-research review (S-052) flagged the KG layer as a candidate for removal because Pi's L1/L2/L3 + BM25 entity matching already covers GraphRAG-lite functionality at one-user scale.",
+  "where_failed": "N/A — failure here means 'failure to earn its keep'. Audit scanned logs/evolution.jsonl (838 records) and logs/turns.jsonl (1996 records) spanning 2026-04-20 to 2026-05-14 (24 days). Top tools by invocation: memory_read 90, memory_write 28, execute_bash 25, read_file 15, search_codebase 8, execute_python 6, get_session_stats 4, create_ticket 2, repo_map 2. kg_add_triple, kg_query, kg_search: ZERO invocations.",
+  "why_likely": "KG layer shipped speculatively. In practice all entity-relation knowledge ends up in L2 (organized_memory) facts. The KG never reached the threshold where its query interface beat L2 search.",
+  "severity": "P3",
+  "suggested_fix": "Two-stage deprecation: 1) Archive tools/tools_kg.py to docs/_archive/ (per file-touch policy — never delete). Remove kg_* from agent/tools.py dispatch table and from get_tool_definitions. Drop the Supabase knowledge_graph table once user confirms. 2) Reduce 76-tool count to ~73 — frees up consciousness prompt budget and reduces LLM-side tool-choice cognitive load. Hold until Ash approves; the table itself contains user data and removal is destructive.",
+  "status": "closed",
+  "created": "2026-05-14T19:05:00+00:00",
+  "closed": "2026-05-14T19:20:00+00:00",
+  "linked_solution": "S-055"
+}

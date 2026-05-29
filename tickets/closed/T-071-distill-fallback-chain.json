@@ -1,0 +1,15 @@
+{
+  "id": "T-071",
+  "source": "Pi session 2026-05-14 — '[Distill] Groq extraction failed: Error code: 429' at session exit",
+  "title": "Distillation must fall back to Claude Haiku, then a regex heuristic, when Groq is rate-limited",
+  "component": "memory/pipeline.py + agent/session.py + pi_agent.py",
+  "what_failed": "distill_session() called Groq exclusively. When the Groq free-tier TPD limit (100k tokens/day) was exhausted, the entire session's L1->L2 distillation failed. No facts from the session reached L2 — effectively all session memory was lost at exit.",
+  "where_failed": "memory/pipeline.py::_extract_facts — single LLM provider, no fallback.",
+  "why_likely": "Phase 6 designed for the happy path of always-available Groq. The 100k TPD limit had not been hit during dev so this was untested.",
+  "severity": "P1",
+  "suggested_fix": "Three-tier fallback chain: 1) Groq llama-3.3-70b (free, primary), 2) Claude Haiku 4.5 (~$0.001 per distill, cheap fallback), 3) regex heuristic (zero-cost last resort that catches 'my name is X', 'remember Y', 'I prefer Z' patterns). Pass anthropic_client through distill_session signature.",
+  "status": "closed",
+  "created": "2026-05-14T18:30:00+00:00",
+  "closed": "2026-05-14T18:35:00+00:00",
+  "linked_solution": "S-047"
+}

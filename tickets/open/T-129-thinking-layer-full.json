@@ -1,0 +1,48 @@
+{
+  "id": "T-129",
+  "phase": "8.8",
+  "title": "Thinking layer (full) — add recall-merge + clarifier + memory-id extraction",
+  "type": "feature",
+  "component": "agent/thinking.py (extend)",
+  "severity": "P3",
+  "effort_estimate": "2h",
+  "depends_on": [
+    "T-124 (lite version must ship and prove out first)",
+    "T-123 (recall hits become input)"
+  ],
+  "blocks": [],
+  "adr_required": null,
+  "current_state": "T-124-lite ships with two jobs (intent + normalised_query). Three additional jobs were deferred: memory-id extraction from recall hits, explicit clarifier-question generation, confidence calibration. These add quality but compound prompt complexity; ship them only after lite proves stable.",
+  "structural_problem": "Five jobs in one LLM call produces inconsistent output. Phased rollout proves each piece independently.",
+  "target_state": "agent/thinking.py extended: normalise() output gains referenced_memories: [L3 ids] field (from recall hits) and ask_clarifier: str|null field (generated when confidence<0.6). Prompt grows to handle the merged context. T-124-lite must have ≥7 days of clean operation before T-129 ships.",
+  "files_affected": [
+    "agent/thinking.py",
+    "testing/test_thinking.py (extend)"
+  ],
+  "design_notes": [
+    "Only ship after T-124-lite shows green in /passive for 7 consecutive days",
+    "Prompt extension: '...also given recall hits <list>, identify any of the user's references to past facts (cite ids)'",
+    "Clarifier generation: replaces the lite version's static 'ask one clarifying question' with model-generated question",
+    "Maintain backward compat: if extended call fails, fall back to lite output shape"
+  ],
+  "success_criteria": [
+    "T-124-lite has 7+ days of clean operation in /passive",
+    "Memory-id extraction recovers L3 ids from recall hits with >80% accuracy on test corpus",
+    "Clarifier questions are concrete (not 'can you clarify')",
+    "verify.py PASS"
+  ],
+  "risk_notes": "Prompt creep risk; could regress lite-mode quality. Mitigation: A/B compare; abort if lite quality drops.",
+  "migration_plan": [
+    "1. Wait for T-124-lite 7-day soak.",
+    "2. Extend prompt + outputs in agent/thinking.py.",
+    "3. A/B test before flipping over.",
+    "4. verify.py PASS"
+  ],
+  "test_plan": [
+    "test_extended_output_includes_referenced_memories",
+    "test_clarifier_generated_when_confidence_low",
+    "test_fallback_to_lite_shape_on_extended_failure"
+  ],
+  "status": "open",
+  "created": "2026-05-24T05:24:26.288661+00:00"
+}

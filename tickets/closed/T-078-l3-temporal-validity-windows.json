@@ -1,0 +1,15 @@
+{
+  "id": "T-078",
+  "source": "Deep research (May 2026) — Zep/Graphiti temporal validity pattern",
+  "title": "L3 must invalidate (not delete) superseded facts so historical queries work",
+  "component": "tools/tools_memory.py — schema + _invalidate_l3_entry + queries",
+  "what_failed": "When a new fact contradicted an old one, _check_l3_overlap_and_conflict called _expire_l3_entry which set active_until to past. prune_l3_expired then hard-deleted the row. Pi could never answer 'what was the deadline before you updated it?'. Information was lost. SOTA systems (Zep/Graphiti) keep both facts with validity windows.",
+  "where_failed": "tools/tools_memory.py — supersession path destroyed history.",
+  "why_likely": "T-038 (supersession) and T-026 (prune) shipped separately and weren't designed together. The combination produced lossy memory.",
+  "severity": "P2",
+  "suggested_fix": "1) Add invalid_at column to SQLite l3_cache via idempotent PRAGMA-guarded ALTER. 2) For Supabase, store invalid_at in metadata JSONB (no schema migration). 3) Add _invalidate_l3_entry(entry_id, by_entry_id) — sets invalid_at without touching active_until. Records superseded_by in metadata. 4) Switch _check_l3_overlap_and_conflict to call _invalidate_l3_entry instead of _expire_l3_entry. 5) Update _search_l3_cache, _hybrid_search_l3, get_l3_context to filter `invalid_at IS NULL` in default queries. 6) _sync_l3 copies metadata.invalid_at from Supabase into the SQLite column.",
+  "status": "closed",
+  "created": "2026-05-14T18:50:00+00:00",
+  "closed": "2026-05-14T19:05:00+00:00",
+  "linked_solution": "S-054"
+}

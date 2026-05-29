@@ -80,11 +80,11 @@ When closed: move into §6 of `CHECKPOINTS/current.md` and §9 of this file (aut
 
 <!-- BEGIN AUTO §4 -->
 - **Phase:** Coherence track (interrupts roadmap per T-156 freeze)
-- **Last verify:** PASS · 218/218 files clean · 93 tests · 0 failures
-- **Open tickets:** 15
-- **Closed tickets:** 134
-- **Solutions logged:** 83
-- **Turns today:** 176
+- **Last verify:** PASS · 221/221 files clean · 96 tests · 0 failures
+- **Open tickets:** 11
+- **Closed tickets:** 139
+- **Solutions logged:** 88
+- **Turns today:** 488
 - **Last session end:** 2026-05-29
 <!-- END AUTO §4 -->
 
@@ -171,15 +171,11 @@ For every meaningful change:
 | T-137 | Context-cued recall — boost retrieval for same-mode and same-scope matches (enco | P3 | tools/tools_memory.py memory_read + _hyb |
 | T-142 | No multi-conversation / session isolation � all context bleeds into one stream | P2 | pi_agent.py, core/session_manager.py |
 | T-143 | Pi replies lack semantic coherence � responses don't follow naturally from conte | P2 | pi_agent.py, core/context_manager.py |
-| T-149 | Normie mode has no real conversation history — single_message_ctx + tiny session | P2 | pi_agent.py (_respond_via_config), agent |
-| T-150 | Root-mode history compression is lossy-on-lossy — per-message 400-char clip + 30 | P3 | agent/truncation.py (compress_messages_w |
-| T-151 | _prefetch_memory recall is brittle — single first-keyword query, no phrase/multi | P2 | pi_agent.py (_prefetch_memory) |
 | T-152 | Test suite validates plumbing, not conversation fidelity — no end-to-end multi-t | P2 | testing/ (new test_conversation_golden.p |
 | T-153 | Capability docs drift from reality — ABOUT.md marks everything working while P2  | P3 | ABOUT.md, README.md, scripts/passive/doc |
-| T-154 | Pi self-report tickets ship authoritative-but-wrong root causes — sprint runner  | P2 | tickets/ schema, scripts/sprint.py, tool |
 | T-155 | VCS hygiene — 90+ uncommitted files, 11 days since last commit; source of truth  | P2 | process / git, scripts/passive/session_e |
 | T-156 | Phase freeze — no new tools or phases until conversation coherence is verified e | P1 | PI.md (§3 sprint goal, §12 roadmap), str |
-| T-157 | Privacy publish guard false-positives on api_key=VARIABLE references — blocks le | P2 | scripts/passive/privacy_publish_guard.py |
+| T-158 | PRIVACY INCIDENT — public GitHub repo leaks architecture/flowcharts, archived co | P0 | .gitignore, .git/info/exclude, github.co |
 <!-- END AUTO §8 -->
 
 ---
@@ -189,16 +185,16 @@ For every meaningful change:
 <!-- BEGIN AUTO §9 -->
 | Solution | Ticket | Title |
 |---|---|---|
+| S-093 | T-157 | privacy_publish_guard flagged api_key=CEREBRAS_API_KEY (a variable ref) as a cre |
+| S-092 | T-154 | Self-report tickets carried authoritative-but-wrong fixes (T-143); sprint runner |
+| S-091 | T-151 | _prefetch_memory queried only keywords[0] via single-keyword lexical read; multi |
+| S-090 | T-150 | Root history compression was lossy-on-lossy: 400-char per-message clip + flat 30 |
+| S-089 | T-149 | Normie sent only the current turn (single_message_ctx) + a lossy 300-char sessio |
 | S-088 | T-148, T-143 | Pi could not see its own prior replies. extract_text_from_messages and _build_co |
 | S-087 | T-141 | Pi claims inability (cant analyze docs) then provides accurate details anyway —  |
 | S-086 | T-146, T-147 | Awareness shortcut returned Atlanta weather when user asked about Multan; awaren |
 | S-085 | T-115 | Groq 400 tool_use_failed triggered 300s brownout — provider healthy, model just  |
 | S-084 | T-139, T-140 | memory_delete wiped entire L3 (20 entries) on a single call — _l3_fast_path retu |
-| S-083 | T-135 | Stale L3 facts never decay — a fact last accessed 6 months ago ranks identically |
-| S-082 | T-134 | Single importance int (1-10) cannot express multi-factor memory salience — a dyi |
-| S-081 | T-133 | L3 memory not user-inspectable — no way to audit or steer Pi memory without raw  |
-| S-080 | T-132 | Pi startup feels cold — all session context (last topic, last ticket touched) is |
-| S-079 | T-131 | Pi shows 3-line startup banner then goes silent — mode, cost, open tickets, L3 d |
 <!-- END AUTO §9 -->
 
 ---

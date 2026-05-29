@@ -1,0 +1,15 @@
+{
+  "id": "T-074",
+  "source": "Pi session 2026-05-14 — Groq 429 'TPD: Limit 100000, Used 99432' after 228 turns",
+  "title": "Normie mode must use a slim ~500-token consciousness, not the full ~30k-char root one",
+  "component": "agent/prompt.py + new prompts/consciousness_normie.txt",
+  "what_failed": "Normie mode loaded the full root consciousness.txt (~30,819 chars, ~7-8k tokens) on every Groq call. After 228 chat turns the daily Groq TPD budget (100k tokens) was exhausted and normie became unusable for the rest of the day.",
+  "where_failed": "agent/prompt.py::build_system_prompt_split — both modes shared the same consciousness body.",
+  "why_likely": "Original design treated consciousness as universal. Normie was meant to be cheap chat but inherited root's prompt overhead, defeating the cost split.",
+  "severity": "P1",
+  "suggested_fix": "Add prompts/consciousness_normie.txt with the minimum needed for normie behaviour (identity, hard rules, refusal mapping). Wire build_system_prompt_split to load the slim version when mode='normie'. Cache the slim file in memory after first read.",
+  "status": "closed",
+  "created": "2026-05-14T18:30:00+00:00",
+  "closed": "2026-05-14T18:35:00+00:00",
+  "linked_solution": "S-050"
+}

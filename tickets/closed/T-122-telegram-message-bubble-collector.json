@@ -1,0 +1,76 @@
+{
+  "id": "T-122",
+  "phase": "8.8",
+  "title": "Telegram message bubble collector (6s idle, lifecycle-aware)",
+  "type": "feature",
+  "component": "agent/bubble.py (new), tools/tools_telegram.py",
+  "severity": "P1",
+  "effort_estimate": "4-6h",
+  "depends_on": [],
+  "blocks": [
+    "T-123",
+    "T-124",
+    "T-125",
+    "T-126"
+  ],
+  "adr_required": null,
+  "current_state": "Telegram bot dispatches every message to process_input independently. User sending 'Hey/Supppp/Hey' in 5 seconds gets three separate replies. L2 distillation runs on N-message thresholds, fragmenting natural conversational units. There is no notion of a 'conversational bubble'.",
+  "structural_problem": "Pi treats messages as atomic. Conversations are not. Humans send incomplete thoughts, then finish them; rapid bursts are one intent. Without a bubble abstraction, every downstream concern (recall, distillation, response cost) compounds the fragmentation.",
+  "target_state": "agent/bubble.py exports BubbleCollector. Telegram bot enqueues messages; collector waits for IDLE_MS (default 6000 — Ash override from 12s) of silence per chat_id, then emits a single Bubble{messages: [...], started_at, ended_at, has_media, reply_targets: [...]} to a consumer queue. Bubble force-flushes on lifecycle events (/exit, /clear, any media message). process_input consumes one bubble at a time. Three rapid 'Hey's produce ONE response. L2 distillation triggers per-bubble, not per-message.",
+  "files_affected": [
+    "agent/bubble.py (NEW)",
+    "tools/tools_telegram.py — handlers enqueue, separate consumer thread dispatches bubbles to process_input",
+    "memory/pipeline.py — bubble close becomes the L2 distillation trigger",
+    "testing/test_bubble.py (NEW)",
+    "testing/test_telegram_bubble_integration.py (NEW)"
+  ],
+  "design_notes": [
+    "BubbleCollector(idle_ms=6000, max_bubble_ms=120000, max_messages=20) — bubble closes on (a) idle timeout, (b) hard upper bound, (c) message cap, (d) lifecycle event (/exit, /clear)",
+    "Per-chat_id state: {messages: [], first_at, last_at, timer_handle}",
+    "Concurrency: lock per chat_id; timer in daemon thread; consumer queue shared",
+    "Bubble joiner: 'Hey\\nSupppp\\nHey' (newline-separated) so the LLM sees them as three thoughts",
+    "Media bubble: any media message closes the bubble immediately (don't make user wait for vision)",
+    "Lifecycle force-flush: BubbleCollector.flush(chat_id) called by /exit and /clear handlers BEFORE any other work; ensures partial bubble is not lost",
+    "Reply_to_message preservation: collector stashes each msg.reply_to_message.text in bubble.reply_targets — needed by T-123",
+    "Edge case 1: message arrives during flush — new message starts a fresh bubble (no loss)",
+    "Edge case 2: /exit during open bubble — force flush, dispatch, THEN run exit_steps",
+    "Edge case 3: /clear during open bubble — force flush, dispatch under OLD session_id, THEN rotate session_id",
+    "Terminal mode unaffected: bubble layer ONLY wraps Telegram handlers"
+  ],
+  "success_criteria": [
+    "3 messages within 5s produce exactly 1 bubble (verified: idle=6s, gaps < 6s keep extending)",
+    "Messages 7s apart produce 2 bubbles",
+    "20+ messages without idle still flush at message cap",
+    "Single bubble produces single L2 distillation entry (not N)",
+    "/exit during open bubble: response is sent BEFORE goodbye message",
+    "/clear during open bubble: response is sent under old session_id, then new session begins",
+    "Terminal mode behaviour unchanged (verify with test)",
+    "verify.py PASS"
+  ],
+  "risk_notes": "Latency risk: 12s wait could feel slow to fast typers. Mitigation: tunable env var PI_BUBBLE_IDLE_MS; show 'typing...' indicator while bubble open. Concurrency risk: race between flush timer and new-message arrival. Mitigation: per-chat_id lock + atomic test-and-flush.",
+  "migration_plan": [
+    "1. Write agent/bubble.py: BubbleCollector + Bubble dataclass",
+    "2. Unit tests with controlled clock (freezegun or manual time injection)",
+    "3. Insert collector between Telegram handler and process_input — single consumer thread",
+    "4. Move L2 distillation trigger from message-count to bubble-close event",
+    "5. Integration test: simulate Telegram messages, assert bubble shape",
+    "6. Run scripts/verify.py — PASS"
+  ],
+  "test_plan": [
+    "test_three_rapid_messages_one_bubble (gap=2s, total<6s)",
+    "test_idle_timeout_flushes_bubble (gap=7s creates 2 bubbles)",
+    "test_max_messages_force_flush",
+    "test_max_duration_force_flush",
+    "test_media_message_immediate_flush",
+    "test_reply_to_message_preserved_in_bubble",
+    "test_concurrent_chats_isolated_bubbles",
+    "test_l2_distillation_triggered_per_bubble",
+    "test_exit_force_flushes_open_bubble",
+    "test_clear_force_flushes_then_rotates_session",
+    "test_new_message_during_flush_starts_fresh_bubble"
+  ],
+  "status": "closed",
+  "created": "2026-05-24T05:16:27.280946+00:00",
+  "effort_actual_minutes": 75,
+  "closed": "2026-05-25T03:05:54.147433+00:00"
+}

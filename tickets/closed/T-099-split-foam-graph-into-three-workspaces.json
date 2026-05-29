@@ -1,0 +1,43 @@
+{
+  "id": "T-099",
+  "title": "Split Foam graph into three workspaces (backbone / personal / full-PRIVATE)",
+  "type": "ux",
+  "component": "docs/vscode-setup.md, repo root *.code-workspace",
+  "severity": "P3",
+  "effort_estimate": "15 minutes",
+  "depends_on": [
+    "T-096 (entity hubs landed in vault/notes/memory/entities/)"
+  ],
+  "blocks": [],
+  "current_state": "Single Foam workspace indexes vault/**/*.md, which mixes (a) stable architectural notes \u00e2\u20ac\u201d tickets, sprints, retros, per-ticket briefs, PI.md, ADRs, CHECKPOINTS \u00e2\u20ac\u201d with (b) personal/relations content that grows fast and is already in .git/info/exclude \u00e2\u20ac\u201d vault/notes/memory/** (fact files, entity hubs, dedup output), vault/notes/sessions/** (normie chat archives), vault/notes/north_star.md. Foam Show Graph renders everything in one canvas. As entity hubs and memory facts accumulate, the backbone gets buried in personal nodes. Also a screen-share / screenshot privacy risk \u00e2\u20ac\u201d the architectural graph is shareable, the personal one is not.",
+  "structural_problem": "Conflating 'shareable engineering spine' with 'private personal data' in the same graph. Two different audiences (Ash navigating architecture vs Ash reviewing personal memory) share one lens. As the personal subtree grows (T-096 entity hubs, ongoing dedup), the architectural signal-to-noise drops.",
+  "target_state": "Three VS Code workspace files at repo root, each with their own foam.workspace.includeGlobs / excludeGlobs: (1) pi-backbone.code-workspace \u00e2\u20ac\u201d daily driver, shareable; indexes PI.md, README.md, docs/**/*.md, CHECKPOINTS/**, vault/notes/{status,tickets,per-ticket,sprints,retros,templates}/**. (2) pi-personal.code-workspace \u00e2\u20ac\u201d entity recall, never shared; indexes only vault/notes/{memory,sessions}/** + north_star.md. (3) pi-full-PRIVATE.code-workspace \u00e2\u20ac\u201d opt-in union for occasional cross-graph queries; indexes everything but exclude/data/logs/_archive/_private. docs/vscode-setup.md documents the three and which to open by default.",
+  "files_affected": [
+    "pi-backbone.code-workspace (new \u00e2\u20ac\u201d repo root)",
+    "pi-personal.code-workspace (new \u00e2\u20ac\u201d repo root)",
+    "pi-full-PRIVATE.code-workspace (new \u00e2\u20ac\u201d repo root)",
+    "docs/vscode-setup.md (extend with Three Graphs section)",
+    ".gitignore (already ignores pi-personal + pi-full-PRIVATE via *.code-workspace blanket? \u00e2\u20ac\u201d verify; if not, add to .git/info/exclude)"
+  ],
+  "success_criteria": [
+    "Three .code-workspace files at repo root with distinct include/exclude globs",
+    "Opening pi-backbone, running Foam: Show Graph \u00e2\u20ac\u201d zero nodes from vault/notes/memory/**, vault/notes/sessions/**, north_star.md",
+    "Opening pi-personal \u00e2\u20ac\u201d zero nodes from PI.md, docs/, CHECKPOINTS/, tickets/",
+    "Opening pi-full-PRIVATE \u00e2\u20ac\u201d shows everything, including cross-graph edges if any exist",
+    "docs/vscode-setup.md has a 'Three Graphs' section explaining which workspace to open when",
+    "pi-personal + pi-full-PRIVATE filenames either gitignored or in .git/info/exclude so they don't leak personal includeGlobs hints publicly",
+    "pi-backbone.code-workspace IS committable (architectural \u00e2\u20ac\u201d describes shareable structure)"
+  ],
+  "risk_notes": "Low risk \u00e2\u20ac\u201d pure IDE config, no code paths touched, no vault content edited. Worst case: an include/exclude glob is off and one workspace renders extra nodes. Reversible by editing the JSON.",
+  "migration_plan": [
+    "1. Write three .code-workspace files at repo root",
+    "2. Verify globs by opening each in VS Code and running Foam: Show Graph",
+    "3. Add pi-personal.code-workspace + pi-full-PRIVATE.code-workspace to .git/info/exclude (local-only; only pi-backbone gets committed)",
+    "4. Extend docs/vscode-setup.md with Three Graphs section + table",
+    "5. Don't change default open behavior \u00e2\u20ac\u201d Ash opens whichever workspace he wants when he wants"
+  ],
+  "status": "closed",
+  "created": "2026-05-18T00:00:00Z",
+  "closed": "2026-05-23T00:00:00Z",
+  "resolution": "Already fully implemented. Three .code-workspace files (pi-backbone, pi-personal, pi-full-PRIVATE) exist at repo root with correct foam.files.include/exclude globs. pi-personal and pi-full-PRIVATE are in .git/info/exclude. docs/vscode-setup.md has complete Three Graphs section with table and recommendations. verify.py PASS."
+}

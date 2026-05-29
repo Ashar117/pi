@@ -1,0 +1,16 @@
+{
+  "id": "T-145",
+  "source": "Pi self-report (session tool call)",
+  "title": "T-140 revised: memory_delete does broad fuzzy match — nuked entire L3, data only recovered manually",
+  "component": "tools/tools_memory.py",
+  "what_failed": "memory_delete with target string that didn't exist as a standalone entry matched and deleted ALL 20 L3 entries via fuzzy/substring logic. No confirmation, no dry-run, no WAL. Data recovered only because Pi manually re-wrote from context — a fragile non-solution. Original entries are gone.",
+  "where_failed": "memory_delete tool — match logic",
+  "why_likely": "",
+  "severity": "P1",
+  "suggested_fix": "1. Match by exact content string or entry ID only. 2. If no exact match found, return 0 deleted + warn instead of falling back to fuzzy. 3. Add bulk delete guard: if >3 entries would be deleted, require explicit confirmation. 4. Write-ahead log: snapshot entries to a local file before deletion. 5. Add dry_run=True param that shows what would be deleted without executing.",
+  "status": "closed",
+  "created": "2026-05-26T21:33:13.767690+00:00",
+  "closed": "2026-05-28T00:00:00Z",
+  "linked_solution": "S-084",
+  "resolution": "Root cause confirmed: _l3_fast_path returned all rows regardless of match (imp+recency always > 0). Fixed: match_score > 0 gate. Also: _tokenize now splits on underscores ([^a-zA-Z0-9\\s]) for correct BM25 tokenization. testing/test_memory_delete.py: 11 tests. verify.py PASS."
+}

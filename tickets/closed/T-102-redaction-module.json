@@ -1,0 +1,71 @@
+{
+  "id": "T-102",
+  "phase": "8.7.A",
+  "title": "Add agent/redaction.py \u00e2\u20ac\u201d single chokepoint for outward-facing error strings",
+  "type": "infrastructure",
+  "component": "agent/redaction.py (new)",
+  "severity": "P1",
+  "effort_estimate": "2-3h",
+  "depends_on": [],
+  "blocks": [
+    "T-104 (Telegram + god log wiring needs safe_error)"
+  ],
+  "adr_required": null,
+  "current_state": "Exception strings reach Telegram, public logs, and the user unfiltered. tools_telegram.py has 7 sites using f-string interpolation of raw exception messages (lines 222, 250, 273, 300, 329, 379, 401). pi_agent.py:984 writes god-mode router exceptions to logs/evolution.jsonl via str(e). Raw paths, tracebacks, and potentially API key fragments can leak out.",
+  "structural_problem": "Every site that surfaces an exception currently does its own (or no) filtering. No single place to enforce redaction rules. New exception sites added in the future inherit the same leakage by default.",
+  "target_state": "One module exporting safe_error(e, audience). Every outward-facing exception goes through it. Categorical audience flags (user/telegram/public_log/dev) define how much detail is allowed.",
+  "files_affected": [
+    "agent/redaction.py (NEW)",
+    "testing/test_redaction.py (NEW)"
+  ],
+  "audit_refs": [
+    "Phase 8.7 audit #1, #2, #3"
+  ],
+  "design_notes": [
+    "API: safe_error(e: Exception, *, audience: str = 'user') -> str",
+    "audience='public_log' returns category only (type(e).__name__) \u00e2\u20ac\u201d strictest; for god-mode error logging",
+    "audience='telegram' returns redacted single-line, capped at 200 chars",
+    "audience='user' returns redacted message, no cap",
+    "audience='dev' returns full message with traceback (for internal-only debug paths)",
+    "Redaction order: strip tracebacks FIRST (Traceback... block), then paths, then keys",
+    "Path regex must catch both Windows (e:\\pi\\...) and Unix (/Users/...) absolute paths",
+    "Key regex covers: sk-* (OpenAI), eyJ* (JWT), AKIA* (AWS), gsk_* (Groq); update as new providers are added",
+    "Must handle empty exceptions (Exception()) \u00e2\u20ac\u201d fall back to type name",
+    "Must handle nested causes (e.__cause__, e.__context__) \u00e2\u20ac\u201d redact each",
+    "Must be CHEAP \u00e2\u20ac\u201d called on every exception in hot paths; no heavyweight parsing",
+    "Pure stdlib only \u00e2\u20ac\u201d no new dependencies"
+  ],
+  "success_criteria": [
+    "safe_error(Exception('key sk-abc123def456ghi789jkl012mno345pqr678')) does not contain the key substring",
+    "safe_error(FileNotFoundError('/Users/ash/secret.txt'), audience='telegram') does not contain '/Users/ash'",
+    "safe_error(Exception(), audience='public_log') == 'Exception'",
+    "safe_error output for audience='telegram' is <= 200 chars",
+    "verify.py PASS with new test file",
+    "All existing 734 tests still PASS (no behaviour change)"
+  ],
+  "risk_notes": "Regex over-redaction could mask useful debug info. Mitigation: audience='dev' bypasses path/key redaction for internal logging; only outward-facing audiences redact heavily.",
+  "migration_plan": [
+    "1. Create agent/redaction.py with safe_error() + the 3 regex constants (_PATH_RE, _KEY_RE, _TRACE_RE)",
+    "2. Add module docstring explaining the 4 audience modes",
+    "3. Create testing/test_redaction.py covering: path redaction (Win+Unix), key patterns (sk-/eyJ/AKIA/gsk_), traceback stripping, empty exception, nested cause, telegram length cap, public_log category-only",
+    "4. Run pytest testing/test_redaction.py \u00e2\u20ac\u201d must PASS",
+    "5. Run scripts/verify.py \u00e2\u20ac\u201d must PASS overall",
+    "6. No edits to any other file in this ticket \u00e2\u20ac\u201d wiring happens in T-104"
+  ],
+  "test_plan": [
+    "test_path_redaction_windows \u00e2\u20ac\u201d input contains 'e:\\pi\\.env' \u00e2\u2020\u2019 output contains '<path>'",
+    "test_path_redaction_unix \u00e2\u20ac\u201d input contains '/Users/ash/.env' \u00e2\u2020\u2019 output contains '<path>'",
+    "test_key_redaction_openai \u00e2\u20ac\u201d input contains 'sk-abc...' \u00e2\u2020\u2019 output contains '<key>'",
+    "test_key_redaction_anthropic_jwt \u00e2\u20ac\u201d input contains 'eyJ...' \u00e2\u2020\u2019 output contains '<key>'",
+    "test_key_redaction_groq \u00e2\u20ac\u201d input contains 'gsk_...' \u00e2\u2020\u2019 output contains '<key>'",
+    "test_traceback_stripped \u00e2\u20ac\u201d input contains 'Traceback (most recent call last):' block \u00e2\u2020\u2019 block is removed",
+    "test_empty_exception_returns_type_name \u00e2\u20ac\u201d safe_error(Exception()) \u00e2\u2020\u2019 'Exception'",
+    "test_audience_public_log_category_only \u00e2\u20ac\u201d safe_error(ValueError('msg with /path/'), audience='public_log') == 'ValueError'",
+    "test_audience_telegram_length_cap \u00e2\u20ac\u201d input with 500-char message \u00e2\u2020\u2019 output <= 200 chars",
+    "test_audience_dev_unredacted \u00e2\u20ac\u201d paths and keys preserved when audience='dev'",
+    "test_nested_cause_redacted \u00e2\u20ac\u201d Exception with __cause__ containing a path \u00e2\u2020\u2019 cause text also redacted"
+  ],
+  "status": "closed",
+  "created": "2026-05-24T00:00:00Z",
+  "closed": "2026-05-24T03:11:58.817978+00:00"
+}

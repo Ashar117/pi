@@ -1,0 +1,18 @@
+{
+  "id": "T-117",
+  "phase": "8.7.D",
+  "title": "Honest cost label — 'Session Cost' was actually 24h total",
+  "type": "fix",
+  "component": "agent/session.py",
+  "severity": "P3",
+  "effort_estimate": "1min",
+  "current_state": "on_exit() printed [Session Cost: $X.XXXX] but the value came from evolution.get_recent_interactions(hours=24), summing ALL interactions in the last 24h — not just the current session. User in a 2-turn normie (free) session saw $0.25 from earlier autonomous sprint runs and reasonably asked why their normie chat cost money.",
+  "target_state": "Label changed to [24h Cost: $X.XXXX] so the number matches the window being summed.",
+  "fix_summary": [
+    "agent/session.py:268 — replaced 'Session Cost' with '24h Cost'"
+  ],
+  "verify_pass": true,
+  "status": "closed",
+  "created": "2026-05-24T05:07:07.732244+00:00",
+  "closed": "2026-05-24T05:07:07.732244+00:00"
+}

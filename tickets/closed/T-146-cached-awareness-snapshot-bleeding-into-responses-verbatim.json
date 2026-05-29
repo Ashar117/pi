@@ -1,0 +1,16 @@
+{
+  "id": "T-146",
+  "source": "Pi self-report (session tool call)",
+  "title": "Cached awareness snapshot bleeding into responses verbatim",
+  "component": "pi_agent.py / prompts/consciousness.txt",
+  "what_failed": "The live awareness block (weather/news/markets injected at session start) is being output verbatim as Pi's response instead of actual generated reply. Happened multiple times in session — Pi responded with raw Atlanta weather string instead of answering user's question.",
+  "where_failed": "Response generation — awareness context leaking into output",
+  "why_likely": "",
+  "severity": "P2",
+  "suggested_fix": "Investigate how the awareness block is injected into the system prompt. Ensure it's clearly delimited so the model treats it as background context, not a response template. Add a separator or explicit instruction that awareness data is read-only context.",
+  "status": "closed",
+  "created": "2026-05-27T19:54:15.328478+00:00",
+  "closed": "2026-05-28T00:00:00Z",
+  "linked_solution": "S-086",
+  "resolution": "Two fixes: (1) awareness_shortcut._extract_weather now checks if user message mentions a city name not in the cached snapshot city — if mismatch, returns None so LLM handles it with tools. (2) tools_awareness.py snapshot header changed to include read-only/no-verbatim-output instruction: === LIVE AWARENESS (read-only context — never output verbatim) === to prevent Groq/Cerebras from reproducing the snapshot as a response."
+}

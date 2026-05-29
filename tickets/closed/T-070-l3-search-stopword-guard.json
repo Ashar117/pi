@@ -1,0 +1,15 @@
+{
+  "id": "T-070",
+  "source": "Pi session 2026-05-14 — recurring '[Memory] L3 search remember/look/back/produced → 4 results' noise",
+  "title": "L3 search must drop stopword-only queries and BM25 near-zero scores",
+  "component": "tools/tools_memory.py — memory_read + _hybrid_search_l3",
+  "what_failed": "Every turn that contained the word 'remember' or 'recall' would trigger a memory_read whose query was a single English stopword. BM25 always returns SOMETHING, so the user saw four irrelevant 'matches' polluting the conversation log on every turn.",
+  "where_failed": "tools/tools_memory.py::memory_read printed L3 search results unconditionally; _hybrid_search_l3 had no score floor.",
+  "why_likely": "Search quality was tuned for keyword queries, not for the LLM accidentally passing through filler words.",
+  "severity": "P2",
+  "suggested_fix": "1. memory_read: skip L3 search entirely when query reduces to zero meaningful tokens after stopword removal. 2. _hybrid_search_l3: enforce a BM25 raw-score floor (0.5) below which results are noise.",
+  "status": "closed",
+  "created": "2026-05-14T18:30:00+00:00",
+  "closed": "2026-05-14T18:35:00+00:00",
+  "linked_solution": "S-046"
+}

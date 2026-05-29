@@ -1,0 +1,54 @@
+{
+  "id": "T-121",
+  "phase": "8.8",
+  "title": "Vision provider chain + 429 circuit breaker",
+  "type": "infrastructure",
+  "component": "tools/tools_media.py (refactor), agent/provider_router.py (new)",
+  "severity": "P1",
+  "effort_estimate": "2-3h",
+  "depends_on": [],
+  "blocks": [],
+  "adr_required": null,
+  "current_state": "MediaTools.analyze_image picks Gemini if GEMINI_API_KEY present, else Claude Vision. No fallback when Gemini returns 429. User-visible result: raw RESOURCE_EXHAUSTED stack trace fragment lands in Telegram reply. Same shape will happen for STT (Whisper free tier) and TTS providers over time — there is no general provider-chain abstraction.",
+  "structural_problem": "Provider selection is hardcoded per-tool. Adding a fallback today means copy-pasting a try/except. Circuit-breaker state would have to be reimplemented per call site. We already solved this once for compression (T-092: Groq→Haiku→hard truncate); the pattern needs to be extracted.",
+  "target_state": "agent/provider_router.py exports ProviderRouter(providers=[...], cooldown_parser=...). Each provider is a callable that raises on failure; router walks the list, parses 429 retryDelay if present, marks provider in cooldown, advances to next. 3 consecutive failures of a single provider open a 5-minute circuit. All failures and cooldown opens recorded via track_silent('vision.<provider>'). tools_media.analyze_image and analyze_video go through the router.",
+  "files_affected": [
+    "agent/provider_router.py (NEW)",
+    "tools/tools_media.py — analyze_image/analyze_video dispatch via router",
+    "testing/test_provider_router.py (NEW)"
+  ],
+  "design_notes": [
+    "ProviderRouter API: register(name, callable, cooldown_after_429: bool=True); call(*args, **kwargs) -> result | raises AllProvidersExhausted",
+    "Cooldown state: {provider_name: cooldown_until_iso}; in-memory, no persistence (process restart = clean slate)",
+    "429 parser: regex for 'retry in (\\d+(?:\\.\\d+)?)s' on Google errors, 'retry-after' header on Anthropic 429s",
+    "Circuit breaker: per-provider failure counter; reset on any success; open at 3; cooldown 5 min",
+    "Vision chain order: gemini-2.0-flash → gemini-1.5-pro → claude-haiku vision → claude-sonnet vision (most expensive last)"
+  ],
+  "success_criteria": [
+    "Forced 429 from Gemini → next call routes to Claude Vision without user-visible error",
+    "3 consecutive Gemini 429s → 4th call skips Gemini entirely for 5 min",
+    "track_silent records each cooldown open/close event",
+    "MediaTools.analyze_image keeps its return contract ({success, analysis, backend, ...})",
+    "verify.py PASS"
+  ],
+  "risk_notes": "Cost risk: cooldown on cheap providers pushes traffic to expensive Claude Vision. Mitigation: warn-level log on any chain step ≥ index 2; daily digest surfaces if Claude Vision call count > 10/day.",
+  "migration_plan": [
+    "1. Write agent/provider_router.py with ProviderRouter class + AllProvidersExhausted exception",
+    "2. Write testing/test_provider_router.py — synthetic providers, force 429, assert order + cooldown",
+    "3. Refactor tools_media._gemini_vision / _claude_vision into provider callables",
+    "4. analyze_image / analyze_video build router on first call, cache it",
+    "5. Run scripts/verify.py — PASS"
+  ],
+  "test_plan": [
+    "test_first_provider_success — no fallback triggered",
+    "test_429_advances_to_next — provider 0 raises 429; provider 1 returns; result matches provider 1",
+    "test_all_fail_raises_exhausted — every provider raises; AllProvidersExhausted raised with chain history",
+    "test_circuit_opens_after_3_failures — fourth call skips the failing provider",
+    "test_circuit_closes_after_cooldown — patch time; assert provider re-tried",
+    "test_retry_delay_parsed_from_google_error — assert cooldown_until matches parsed retryDelay"
+  ],
+  "status": "closed",
+  "created": "2026-05-24T05:16:27.280946+00:00",
+  "closed": "2026-05-24T05:50:42.757036+00:00",
+  "solution_id": "S-067"
+}

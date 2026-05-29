@@ -1,0 +1,66 @@
+{
+  "id": "T-112",
+  "phase": "8.7.C",
+  "title": "Retention cron entrypoint + non-blocking session-end hook",
+  "type": "infrastructure",
+  "component": "scripts/retention_tick.py (new), agent/session_exit (or pi_agent.py exit ops)",
+  "severity": "P2",
+  "effort_estimate": "2h",
+  "depends_on": [
+    "T-109 (retention module)",
+    "T-110 (streaming readers, so retention rotates without breaking readers)"
+  ],
+  "blocks": [],
+  "adr_required": null,
+  "current_state": "T-109 builds the retention engine but does not wire it into the runtime. Policies need to fire automatically \u00e2\u20ac\u201d either via daily cron / Task Scheduler, or opportunistically at session end. Neither exists today.",
+  "structural_problem": "An engine that nobody calls is dead code. Retention must run on a schedule to deliver value.",
+  "target_state": "(a) scripts/retention_tick.py is a standalone Python script that calls run_all(DEFAULT_POLICIES) and exits with 0/1 based on errors. (b) Session-end protocol includes an opportunistic 'retention_tick' op that calls run_all with a 5-second time budget. Daemon thread so it cannot block session exit beyond the budget. (c) Documentation in PI.md \u00c2\u00a711 explains how to schedule the cron / Task Scheduler entry.",
+  "files_affected": [
+    "scripts/retention_tick.py (NEW)",
+    "agent/session_exit.py (or wherever exit ops are listed in pi_agent.py \u00e2\u20ac\u201d add 'retention_tick' op)",
+    "PI.md (add section under \u00c2\u00a711 ops with cron/Task Scheduler example)",
+    "testing/test_retention_tick.py (NEW)",
+    "testing/test_session_exit_retention.py (NEW)"
+  ],
+  "audit_refs": [
+    "Phase 8.7 audit \u00e2\u20ac\u201d wires #10-#14 #20 into runtime"
+  ],
+  "design_notes": [
+    "scripts/retention_tick.py: imports agent.retention.run_all + DEFAULT_POLICIES, calls run_all, prints summary, exits 0 on success / 1 on any error",
+    "Add --dry-run flag (forwarded to each policy)",
+    "Add --policies <name1,name2> filter to run a subset (useful for ad-hoc invocation)",
+    "Session-end op: define as agent/session_exit.py ops list entry: ('retention_tick', _exec_retention_tick, {'budget_s': 5.0})",
+    "_exec_retention_tick: spawn daemon thread that calls run_all; main session-exit waits up to budget_s for thread completion; if not done, log timeout via track_silent and continue exit (retention will run on next cron tick anyway)",
+    "Daemon thread design avoids blocking exit even if a policy hangs (e.g. SQLite locked)",
+    "Task Scheduler / cron suggestion in PI.md \u00c2\u00a711: daily at 03:00 local time, command: 'python E:\\pi\\scripts\\retention_tick.py'",
+    "Lock file usage from T-109 ensures cron + session-end never collide"
+  ],
+  "success_criteria": [
+    "python scripts/retention_tick.py exits 0 on a healthy repo state",
+    "python scripts/retention_tick.py --dry-run reports policies but does not mutate files",
+    "Session exit completes within session_exit_budget_s + retention_budget_s (5s) max regardless of policy state",
+    "PI.md \u00c2\u00a711 contains a one-liner cron / Task Scheduler example",
+    "verify.py PASS"
+  ],
+  "risk_notes": "Risk: session exit hang if retention spawns a thread that holds a SQL lock. Mitigation: budget_s timeout + daemon thread (process exit kills it). Risk: cron and session-end racing. Mitigation: file lock from T-109. Risk: cron path differs Windows vs Unix \u00e2\u20ac\u201d provide both examples in PI.md.",
+  "migration_plan": [
+    "1. Write scripts/retention_tick.py with argparse for --dry-run and --policies",
+    "2. Integrate into session exit: locate the exit ops list in pi_agent.py (R4 resumable exit work made this concrete); add a new op entry",
+    "3. Implement _exec_retention_tick helper: daemon thread + budgeted wait + timeout reporting",
+    "4. Document scheduling in PI.md \u00c2\u00a711 with both Windows Task Scheduler XML snippet (or schtasks /create command) and Unix cron example",
+    "5. Add testing/test_retention_tick.py: invoke the script as subprocess (or via runpy); assert exit code 0",
+    "6. Add testing/test_session_exit_retention.py: patch run_all to sleep > budget; assert session exit still completes within budget + slack",
+    "7. Run scripts/verify.py \u00e2\u20ac\u201d PASS"
+  ],
+  "test_plan": [
+    "test_retention_tick_exits_zero_on_clean_state \u00e2\u20ac\u201d empty repo, no policies applicable; script returns 0",
+    "test_retention_tick_dry_run_no_mutations \u00e2\u20ac\u201d populate files; run with --dry-run; assert mtimes unchanged",
+    "test_retention_tick_policies_filter \u00e2\u20ac\u201d --policies turns_log,evolution_log; assert only those run",
+    "test_session_exit_retention_within_budget \u00e2\u20ac\u201d patch policy to sleep 1s, budget 5s; assert exit completes in < 6s",
+    "test_session_exit_retention_timeout_logged \u00e2\u20ac\u201d patch policy to sleep 30s, budget 2s; assert exit completes in ~2s; assert track_silent recorded 'retention.session_exit_timeout'",
+    "test_concurrent_invocations_safe \u00e2\u20ac\u201d start script twice in parallel; both complete; file lock prevents corruption"
+  ],
+  "status": "closed",
+  "created": "2026-05-24T00:00:00Z",
+  "closed": "2026-05-24T03:12:00.455339+00:00"
+}

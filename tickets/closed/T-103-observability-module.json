@@ -1,0 +1,75 @@
+{
+  "id": "T-103",
+  "phase": "8.7.A",
+  "title": "Add agent/observability.py \u00e2\u20ac\u201d silent-failure ledger backed by SQLite",
+  "type": "infrastructure",
+  "component": "agent/observability.py (new), data/silent_failures.db (auto-created)",
+  "severity": "P1",
+  "effort_estimate": "3-4h",
+  "depends_on": [
+    "T-102 (uses safe_error for redacted_message)"
+  ],
+  "blocks": [
+    "T-104 (god log wiring uses track_silent)",
+    "T-108 (compression surfacing uses track_silent)"
+  ],
+  "adr_required": null,
+  "current_state": "Pi has at least 166 swallowed-exception sites (passive scan #11). The audit flagged 4 highest-risk: pi_agent.py:336 (_log_worker), pi_agent.py:436 (append_turn), tools_memory.py:514-516 (L3 conflict mark), tools_memory.py:932,953 (_bump_access_sync). Each is a 'except Exception: pass' that loses data with zero signal. No way to know how often these fire or whether the failure rate is climbing.",
+  "structural_problem": "Silent failures are invisible until they cause downstream symptoms (missing turns in audit, contradictory facts in memory, wrong access counts). By the time the symptom is noticed, the cause is hard to attribute. There is no shared mechanism to record-and-forget.",
+  "target_state": "One module exporting track_silent(category, exc, context). Records to data/silent_failures.db (SQLite, capped 10k rows, ring evict oldest). Aggregator function recent_failures(hours) returns {category: count} for the /passive scan and the new system_introspect output.",
+  "files_affected": [
+    "agent/observability.py (NEW)",
+    "testing/test_observability.py (NEW)",
+    "tools/tools_project.py (extend system_introspect to include silent_failures_24h in output) \u00e2\u20ac\u201d minimal change"
+  ],
+  "audit_refs": [
+    "Phase 8.7 audit #4, #5, #6, #7",
+    "Passive scan tech debt #11 (166 swallowed exceptions)"
+  ],
+  "design_notes": [
+    "Schema: silent_failures(id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, category TEXT NOT NULL, exception_type TEXT NOT NULL, redacted_message TEXT, context_json TEXT)",
+    "Index: idx_failures_cat_time ON (category, timestamp DESC)",
+    "API: track_silent(category: str, exc: Exception | None = None, *, context: dict | None = None) -> None",
+    "API: recent_failures(hours: int = 24) -> dict[str, int]",
+    "API: cleanup_old(max_rows: int = 10000) -> int (returns rows deleted)",
+    "track_silent must NOT raise \u00e2\u20ac\u201d if SQLite write fails, swallow that too (would defeat the module's purpose to recursively fail)",
+    "Category convention: dot-separated namespace, e.g. 'memory.bump_access', 'logs.turn_append', 'compression.both_llms_failed', 'telegram.handler', 'watcher.event_fire'",
+    "Use safe_error(exc, audience='public_log') for redacted_message \u00e2\u20ac\u201d no leaks into the failure log",
+    "Lazy DB connect: open on first track_silent call, cache the connection (with self._db_lock)",
+    "Auto-cleanup: every Nth call (e.g. every 100), check row count and evict if > 10k",
+    "Thread safety: use a threading.Lock around connection access; cleanup_old must use a separate connection"
+  ],
+  "success_criteria": [
+    "track_silent('memory.test', ValueError('boom')) inserts one row",
+    "track_silent never raises even if data/silent_failures.db is read-only / disk full (caught internally)",
+    "recent_failures(24) returns {category: count} matching inserts",
+    "After 10001 inserts, row count <= 10000 (eviction triggered)",
+    "redacted_message field contains no raw paths or keys (uses safe_error)",
+    "system_introspect output includes 'silent_failures_24h' key",
+    "verify.py PASS"
+  ],
+  "risk_notes": "Recursive failure: if SQLite itself starts failing (disk full), track_silent calls within track_silent would loop. Mitigation: top-level try/except that re-raises only KeyboardInterrupt/SystemExit; all other Exception silently swallowed at the boundary.",
+  "migration_plan": [
+    "1. Create agent/observability.py with track_silent + recent_failures + cleanup_old + DB schema bootstrap",
+    "2. Module-level lazy init: _db_connection = None, opened on first track_silent call",
+    "3. Add testing/test_observability.py covering all API methods + recursive-failure guard + thread safety",
+    "4. Extend tools/tools_project.py:_handle_system_introspect to call recent_failures(24) and include in output dict \u00e2\u20ac\u201d single new line",
+    "5. Run pytest testing/test_observability.py \u00e2\u20ac\u201d PASS",
+    "6. Run scripts/verify.py \u00e2\u20ac\u201d PASS",
+    "7. No wiring into the 4 audit sites yet \u00e2\u20ac\u201d that is T-104. This ticket is module + infra only."
+  ],
+  "test_plan": [
+    "test_track_silent_records \u00e2\u20ac\u201d insert one, query directly, assert row exists",
+    "test_track_silent_never_raises \u00e2\u20ac\u201d patch sqlite3 to raise on connect; track_silent must return None without raising",
+    "test_recent_failures_aggregates \u00e2\u20ac\u201d insert 5 rows across 3 categories, recent_failures returns correct counts",
+    "test_recent_failures_time_window \u00e2\u20ac\u201d insert old + recent rows, only recent counted",
+    "test_eviction_at_cap \u00e2\u20ac\u201d insert 10005 rows, count after cleanup <= 10000",
+    "test_redaction_applied \u00e2\u20ac\u201d track_silent with exception containing path \u00e2\u2020\u2019 redacted_message has no path",
+    "test_thread_safety \u00e2\u20ac\u201d 10 concurrent threads call track_silent, no exceptions, all rows present",
+    "test_context_json_roundtrip \u00e2\u20ac\u201d context={'k':'v'} stored and retrievable",
+    "test_system_introspect_includes_silent_failures \u00e2\u20ac\u201d call introspect, assert key present"
+  ],
+  "status": "closed",
+  "created": "2026-05-24T00:00:00Z",
+  "closed": "2026-05-24T03:11:58.970816+00:00"
+}

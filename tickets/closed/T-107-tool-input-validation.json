@@ -1,0 +1,63 @@
+{
+  "id": "T-107",
+  "phase": "8.7.B",
+  "title": "Validate LLM-provided tool inputs against ToolSpec.input_schema before dispatch",
+  "type": "fix",
+  "component": "agent/tools.py, agent/tool_spec.py",
+  "severity": "P2",
+  "effort_estimate": "3h",
+  "depends_on": [
+    "T-103 (track_silent for validation failure stats)"
+  ],
+  "blocks": [],
+  "adr_required": null,
+  "current_state": "agent/tools.py:execute_tool() at line ~223 calls spec.handler(agent, tool_input, **kwargs) without validating tool_input against spec.input_schema. If the LLM omits required keys (e.g. memory_read called without 'query'), the handler raises KeyError when it does tool_input['query']. The KeyError is caught upstream as a generic 'error' dict that doesn't tell the LLM what is missing, so it cannot self-correct on the next turn.",
+  "structural_problem": "Every tool handler has to do its own input checking. Most don't. The LLM gets opaque error messages instead of schema-aware feedback, so it tends to retry the same broken call rather than fixing the inputs.",
+  "target_state": "execute_tool() validates tool_input against spec.input_schema (JSON Schema) BEFORE calling the handler. On mismatch, returns a structured error: {'error': 'invalid_input', 'schema_mismatch': [...field-level errors...], 'expected_schema': spec.input_schema}. The schema_mismatch + expected_schema fields let the LLM self-correct.",
+  "files_affected": [
+    "agent/tools.py:execute_tool (add validation step)",
+    "agent/tool_spec.py (optional: add a _validate_input helper)",
+    "requirements.txt (add jsonschema if not present)",
+    "testing/test_tool_input_validation.py (NEW)"
+  ],
+  "audit_refs": [
+    "Phase 8.7 audit #15"
+  ],
+  "design_notes": [
+    "Use python jsonschema package (small, stable, no transitive deps that conflict with Pi's stack). If already a transitive dep via supabase, no requirements.txt change needed.",
+    "Validation should be FAST \u00e2\u20ac\u201d schemas are small (a handful of keys); cache the validator object per ToolSpec on first use",
+    "Schema mismatch error format: {'error': 'invalid_input', 'tool': tool_name, 'schema_mismatch': [{'path': 'query', 'message': 'required field missing'}, ...], 'expected_schema': spec.input_schema}",
+    "Validation must NOT mutate tool_input (no coercion). Reject loud, do not silently fix.",
+    "Allow tools to opt OUT of validation via ToolSpec.validate_input: bool = True attribute, in case some tool has dynamic schemas \u00e2\u20ac\u201d likely not needed initially but cheap to add",
+    "When validation fails, call track_silent('tools.invalid_input', ValueError(error_msg), context={'tool': tool_name, 'errors': errors}) so we can see if a tool's schema needs revision (e.g. LLM consistently mis-shapes the call)",
+    "Validation error MUST NOT raise out of execute_tool \u00e2\u20ac\u201d return as dict like any other tool error"
+  ],
+  "success_criteria": [
+    "memory_read called with {} (no query) returns {'error': 'invalid_input', 'tool': 'memory_read', 'schema_mismatch': [...query...]} \u00e2\u20ac\u201d does NOT raise",
+    "memory_read called with valid {'query': 'foo'} executes normally (no regression)",
+    "memory_write called with tier='l5' (invalid enum) returns schema_mismatch listing the enum violation",
+    "Schema validator is cached per ToolSpec (assert via mock that compile is called once per spec across many invocations)",
+    "track_silent records 'tools.invalid_input' on each validation failure",
+    "verify.py PASS \u00e2\u20ac\u201d all 734 existing tests still PASS (no test currently passes invalid input intentionally; if any do they need updating)"
+  ],
+  "risk_notes": "Risk: existing tests may inadvertently pass partial inputs that previously 'worked' because the handler tolerated missing keys via .get(). Mitigation: run full test suite; if any failures, decide case-by-case whether to fix the test or relax the schema.",
+  "migration_plan": [
+    "1. Verify jsonschema is importable: 'python -c \"import jsonschema\"'. If missing, add to requirements.txt.",
+    "2. Add agent/tool_spec.py helper: _get_validator(spec) -> jsonschema.Draft7Validator, cached via @functools.lru_cache or instance attribute",
+    "3. Edit agent/tools.py:execute_tool \u00e2\u20ac\u201d after the 'spec = _TOOLS_BY_NAME.get(tool_name)' check, add validation block. If errors, return structured dict and call track_silent.",
+    "4. Add testing/test_tool_input_validation.py covering: missing required key, wrong type, invalid enum, valid input passes through, caching",
+    "5. Run scripts/verify.py \u00e2\u20ac\u201d investigate any test regressions; fix the test or schema as appropriate",
+    "6. Update PI.md \u00c2\u00a76 (or docs/adr/) noting that LLM tool inputs are now schema-validated; bad inputs return structured errors the LLM can self-correct from"
+  ],
+  "test_plan": [
+    "test_missing_required_key_returns_structured_error \u00e2\u20ac\u201d memory_read({}) returns {'error': 'invalid_input', ...}",
+    "test_wrong_type_returns_structured_error \u00e2\u20ac\u201d memory_read({'query': 123}) \u00e2\u20ac\u201d query expected string",
+    "test_invalid_enum_value \u00e2\u20ac\u201d memory_write({'content': 'x', 'tier': 'l99'}) \u00e2\u20ac\u201d l99 not in enum",
+    "test_valid_input_passes_through \u00e2\u20ac\u201d memory_read({'query': 'foo'}) returns expected result (mock memory)",
+    "test_validator_cached \u00e2\u20ac\u201d call execute_tool 100x; assert jsonschema.Draft7Validator called once per unique spec",
+    "test_validation_failure_logged \u00e2\u20ac\u201d call with bad input; assert track_silent recorded 'tools.invalid_input'"
+  ],
+  "status": "closed",
+  "created": "2026-05-24T00:00:00Z",
+  "closed": "2026-05-24T03:11:59.589156+00:00"
+}

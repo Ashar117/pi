@@ -1,0 +1,15 @@
+{
+  "id": "T-075",
+  "source": "Pi session 2026-05-14 — KeyboardInterrupt during supabase/realtime/websockets cold import",
+  "title": "Defer Supabase client creation and health check off the startup path",
+  "component": "tools/tools_memory.py + pi_agent.py + agent/health.py",
+  "what_failed": "Pi's startup blocked for 3-5 seconds on the supabase->realtime->websockets dataclass import chain before printing the banner. Ash hit Ctrl+C during that window thinking the agent was stuck.",
+  "where_failed": "tools/tools_memory.py::__init__ called create_client() synchronously, AND pi_agent.py ran run_health_check() (which touches Supabase) synchronously before the banner.",
+  "why_likely": "Cold imports on Windows + Python 3.13 are genuinely slow; nothing in the code path indicated startup was still progressing.",
+  "severity": "P2",
+  "suggested_fix": "1. MemoryTools.supabase becomes a @property that lazy-creates the client on first access (with a lock). 2. run_health_check moves to a background thread when --verbose-init is not passed.",
+  "status": "closed",
+  "created": "2026-05-14T18:30:00+00:00",
+  "closed": "2026-05-14T18:35:00+00:00",
+  "linked_solution": "S-051"
+}

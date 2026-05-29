@@ -1,0 +1,17 @@
+{
+  "id": "T-089",
+  "r_id": "R8",
+  "title": "ModeConfig dataclass — collapse 3 response paths into 1",
+  "type": "refactor",
+  "component": "agent/modes.py, pi_agent.py",
+  "severity": "P2",
+  "effort_estimate": "3 working days",
+  "depends_on": ["T-082 (R1 god collapse must be done first)"],
+  "blocks": [],
+  "adr_required": "docs/adr/004-modeconfig-unifies-response-paths.md",
+  "status": "closed",
+  "created": "2026-05-15T12:00:00Z",
+  "closed": "2026-05-23T00:00:00Z",
+  "resolution": "All three stages complete. Stage A (2026-05-18): ModeConfig grew 5 behavior-flag fields. Stage B+C (2026-05-23): _respond_via_config implemented — single unified response path for all 3 modes. _respond_root and _respond_normie deleted. pi_agent.py net reduction >200 lines. Two new ModeConfig fields added: use_split_prompt (root+normie=True, routes through build_system_prompt_split for Anthropic cache) and single_message_ctx (normie=True, sends only current turn to LLM). All modes verified via test suite. verify.py PASS.",
+  "linked_solution": "S-061"
+}

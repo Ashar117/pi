@@ -1,0 +1,15 @@
+{
+  "id": "T-072",
+  "source": "Pi session 2026-05-14 — session memory lost when Groq 429 at exit",
+  "title": "Trigger L1->L2 distillation every N turns mid-session, not just at exit",
+  "component": "pi_agent.py — process_input + new _maybe_mid_session_distill",
+  "what_failed": "Distillation only ran at clean session exit. If Groq hit rate-limit at exit (T-071) OR the process crashed OR the user just closed the terminal, the entire session was lost to L2.",
+  "where_failed": "agent/session.py::on_exit was the only call site for distill_session.",
+  "why_likely": "Original design assumed clean exits were the norm. In practice, rate-limit-at-exit and abrupt closures are common.",
+  "severity": "P2",
+  "suggested_fix": "Trigger distillation every 10 turns in a background thread. Track _last_distilled_turn so each batch processes only NEW L1 rows. Exit-time distillation still runs as a final sweep, but no longer load-bearing.",
+  "status": "closed",
+  "created": "2026-05-14T18:30:00+00:00",
+  "closed": "2026-05-14T18:35:00+00:00",
+  "linked_solution": "S-048"
+}

@@ -1,36 +1,41 @@
-# Implementation — private, never publish
-agent/
-app/
-core/
-llm/
-memory/
-prompts/
-scripts/
-testing/
-tools/
-pi_agent.py
-evolution.py
-requirements.txt
-analysis/
-pi_dna.txt
+# ─────────────────────────────────────────────────────────────────────────────
+# Pi .gitignore — PRIVATE repo model (T-155).
+# This repo is PRIVATE; the implementation IS tracked here so the code finally
+# has version history. Only true secrets, machine-local data, and the god-mode
+# private layer are excluded — never commit those, even to a private remote.
+# (Set via GitHub API 2026-05-29; see T-158.)
+# ─────────────────────────────────────────────────────────────────────────────
 
-# API keys and credentials
-app/config.py
+# API keys & credentials — NEVER track
 .env
 .env.local
 *.env
+app/config.py
 .mcp.json
+pi_dna.txt
 
-# Session data and local logs
+# God-mode private layer — strongest boundary, never track
+prompts/god_consciousness.txt
+prompts/god_*.txt
+agent/god.py
+data/god_memory.db
+tickets/god/
+vault/.god/
+
+# Session data and local logs (machine-local, not source)
 data/
 logs/
 evolution.jsonl
 
-# Obsidian vault config
-.obsidian/
+# Vault private tiers (Obsidian working data)
+vault/memory/
+vault/notes/per-ticket/
 
 # Local LLM model weights
 local_models/
+
+# Analysis scratch — keep private
+analysis/
 
 # Cache and temp
 __pycache__/
@@ -41,9 +46,21 @@ pi_env/
 *.backup.*
 temp_exec.py
 
+# Obsidian config
+.obsidian/
+
 # OS and IDE
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Obsidian vault data — private working knowledge, kept out of git entirely (T-158)
+vault/
+
+# Regenerable passive-skill reports
+reports/
+
+# God-mode migration tooling (god boundary)
+scripts/migrate_god_memory.py

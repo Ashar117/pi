@@ -1,0 +1,41 @@
+{
+  "id": "T-094",
+  "r_id": null,
+  "title": "Verify Cerebras is actually serving normie traffic (formalize the 30-sec sanity check from S-053)",
+  "type": "verification",
+  "component": "pi_agent.py::_respond_normie, tests/, scripts/sanity_check_normie.py (new)",
+  "severity": "P2",
+  "effort_estimate": "1-2 hours",
+  "depends_on": [],
+  "blocks": [],
+  "adr_required": null,
+  "current_state": "S-053 wired Cerebras as normie primary with Groq fallback. Code path: pi_agent.py:140-150 instantiates self.cerebras as an OpenAI client; _respond_normie tries Cerebras first then Groq. The only test that ran was a syntactic import smoke test ('pi_agent imports clean'). No interactive test has confirmed Cerebras actually responds to a normie turn \u00e2\u20ac\u201d if the OpenAI-client response shape differs from Groq's, or there's a subtle wire-up bug, the first real normie conversation will silently fall back to Groq with no error surfaced, or fail entirely.",
+  "structural_problem": "Wire-up bugs hide under syntactic green. The build looks fine but the runtime path was never exercised. Pattern: anything we'd discover 'the next time we use it' is a missing test.",
+  "target_state": "scripts/sanity_check_normie.py opens a normie turn, asserts response came from Cerebras (not Groq), confirms response shape parses correctly, confirms turn lands in logs/turns.jsonl + L1. Can be run in 10 seconds anytime. A pytest equivalent runs in CI via verify.py.",
+  "files_affected": [
+    "scripts/sanity_check_normie.py (new \u00e2\u20ac\u201d runnable standalone)",
+    "tests/test_normie_provider.py (new \u00e2\u20ac\u201d pytest version for verify.py)",
+    "evolution.py / pi_agent.py (ensure used_provider field is logged per S-053 plan \u00e2\u20ac\u201d verify it actually is)"
+  ],
+  "success_criteria": [
+    "Running `python scripts/sanity_check_normie.py` in <10s outputs: provider=cerebras, response_length>0, l1_row_written=True, evolution_logged=True",
+    "Script fails loudly if Cerebras is reachable but normie still routes to Groq (the wire-up bug case)",
+    "Script tolerates Cerebras being down \u00e2\u20ac\u201d falls back to Groq AND reports 'fallback used: cerebras_unreachable: <reason>'",
+    "tests/test_normie_provider.py mocks the Cerebras client and asserts _respond_normie picks it up first",
+    "Manually: open Pi, type 'hey', confirm via daemon stats or evolution.jsonl that used_provider=cerebras (one-time sanity)",
+    "verify.py PASS"
+  ],
+  "risk_notes": "Discovery ticket. Worst case: this surfaces an actual S-053 wire-up bug, in which case open a new ticket to fix and link it.",
+  "migration_plan": [
+    "1. Run the manual 30-sec sanity check FIRST \u00e2\u20ac\u201d open Pi, switch to normie if not already, say 'hey', then `python pi.py --stats` or read latest evolution.jsonl row, confirm used_provider field",
+    "2. If used_provider is missing or wrong: open a follow-up ticket; pause this one until fixed",
+    "3. If sanity passes: write scripts/sanity_check_normie.py that does the same in code \u00e2\u20ac\u201d instantiate PiAgent, call process_input('hey') in normie mode, read back the evolution.jsonl row, assert used_provider=cerebras",
+    "4. Write tests/test_normie_provider.py \u00e2\u20ac\u201d mock both providers, assert dispatch order",
+    "5. Add scripts/sanity_check_normie.py invocation to verify.py (so CI catches regression)",
+    "6. Append SOLUTIONS.jsonl"
+  ],
+  "status": "closed",
+  "created": "2026-05-15T13:00:00Z",
+  "resolution": "DISCOVERY: CEREBRAS_API_KEY is blank in .env \u2014 normie has been running on Groq (tier=cheap fallback) all along. Groq confirmed working. Cerebras key pending setup by Ash. sanity_check_normie.py + test_normie_provider.py (5 tests) shipped to catch regression once key is added.",
+  "closed": "2026-05-23T04:11:56Z"
+}

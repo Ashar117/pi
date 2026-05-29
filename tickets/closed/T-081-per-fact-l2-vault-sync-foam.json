@@ -1,0 +1,15 @@
+{
+  "id": "T-081",
+  "source": "Ash 2026-05-14 — wants live-updating visualization of Pi's memory after L4 deprecation",
+  "title": "Per-fact L2 vault sync with auto-linked entities for Foam graph view",
+  "component": "tools/tools_obsidian.py + agent/session.py (sync_vault chain)",
+  "what_failed": "After deprecating L4 (T-079), Ash still wanted visible proof Pi was learning. The existing sync_l2_to_vault wrote ONE markdown file per category (all preferences in preferences.md). Foam's graph view treats each file as a node, so the whole memory store was 5-10 nodes max — useless as visualization.",
+  "where_failed": "tools/tools_obsidian.py::sync_l2_to_vault aggregated facts by category instead of emitting one file per fact.",
+  "why_likely": "Vault sync was originally designed for human reading (consolidated per-category lists), not for graph visualization (one node per fact).",
+  "severity": "P3",
+  "suggested_fix": "Add sync_l2_facts_to_vault() that emits one markdown file per L2 fact under vault/notes/memory/<category>/<slug>.md with YAML frontmatter, [[category]] back-link, and Title-Case entity auto-linkification (_linkify_entities). Generate per-category index files at vault/notes/memory/<category>.md listing all facts as [[slug]] links. Generate top-level vault/notes/memory/index.md. Hook into sync_vault() so it runs at session exit alongside the other sync steps. Foam graph view then shows: fact nodes, category hub nodes, entity hub nodes (Title-Case auto-linked).",
+  "status": "closed",
+  "created": "2026-05-14T19:45:00+00:00",
+  "closed": "2026-05-14T19:50:00+00:00",
+  "linked_solution": "S-056"
+}

@@ -1,0 +1,66 @@
+{
+  "id": "T-125a",
+  "phase": "8.8",
+  "title": "Caretaker stage A — derived-fact auto-recompute (birthday → age, etc.)",
+  "type": "infrastructure",
+  "component": "agent/caretaker.py (new), docs/adr/007-memory-lifecycle.md (new)",
+  "severity": "P1",
+  "effort_estimate": "2.5h",
+  "depends_on": [
+    "T-122 (bubble close is one trigger)",
+    "T-080 (embedding dedup machinery)"
+  ],
+  "blocks": [],
+  "adr_required": "ADR-007 — memory lifecycle (stated → derived → invalidated → garbage-collected)",
+  "current_state": "Pi's L3 is append-only. 'User is 19' sits there forever, even after the user turns 20. 'User is 19' and 'User born 2006-08-17' coexist as independent facts with no derivation link. Near-duplicate L3 entries (cosine > 0.9) are not merged. Contradicting writes don't invalidate the older record.",
+  "structural_problem": "Without a maintenance loop, memory rots: derived facts go stale, redundancy compounds, contradictions accumulate. T-078 added invalid_at and T-080 added embedding dedup as one-off jobs. A caretaker generalises both into a continuous process.",
+  "target_state": "agent/caretaker.py exports CaretakerJob with ONE mode (lite). Derived facts marked {kind: 'derived', source_id: <orig>, recompute_after: <iso>, formula: 'age_from_birthday'|...}. Runs per-bubble (cheap, idempotent) + daily cron. Recomputes any derived fact whose recompute_after has passed. ADR-007 documents the lifecycle (this stage only — stages B and C follow in T-125b and T-125c).",
+  "files_affected": [
+    "agent/caretaker.py (NEW — lite mode only)",
+    "docs/adr/007-memory-lifecycle.md (NEW — lifecycle skeleton, full ADR completed in T-125c)",
+    "memory/pipeline.py — recompute hook on derived-fact write",
+    "tools/tools_memory.py — memory_write detects derivable facts (birthday → age)",
+    "agent/session.py — caretaker.lite() as session-exit step (in addition to bubble triggers)",
+    "scripts/retention_tick.py — caretaker.lite() in daily job",
+    "testing/test_caretaker_lite.py (NEW)"
+  ],
+  "design_notes": [
+    "Derived fact schema extension: {kind: 'derived', source_id: str, recompute_after: iso, formula: 'age_from_birthday'|'days_until_date'|'days_since_date'}",
+    "Formula registry: agent/caretaker.py:_FORMULAS — pure functions (source_value, now) → new_content",
+    "Lite mode only: walk L3 WHERE kind='derived' AND recompute_after < now; recompute each, update content + recompute_after",
+    "All mutations SOFT — never DELETE, only update content + recompute_after",
+    "Concurrency: filelock data/caretaker.lock so cron and session-exit/bubble don't collide",
+    "Idempotency: calling lite() repeatedly is safe",
+    "Backfill: scan existing L3 once for born-YYYY-MM-DD patterns; spawn derived 'age' fact for each found"
+  ],
+  "success_criteria": [
+    "User profile contains 'User born 2006-08-17' and a derived 'User is 19 (as of 2026-05-24, recompute after 2026-08-17)'",
+    "After 2026-08-17, derived fact auto-updates to 'User is 20'",
+    "Lite mode is cheap enough to run on every bubble close (<50ms)",
+    "Filelock prevents bubble + cron from racing",
+    "ADR-007 lifecycle skeleton documents at minimum: stated, derived, recompute_after, invalid_at",
+    "verify.py PASS"
+  ],
+  "risk_notes": "Correctness risk: bad formula updates wrong fact. Mitigation: all updates wrapped in dry-run mode for first deploy; soft invalidation only. Performance risk: nightly deep mode could be expensive on large L3. Mitigation: batch by category; bound to N facts per run.",
+  "migration_plan": [
+    "1. Write ADR-007 — lifecycle definition first, then code follows the doc",
+    "2. Write agent/caretaker.py with three modes + formula registry",
+    "3. Add derived-fact write path in memory_write (detect 'born YYYY-MM-DD' → spawn derived 'age')",
+    "4. Add session-exit step (uses existing EXIT_STEPS infra from T-085)",
+    "5. Add nightly cron via retention_tick.py",
+    "6. Tests: synthetic L3 with derived facts; time-jump fixtures",
+    "7. Backfill: one-shot script to scan existing L3 for missed derivables",
+    "8. verify.py PASS"
+  ],
+  "test_plan": [
+    "test_lite_recomputes_age_after_birthday",
+    "test_lite_no_op_when_not_yet_recompute_due",
+    "test_formula_failure_skips_record_not_aborts_job",
+    "test_filelock_serialises_concurrent_lite_calls",
+    "test_backfill_detects_existing_birthday_facts"
+  ],
+  "status": "closed",
+  "created": "2026-05-24T05:16:27.280946+00:00",
+  "effort_actual_minutes": 110,
+  "closed": "2026-05-25T03:30:37.871144+00:00"
+}

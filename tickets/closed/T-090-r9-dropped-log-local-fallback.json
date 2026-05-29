@@ -1,0 +1,13 @@
+{
+  "id": "T-090",
+  "r_id": "R9",
+  "title": "Dropped log queue entries write to local file; distillation reads union of Supabase + local",
+  "type": "reliability",
+  "component": "pi_agent.py, memory/pipeline.py, logs/",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-05-15T12:00:00Z",
+  "closed": "2026-05-23T00:00:00Z",
+  "resolution": "Three-part implementation: (1) pi_agent.py: added _save_dropped_log() — saves dropped log_turn entries (not evolution.log_interaction) to logs/dropped_turns.jsonl on queue overflow. _async_log now captures the dropped entry before discarding it and saves it. (2) memory/pipeline.py: distill_session() now calls _load_dropped_turns(session_id) after get_l1_thread() and merges any dropped rows deduped by turn_number. (3) memory/pipeline.py: _drain_dropped_turns() helper replays recovered entries back to Supabase and removes successfully-replayed lines from the file. verify.py PASS.",
+  "linked_solution": "S-065"
+}

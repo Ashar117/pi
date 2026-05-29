@@ -1,0 +1,16 @@
+{
+  "id": "T-140",
+  "source": "Pi self-report (session tool call)",
+  "title": "memory_delete partial string match nukes unrelated L3 entries",
+  "component": "tools/tools_memory.py",
+  "what_failed": "Called memory_delete with target=\"User is currently located in Atlanta\" — deleted 20 entries including the entire L3 profile. The delete matched far beyond the intended single entry.",
+  "where_failed": "memory_delete tool",
+  "why_likely": "",
+  "severity": "P1",
+  "suggested_fix": "Delete should match by exact content or ID only, not substring. Add a max_delete=1 guard for single-target deletes, or require ID-based deletion for L3.",
+  "status": "closed",
+  "created": "2026-05-26T21:27:43.460013+00:00",
+  "closed": "2026-05-28T00:00:00Z",
+  "linked_solution": "S-084",
+  "resolution": "Partial string match (content search) returned all rows because _l3_fast_path returned non-matching rows with non-zero imp+recency scores. Fixed: match_score > 0 filter added to _l3_fast_path; only rows containing query string are returned."
+}

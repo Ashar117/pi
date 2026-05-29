@@ -1,0 +1,55 @@
+{
+  "id": "T-132",
+  "phase": "9.0-ux",
+  "title": "Session-start 'where we left off' continuation line in startup banner",
+  "type": "feature",
+  "component": "agent/startup_banner.py",
+  "severity": "P3",
+  "effort_estimate": "2h",
+  "depends_on": [],
+  "blocks": [],
+  "adr_required": null,
+  "current_state": "agent/startup_banner.py format_banner emits 3 lines (mode/session/tools, telegram/scheduler/verify/turns, reminders/tickets) plus optional 4th line from memory.audit_banner_line. Session feels cold despite Pi having a session_history L3 entry written at on_exit by _do_session_summary.",
+  "structural_problem": "ChatGPT/Claude continue seamlessly. Pi has all the data \u00e2\u20ac\u201d last session_summary in L3, last touched ticket file in tickets/closed/ \u00e2\u20ac\u201d but never surfaces it on next start.",
+  "target_state": "agent/startup_banner.py grows a continuation line built from: (1) most recent L3 row with category='session_history' \u00e2\u20ac\u201d the auto-written session summary, (2) most-recently-modified closed ticket file. Output: 'Last session 2026-05-24 14:32 \u00c2\u00b7 \"discussed UX upgrades, decided plan-mode first\" \u00c2\u00b7 last touched T-099'. Falls back to '' silently if no data.",
+  "files_affected": [
+    "agent/startup_banner.py \u00e2\u20ac\u201d add _format_continuation_line() helper, append to lines_out before reminders block",
+    "testing/test_startup_continuation.py (NEW)"
+  ],
+  "design_notes": [
+    "Query L3 directly via sqlite3.connect \u00e2\u20ac\u201d do not import MemoryTools (keeps startup_banner.py import-safe and fast; no Supabase chain pull).",
+    "SQL: SELECT content, created_at FROM l3_cache WHERE category='session_history' AND invalid_at IS NULL ORDER BY created_at DESC LIMIT 1",
+    "Recent ticket: max(p.stat().st_mtime for p in tickets/closed/*.json) \u00e2\u20ac\u201d already cheap.",
+    "Cap continuation text to 80 chars to keep banner scannable. Truncate with ellipsis.",
+    "All reads wrapped in try/except \u00e2\u2020\u2019 return '' on any failure (Inv. 9 spirit).",
+    "Skip if no L3 row found AND no closed tickets (fresh repo) \u00e2\u2020\u2019 return '', banner unchanged.",
+    "Privacy: in god mode startup, query god_memory.db; in public startup, query pi.db. ModeConfig determines path."
+  ],
+  "success_criteria": [
+    "Banner shows continuation line when L3 has session_history row + closed tickets exist",
+    "Empty repo (no session_history, no closed tickets) \u00e2\u2020\u2019 continuation line absent, banner unchanged",
+    "L3 read failure \u00e2\u2020\u2019 continuation absent, no crash",
+    "Text truncated at 80 chars with ellipsis",
+    "verify.py PASS"
+  ],
+  "risk_notes": "Lowest risk. Read-only SQLite query + file mtime check. Mitigations: every read in try/except, fallback to ''.",
+  "migration_plan": [
+    "1. Add _format_continuation_line() helper in startup_banner.py \u00e2\u20ac\u201d direct sqlite3 query, no MemoryTools import.",
+    "2. Append to lines_out after the existing 4th audit line, before reminders.",
+    "3. Test with mocked DB: 0 rows, 1 row, multiple rows.",
+    "4. Manual smoke: run pi.py with prior session_history L3 row \u00e2\u2020\u2019 banner shows continuation.",
+    "5. verify.py PASS."
+  ],
+  "test_plan": [
+    "test_continuation_line_renders_when_data_present",
+    "test_empty_repo_no_continuation_line",
+    "test_text_truncated_at_80_chars",
+    "test_db_error_returns_empty_string_no_crash",
+    "test_god_mode_reads_from_god_memory_db"
+  ],
+  "status": "closed",
+  "created": "2026-05-26T00:00:00+00:00",
+  "linked_solution": "S-080",
+  "effort_actual_minutes": 40,
+  "closed": "2026-05-27T00:00:00+00:00"
+}

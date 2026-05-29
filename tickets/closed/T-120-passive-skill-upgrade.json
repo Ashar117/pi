@@ -1,0 +1,31 @@
+{
+  "id": "T-120",
+  "phase": "8.7.D",
+  "title": "Passive skill upgrade — LLM triage + parallel digest execution",
+  "type": "enhancement",
+  "component": "agent/skill_triage.py (new), scripts/passive/*.py",
+  "severity": "P2",
+  "effort_estimate": "2h",
+  "current_state": "All 13 passive skills produced raw metric counts ('67 TODOs', '178 swallowed exceptions'). No prioritisation, no separation of actionable findings from noise. Daily digest ran skills sequentially (~30s wall clock). Together this made the daily report easy to ignore.",
+  "target_state": "(a) agent/skill_triage.py exports triage() and deep_analysis(). Both use Groq llama-3.3-70b-versatile primary, Claude Haiku fallback. Standalone-safe (auto-loads .env). (b) 4 metric skills wired with triage: tech_debt_accumulator, half_baked_feature_detector, ticket_candidate_miner, silent_failure_watcher. Each produces a 'Top concerns / Dismissed / Recommended action' section. (c) solution_lesson_distiller gets deep Haiku analysis to extract cross-cutting patterns from last 20 solutions. (d) passive_daily_digest.py uses ThreadPoolExecutor(max_workers=4); scorecard order preserved; one skill failure does not abort the others.",
+  "fix_summary": [
+    "NEW agent/skill_triage.py — triage() (Groq+Haiku fallback) and deep_analysis() (Haiku only) with lazy .env loader",
+    "scripts/passive/tech_debt_accumulator.py — triage on overall != PASS",
+    "scripts/passive/half_baked_feature_detector.py — triage on overall != PASS",
+    "scripts/passive/ticket_candidate_miner.py — triage when new_candidates exist",
+    "scripts/passive/silent_failure_watcher.py — triage on status != PASS",
+    "scripts/passive/solution_lesson_distiller.py — deep_analysis pass over last 20 solutions",
+    "scripts/passive/passive_daily_digest.py — parallel=True, max_workers=4; preserves SKILL_MODULES order in scorecard",
+    "NEW testing/test_skill_triage.py — 8 tests (providers, fallback chain, line truncation)",
+    "NEW testing/test_digest_parallel.py — 4 tests (parallelism, order preservation, exception isolation)"
+  ],
+  "measurements": {
+    "digest_wall_time_before": "~30s sequential",
+    "digest_wall_time_after": "~18s parallel (includes 5 LLM triage calls)",
+    "new_tests_added": 12
+  },
+  "verify_pass": true,
+  "status": "closed",
+  "created": "2026-05-24T05:07:07.732244+00:00",
+  "closed": "2026-05-24T05:07:07.732244+00:00"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "T-133",
+  "phase": "9.0-ux",
+  "title": "pi memory CLI — list / forget / pin / why subcommands",
+  "type": "feature",
+  "component": "scripts/memory_cli.py (new)",
+  "severity": "P3",
+  "status": "closed",
+  "created": "2026-05-26T00:00:00+00:00",
+  "closed": "2026-05-27T00:00:00Z",
+  "resolution": "scripts/memory_cli.py created with 4 subcommands (list, forget, pin, why). Standalone argparse script — no PiAgent instantiation, direct sqlite3. --god flag requires PI_GOD_CLI=1 env; either alone refuses. cmd_forget uses word-overlap scoring to find top-3 candidates before confirm. cmd_pin sets importance=10 (and pinned=1 if column exists — graceful no-op when pre-T-135). cmd_why prints full metadata trace with all l3_cache columns. testing/test_memory_cli.py: 17 tests across all subcommands. verify.py PASS.",
+  "linked_solution": "S-081"
+}

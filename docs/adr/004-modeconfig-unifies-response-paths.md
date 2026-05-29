@@ -12,7 +12,7 @@ exit) already shipped because R4's work was on a faster path.
 
 ## Decision
 
-Extend `ModeConfig` (already shipped in R1 / ADR-001) with 5 new fields
+Extend `ModeConfig` (already shipped in R1 / [[001-god-as-mode-config|ADR-001]]) with 5 new fields
 covering the divergent behaviors between root, normie, and god response
 paths. Refactor each `_respond_*` method to consume its `ModeConfig` instead
 of hardcoded checks. In a follow-on session, identify the common skeleton

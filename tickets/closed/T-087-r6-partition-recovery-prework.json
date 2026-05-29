@@ -1,0 +1,14 @@
+{
+  "id": "T-087",
+  "r_id": "R6",
+  "title": "Memory replication log (pre-work for partition recovery)",
+  "type": "reliability",
+  "component": "tools/tools_memory.py",
+  "severity": "P3",
+  "status": "closed",
+  "created": "2026-05-15T12:00:00Z",
+  "closed": "2026-05-23T00:00:00Z",
+  "resolution": "Pre-work complete. Added _replication_log_append() method to MemoryTools — appends NDJSON line to data/memory_replication.log on every L3 mutation. Wired to: insert (write_l3 path), expire (_expire_l3_entry), invalidate (_invalidate_l3_entry), prune (prune_l3_expired). Added scripts/passive/replication_log_rotate.py — daily log rotation with 30-day retention for rotated files. Registered as daily 04:00 cron in PiScheduler (_replication_log_rotate_job). Full partition reconciliation logic deferred until an actual partition incident occurs — see deferred_work in ticket for the follow-on ADR + script design. verify.py PASS.",
+  "deferred_work": "If/when a partition incident occurs: open new ticket, write docs/adr/006-l3-partition-recovery.md, build reconcile_after_partition.py that reads memory_replication.log + queries Supabase + SQLite for the affected window + resolves conflicts (SQLite-as-primary default).",
+  "linked_solution": "S-064"
+}

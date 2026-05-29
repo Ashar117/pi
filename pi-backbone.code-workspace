@@ -1,0 +1,143 @@
+{
+  "folders": [
+    { "path": "." }
+  ],
+  "settings": {
+    "window.title": "Pi — Backbone (shareable) ${separator}${rootName}",
+    "foam.files.include": [
+      "PI.md",
+      "README.md",
+      "ABOUT.md",
+      "CLAUDE.md",
+      "docs/**/*.md",
+      "CHECKPOINTS/**/*.md",
+      "vault/notes/status.md",
+      "vault/notes/tickets/**/*.md",
+      "vault/notes/per-ticket/**/*.md",
+      "vault/notes/sprints/**/*.md",
+      "vault/notes/retros/**/*.md",
+      "vault/notes/templates/Session.md",
+      "vault/notes/templates/Decision.md",
+      "vault/notes/templates/Ticket.md"
+    ],
+    "foam.files.exclude": [
+      "vault/notes/memory/**/*",
+      "vault/notes/sessions/**/*",
+      "vault/notes/north_star.md",
+      "vault/notes/templates/Entity.md",
+      "vault/notes/templates/North-Star.md",
+      "vault/.god/**/*",
+      "docs/_archive/**/*",
+      "pi_env/**/*",
+      "data/**/*",
+      "logs/**/*",
+      "reports/**/*",
+      "passive_skills_pack/**/*",
+      "node_modules/**/*"
+    ],
+    "foam.dailyNote.directory": "vault/Daily Notes",
+    "foam.graph.navigateToPreview": true,
+    "foam.graph.titleMaxLength": 32,
+    "foam.graph.views": [
+      {
+        "name": "Default",
+        "colorBy": "none",
+        "background": "#0a0e27",
+        "lineColor": "#4a148c",
+        "fontSize": 12,
+        "fontFamily": "Inter",
+        "show": {
+          "placeholder": { "enabled": false },
+          "tag": { "enabled": false },
+          "attachment": { "enabled": false },
+          "image": { "enabled": false }
+        },
+        "groups": [
+          { "enabled": true, "color": "#6a0dad", "match": { "property": "path", "value": ".*" } },
+          { "enabled": true, "color": "#1a0033", "match": { "property": "path", "value": "vault/notes/templates/" } },
+          { "enabled": true, "color": "#9d4edd", "match": { "property": "path", "value": "CHECKPOINTS/" } },
+          { "enabled": true, "color": "#00f5ff", "match": { "property": "path", "value": "vault/notes/status\\.md$" } },
+          { "enabled": true, "color": "#00d4ff", "match": { "property": "path", "value": "vault/notes/per-ticket/" } },
+          { "enabled": true, "color": "#ff006e", "match": { "property": "path", "value": "vault/notes/tickets/" } },
+          { "enabled": true, "color": "#8338ec", "match": { "property": "path", "value": "tickets/closed/" } },
+          { "enabled": true, "color": "#ff006e", "match": { "property": "path", "value": "tickets/open/" } },
+          { "enabled": true, "color": "#00bbff", "match": { "property": "path", "value": "docs/" } },
+          { "enabled": true, "color": "#00d9ff", "match": { "property": "path", "value": "docs/adr/" } },
+          { "enabled": true, "color": "#ff4d6d", "match": { "property": "path", "value": "README\\.md$" } },
+          { "enabled": true, "color": "#f72585", "match": { "property": "path", "value": "PI\\.md$" } }
+        ]
+      },
+      {
+        "name": "TicketsFocus",
+        "colorBy": "none",
+        "background": "#0f1117",
+        "lineColor": "#52525b",
+        "fontSize": 12,
+        "show": {
+          "placeholder": { "enabled": false },
+          "tag": { "enabled": false },
+          "attachment": { "enabled": false },
+          "image": { "enabled": false }
+        },
+        "groups": [
+          { "enabled": true, "color": "#1e293b", "match": { "property": "path", "value": ".*" } },
+          { "enabled": true, "color": "#2dd4bf", "match": { "property": "path", "value": "vault/notes/per-ticket/" } },
+          { "enabled": true, "color": "#fbbf24", "match": { "property": "path", "value": "vault/notes/tickets/" } },
+          { "enabled": true, "color": "#d97706", "match": { "property": "path", "value": "tickets/closed/" } },
+          { "enabled": true, "color": "#fbbf24", "match": { "property": "path", "value": "tickets/open/" } },
+          { "enabled": true, "color": "#f97316", "match": { "property": "path", "value": "PI\\.md$" } }
+        ]
+      },
+      {
+        "name": "ADRs",
+        "colorBy": "none",
+        "background": "#0f1117",
+        "lineColor": "#52525b",
+        "fontSize": 12,
+        "show": {
+          "placeholder": { "enabled": false },
+          "tag": { "enabled": false },
+          "attachment": { "enabled": false },
+          "image": { "enabled": false }
+        },
+        "groups": [
+          { "enabled": true, "color": "#1e293b", "match": { "property": "path", "value": ".*" } },
+          { "enabled": true, "color": "#38bdf8", "match": { "property": "path", "value": "docs/adr/" } },
+          { "enabled": true, "color": "#f97316", "match": { "property": "path", "value": "PI\\.md$" } }
+        ]
+      },
+      {
+        "name": "EngineeringLoop",
+        "colorBy": "none",
+        "background": "#0f1117",
+        "lineColor": "#52525b",
+        "fontSize": 12,
+        "show": {
+          "placeholder": { "enabled": false },
+          "tag": { "enabled": false },
+          "attachment": { "enabled": false },
+          "image": { "enabled": false }
+        },
+        "groups": [
+          { "enabled": true, "color": "#1e293b", "match": { "property": "path", "value": ".*" } },
+          { "enabled": true, "color": "#c084fc", "match": { "property": "path", "value": "CHECKPOINTS/" } },
+          { "enabled": true, "color": "#34d399", "match": { "property": "path", "value": "vault/notes/status\\.md$" } },
+          { "enabled": true, "color": "#2dd4bf", "match": { "property": "path", "value": "vault/notes/per-ticket/" } },
+          { "enabled": true, "color": "#d97706", "match": { "property": "path", "value": "tickets/closed/" } },
+          { "enabled": true, "color": "#fbbf24", "match": { "property": "path", "value": "tickets/open/" } }
+        ]
+      }
+    ],
+    "python.defaultInterpreterPath": "${workspaceFolder}/pi_env/Scripts/python.exe",
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": ["testing"]
+  },
+  "extensions": {
+    "recommendations": [
+      "foam.foam-vscode",
+      "ms-python.python",
+      "ms-python.vscode-pylance",
+      "yzhang.markdown-all-in-one"
+    ]
+  }
+}

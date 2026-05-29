@@ -1,0 +1,67 @@
+{
+  "id": "T-108",
+  "phase": "8.7.B",
+  "title": "Surface compression failures + god-mode preflight check",
+  "type": "fix",
+  "component": "agent/truncation.py, pi_agent.py",
+  "severity": "P2",
+  "effort_estimate": "2h",
+  "depends_on": [
+    "T-103 (track_silent)"
+  ],
+  "blocks": [],
+  "adr_required": null,
+  "current_state": "(a) agent/truncation.py:104-105: when both Groq and Haiku compression LLMs fail, compress_messages_with_groq silently returns the original uncompressed messages list. The caller in pi_agent.py:_truncate_messages_safely has no way to know compression failed. The next turn the list is still >= threshold, compression is re-attempted, both LLMs may fail again \u00e2\u2020\u2019 burns API quota with no progress. (b) pi_agent.py:539-541: typing 'god mode' switches self.mode='god' without verifying that god_memory.db exists or that GOD_SUPABASE_URL != SUPABASE_URL. If god mode is misconfigured, the switch silently succeeds but the first tool call fails (often with a confusing 'database is locked' or 'duplicate key' error).",
+  "structural_problem": "Both bugs share a 'fallback that silently returns invalid state' pattern. The caller continues as if everything is fine; the user only finds out when downstream behaviour breaks.",
+  "target_state": "(a) compress_messages_with_groq raises CompressionFailed(original_messages) when both LLMs fail. pi_agent.py:_truncate_messages_safely catches CompressionFailed and falls back to hard-truncate (keep last N messages, drop the rest) + track_silent. The loop cannot spin: hard truncate guarantees progress. (b) god-mode switch has a preflight check: file existence of GOD_MEMORY_DB, inequality of GOD_SUPABASE_URL vs SUPABASE_URL. Fails loud with a one-line user message; does NOT switch mode.",
+  "files_affected": [
+    "agent/truncation.py (add CompressionFailed exception, raise on both-LLM-fail)",
+    "pi_agent.py:_truncate_messages_safely (catch CompressionFailed, hard-truncate)",
+    "pi_agent.py:539-541 (god-mode switch \u00e2\u20ac\u201d add preflight)",
+    "testing/test_compression_fallback.py (UPDATE \u00e2\u20ac\u201d both-fail case now expects raise + hard truncate)",
+    "testing/test_god_preflight.py (NEW)"
+  ],
+  "audit_refs": [
+    "Phase 8.7 audit #16, #19"
+  ],
+  "design_notes": [
+    "(a) Add class CompressionFailed(Exception) to agent/truncation.py with attribute .original_messages",
+    "(a) At line 104-105 area: replace 'return messages' (silent) with 'raise CompressionFailed(messages)'",
+    "(a) In pi_agent.py:_truncate_messages_safely, wrap the compress call in try/except CompressionFailed: track_silent('compression.both_llms_failed', e) + hard_truncate (keep last 12 user/assistant pairs from e.original_messages)",
+    "(a) Hard truncate must preserve message-pair integrity: trim to even boundary so tool_use/tool_result pairs stay matched (or filter out unmatched tool_use lines)",
+    "(b) Preflight check helper: _check_god_mode_available() -> tuple[bool, str] returning (ok, reason). Reasons: 'god_memory.db not found at <path>', 'GOD_SUPABASE_URL not set', 'GOD_SUPABASE_URL == SUPABASE_URL (would leak)', 'agent/god.py module not importable'.",
+    "(b) Path checks use Path(...).exists(); URL equality check uses os.getenv with fallback empty",
+    "(b) Print one-line failure reason; do NOT raise (user already typed the switch, they need a clear refusal, not a crash)",
+    "(b) Existing god-mode tests may need to mock the preflight to return ok=True for non-environment tests"
+  ],
+  "success_criteria": [
+    "(a) When Groq and Haiku both raise, _truncate_messages_safely keeps last 12 messages and emits a track_silent record",
+    "(a) Repeated calls to _truncate_messages_safely with both LLMs broken do NOT call the LLMs again until the message count drops (no infinite retry spin)",
+    "(b) typing 'god mode' when god_memory.db does not exist \u00e2\u2020\u2019 mode stays unchanged + clear message printed",
+    "(b) typing 'god mode' when GOD_SUPABASE_URL == SUPABASE_URL \u00e2\u2020\u2019 mode stays unchanged + clear message printed",
+    "(b) typing 'god mode' with valid env \u00e2\u2020\u2019 mode becomes 'god' (regression unchanged)",
+    "verify.py PASS"
+  ],
+  "risk_notes": "(a) Hard truncate to 12 messages may drop tool_use/tool_result orphans \u00e2\u2020\u2019 Anthropic API rejects the next call. Mitigation: filter pairs as part of truncation. (b) Existing tests that set self.mode='god' directly are unaffected; only the user-typed switch path is gated.",
+  "migration_plan": [
+    "1. Add 'class CompressionFailed(Exception)' to agent/truncation.py with __init__ that stores original_messages",
+    "2. Replace silent 'return messages' on both-LLM-fail with 'raise CompressionFailed(messages)'",
+    "3. In pi_agent.py:_truncate_messages_safely: wrap compress call; on CompressionFailed, track_silent + hard truncate preserving tool_use/tool_result pairs",
+    "4. Update testing/test_compression_fallback.py:test_both_llms_fail \u00e2\u20ac\u201d now expects either (a) CompressionFailed raised, or (b) hard-truncated output from caller wrapper",
+    "5. Add helper _check_god_mode_available() in pi_agent.py (private method)",
+    "6. Edit god-mode switch handler (around pi_agent.py:539): call preflight, refuse with message on failure",
+    "7. Add testing/test_god_preflight.py \u00e2\u20ac\u201d 3 cases: missing db, equal URLs, valid env",
+    "8. Run scripts/verify.py \u00e2\u20ac\u201d PASS"
+  ],
+  "test_plan": [
+    "test_compression_both_fail_raises \u00e2\u20ac\u201d patch Groq AND Haiku to raise; assert CompressionFailed raised with .original_messages set",
+    "test_truncate_safely_catches_compression_fail \u00e2\u20ac\u201d same setup at caller level; assert self.messages truncated, no spin",
+    "test_truncate_preserves_tool_pairs \u00e2\u20ac\u201d input contains orphan tool_use; assert output has matched pairs only",
+    "test_god_preflight_missing_db \u00e2\u20ac\u201d patch Path.exists \u00e2\u2020\u2019 False; switch refused; mode unchanged",
+    "test_god_preflight_equal_urls \u00e2\u20ac\u201d set env GOD_SUPABASE_URL == SUPABASE_URL; switch refused",
+    "test_god_preflight_valid \u00e2\u20ac\u201d both checks pass; switch succeeds"
+  ],
+  "status": "closed",
+  "created": "2026-05-24T00:00:00Z",
+  "closed": "2026-05-24T03:11:59.747935+00:00"
+}

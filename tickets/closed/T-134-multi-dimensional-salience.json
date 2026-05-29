@@ -1,0 +1,13 @@
+{
+  "id": "T-134",
+  "phase": "9.0-brain",
+  "title": "Multi-dimensional salience scoring — composite formula replaces single importance int",
+  "type": "feature",
+  "component": "tools/tools_memory.py + memory/salience.py (new)",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-05-26T00:00:00+00:00",
+  "closed": "2026-05-28T00:00:00Z",
+  "resolution": "memory/salience.py created: composite_salience (0.30*imp + 0.25*surprise + 0.20*goal + 0.15*recency + 0.10*affect), recency_weight (exp decay, 30d half-life), affect_bonus (urgent=0.8, important=0.5, painful=0.4, joyful=0.3, neutral=0.0), effective_importance (T-135 Ebbinghaus, pinned rows immune), default_decay_rate (per-category), is_composite_mode (PI_SALIENCE_MODE=composite). _init_sqlite PRAGMA-adds 6 new columns: surprise_score, goal_alignment, affect_tag, decay_rate, pinned, last_accessed_at. memory_write L3 path computes scores at insert. _l3_fast_path and _hybrid_search_l3 BM25 path both updated: 12-col SELECT with NULL fallback on OperationalError (Invariant 8), composite mode branching gated by PI_SALIENCE_MODE=composite. Also fixed _tokenize to split on underscores ([^a-zA-Z0-9\\s]) so UUID-prefixed content like t001_rw_{uuid} tokenizes correctly for BM25. testing/test_salience.py: 30 tests. verify.py PASS.",
+  "linked_solution": "S-082"
+}

@@ -1,0 +1,20 @@
+{
+  "id": "T-118",
+  "phase": "8.7.D",
+  "title": "Telegram reconnect — polling thread now starts even when network is initially blocked",
+  "type": "fix",
+  "component": "tools/tools_telegram.py",
+  "severity": "P2",
+  "effort_estimate": "5min",
+  "current_state": "TelegramTools.start_polling() did a one-shot _reachable() check at startup. If api.telegram.org was unreachable (VPN off, network blocked), it logged a warning and returned immediately without starting any polling thread. When the user turned the VPN back on, nothing retried — Pi stayed offline until a full restart.",
+  "target_state": "start_polling always starts the polling thread; the unreachable check now only emits a softer warning. infinity_polling has its own internal retry loop and will reconnect automatically when the network returns.",
+  "fix_summary": [
+    "tools/tools_telegram.py:start_polling — removed the early return on _reachable() == False",
+    "Reworded the warning to indicate retry is still happening",
+    "No new threads, no polling-interval changes — just removed the hard bail"
+  ],
+  "verify_pass": true,
+  "status": "closed",
+  "created": "2026-05-24T05:07:07.732244+00:00",
+  "closed": "2026-05-24T05:07:07.732244+00:00"
+}

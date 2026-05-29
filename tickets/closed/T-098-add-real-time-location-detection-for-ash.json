@@ -1,0 +1,16 @@
+{
+  "id": "T-098",
+  "source": "Pi self-report (session tool call)",
+  "title": "Add real-time location detection for Ash",
+  "component": "tools/",
+  "what_failed": "Pi cannot determine Ash's current location on demand \u2014 no GPS or IP-based location tool exists",
+  "where_failed": "",
+  "why_likely": "",
+  "severity": "P3",
+  "suggested_fix": "Add a get_location tool that uses IP geolocation (e.g. ipinfo.io) as a fallback, and optionally reads GPS from a mobile source if available via Telegram bot context",
+  "status": "closed",
+  "created": "2026-05-18T18:07:23.301380+00:00",
+  "closed": "2026-05-23T00:00:00Z",
+  "linked_solution": null,
+  "resolution": "AwarenessTools.get_location() already existed with ipinfo.io fallback chain. Added _handle_get_location handler and get_location ToolSpec to tools/tools_awareness.py TOOLS list. Pi can now call get_location as a tool on demand. verify.py PASS."
+}
