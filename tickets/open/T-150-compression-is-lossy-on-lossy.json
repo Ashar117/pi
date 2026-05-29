@@ -1,0 +1,23 @@
+{
+  "id": "T-150",
+  "source": "Claude session audit (2026-05-29)",
+  "title": "Root-mode history compression is lossy-on-lossy — per-message 400-char clip + 300-token global summary",
+  "component": "agent/truncation.py (compress_messages_with_groq, _build_context)",
+  "what_failed": "When root history reaches 30+ messages, compress_messages_with_groq summarizes everything older than keep_recent=12 into a single bullet block. The information is destroyed twice: (1) _build_context clips each source message to 400 chars before the summarizer ever sees it, and (2) the summarizer is capped at max_tokens=300 and prompted for '3-5 bullet points' regardless of how many messages it is compressing. An 18-message stretch of dense coding/reasoning collapses to ~5 bullets of ~60 words.",
+  "where_failed": "agent/truncation.py:45 (content[:400] in _build_context), agent/truncation.py:32-35 (_COMPRESS_PROMPT '3-5 bullet points'), agent/truncation.py:93 (max_tokens=300)",
+  "why_likely": "Compression was built to keep Claude token cost down (T-092). The caps were chosen for cost, not for how much context is actually needed to continue coherently. No measurement of post-compression coherence was done.",
+  "severity": "P3",
+  "status": "open",
+  "created": "2026-05-29T08:24:09+00:00",
+  "closed": null,
+  "linked_solution": null,
+  "migration_plan": [
+    "1. Raise the per-message clip in _build_context from 400 to ~1200 chars (or make it proportional to how many messages are being compressed).",
+    "2. Scale summary budget with input size: max_tokens = min(1024, 60 * n_messages_compressed) instead of a flat 300.",
+    "3. Reword _COMPRESS_PROMPT to 'preserve all decisions, file paths, identifiers, numbers, and open questions verbatim' rather than '3-5 bullets'.",
+    "4. Consider a rolling-summary approach (summary of summary + recent) instead of one-shot, so old context degrades gracefully instead of falling off a cliff at message 30.",
+    "5. Add a test: compress a known 20-message conversation, assert specific facts (a file path, a number) survive into the summary."
+  ],
+  "implementation_notes": "Lower priority than T-149 because root mode at least keeps 12 recent messages verbatim and sends the real message array. The compression only bites on long sessions. But for a system meant to do multi-hour engineering work, long sessions are the point.",
+  "analysis": "PERSPECTIVE: Cost-driven caps are fine until they silently degrade the product. 300 tokens to summarize an entire engineering session is absurdly tight — that's cheaper than the bug it causes. Scale the budget with the input. The rolling-summary idea (step 4) is the right long-term shape; one-shot compression at a hard threshold is a cliff, and cliffs are where coherence dies."
+}

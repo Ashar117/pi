@@ -79,13 +79,13 @@ When closed: move into §6 of `CHECKPOINTS/current.md` and §9 of this file (aut
 ## §4 State (auto-generated)
 
 <!-- BEGIN AUTO §4 -->
-- **Phase:** 8.5 — Hardening Track (R1–R10 from pi_architecture.md)
-- **Last verify:** PASS · 156/156 files clean · 52 tests · 0 failures
-- **Open tickets:** 9
-- **Closed tickets:** 78
-- **Solutions logged:** 61
-- **Turns today:** 397
-- **Last session end:** 2026-05-17
+- **Phase:** Coherence track (interrupts roadmap per T-156 freeze)
+- **Last verify:** PASS · 218/218 files clean · 93 tests · 0 failures
+- **Open tickets:** 15
+- **Closed tickets:** 134
+- **Solutions logged:** 83
+- **Turns today:** 176
+- **Last session end:** 2026-05-29
 <!-- END AUTO §4 -->
 
 ---
@@ -132,6 +132,10 @@ For every meaningful change:
 - `prompts/consciousness.txt` — system prompt, ~700 lines
 - `scripts/verify.py` — CI in a bottle; syntax-check + non-costly tests
 
+**ADRs:** [[001-god-as-mode-config|ADR-001]] · [[002-tool-registry-pattern|ADR-002]] · [[003-router-tier-and-tpd-budget|ADR-003]] · [[004-modeconfig-unifies-response-paths|ADR-004]] · [[005-resumable-exit|ADR-005]] · [[006-retention-architecture|ADR-006]]
+
+**Tickets:** [[open|Open]] · [[closed|Closed]]
+
 ---
 
 ## §7 Tools inventory (auto-generated)
@@ -141,17 +145,17 @@ For every meaningful change:
 **Execution** (5): execute_python · execute_bash · read_file · modify_file · create_file
 **Awareness** (5): get_weather · get_news · get_stocks · get_tech_updates · refresh_awareness
 **Project** (4): search_codebase · create_ticket · get_session_stats · system_introspect
-**Web** (8): web_search · web_browse · reddit_browse · reddit_search · reddit_thread · scholar_search · discord_read · daily_briefing
+**Web** (3): web_search · scholar_search · daily_briefing
 **Obsidian** (4): obsidian_read · obsidian_write · obsidian_append · obsidian_search
 **Image** (1): image_gen
 **Gmail** (4): gmail_inbox · gmail_search · gmail_read · gmail_send
 **Calendar** (5): calendar_today · calendar_upcoming · calendar_search · calendar_create · calendar_delete
-**Documents** (6): read_document · analyze_image · analyze_images · analyze_video · ocr_image · analyze_document_smart
+**Documents** (1): read_document
 **Faces** (4): detect_faces · recognize_face · register_face · list_registered_faces
 **Output** (2): speak · telegram_send
-**Other** (23): browser_click · browser_close · browser_evaluate · browser_fill · browser_get_text · browser_open · browser_screenshot · browser_wait · computer_click · computer_key · computer_run_task · computer_screenshot · computer_scroll · computer_type · listen · memory_search_semantic · reflect · repo_map · transcribe_file · watcher_add · watcher_list · watcher_remove · watcher_status
+**Other** (23): analyze_media · browser_click · browser_close · browser_evaluate · browser_fill · browser_get_text · browser_open · browser_screenshot · browser_wait · computer_click · computer_key · computer_screenshot · computer_scroll · computer_type · fetch · generate_video · get_location · listen · memory_search_semantic · reflect · repo_map · transcribe_file · watcher
 
-**Total: 74 tools.**
+**Total: 64 tools.**
 <!-- END AUTO §7 -->
 
 ---
@@ -161,15 +165,21 @@ For every meaningful change:
 <!-- BEGIN AUTO §8 -->
 | ID | Title | Sev | Component |
 |---|---|---|---|
-| T-083 | Tool dispatch registry pattern + 73→~40 consolidation + weekly self-prune | P0 | agent/tools.py, tools/tools_*.py (all mo |
-| T-087 | Memory replication log (pre-work for partition recovery) | P3 | tools/tools_memory.py |
-| T-089 | ModeConfig dataclass — collapse 3 response paths into 1 | P2 | agent/modes.py, pi_agent.py |
-| T-090 | Dropped log queue entries write to local file; distillation reads union of Supab | P2 | pi_agent.py, memory/pipeline.py, logs/ |
-| T-091 | Three-segment system prompt: static (cached hours) · warm/L3 (cached minutes) ·  | P3 | agent/prompt.py, pi_agent.py, core/provi |
-| T-092 | History compression — add Claude Haiku fallback when Groq is rate-limited (mirro | P3 | agent/truncation.py::compress_messages_w |
-| T-093 | Backfill embeddings for pre-T-080 L2 rows (one-shot migration so semantic dedup  | P3 | scripts/backfill_l2_embeddings.py (new), |
-| T-094 | Verify Cerebras is actually serving normie traffic (formalize the 30-sec sanity  | P2 | pi_agent.py::_respond_normie, tests/, sc |
-| T-095 | God memory cross-device — point private namespace at a separate Supabase project | P3 | MemoryTools (private namespace wiring),  |
+| T-114 | Phase 8.7 — Hardening Track index (master ticket; do not implement directly) | P1 | (meta — describes the 12 sub-tickets) |
+| T-129 | Thinking layer (full) — add recall-merge + clarifier + memory-id extraction | P3 | agent/thinking.py (extend) |
+| T-136 | Idle replay — sleep-consolidation analogue; pick random past episodes during use | P3 | agent/idle_replay.py (new) + pi_agent.py |
+| T-137 | Context-cued recall — boost retrieval for same-mode and same-scope matches (enco | P3 | tools/tools_memory.py memory_read + _hyb |
+| T-142 | No multi-conversation / session isolation � all context bleeds into one stream | P2 | pi_agent.py, core/session_manager.py |
+| T-143 | Pi replies lack semantic coherence � responses don't follow naturally from conte | P2 | pi_agent.py, core/context_manager.py |
+| T-149 | Normie mode has no real conversation history — single_message_ctx + tiny session | P2 | pi_agent.py (_respond_via_config), agent |
+| T-150 | Root-mode history compression is lossy-on-lossy — per-message 400-char clip + 30 | P3 | agent/truncation.py (compress_messages_w |
+| T-151 | _prefetch_memory recall is brittle — single first-keyword query, no phrase/multi | P2 | pi_agent.py (_prefetch_memory) |
+| T-152 | Test suite validates plumbing, not conversation fidelity — no end-to-end multi-t | P2 | testing/ (new test_conversation_golden.p |
+| T-153 | Capability docs drift from reality — ABOUT.md marks everything working while P2  | P3 | ABOUT.md, README.md, scripts/passive/doc |
+| T-154 | Pi self-report tickets ship authoritative-but-wrong root causes — sprint runner  | P2 | tickets/ schema, scripts/sprint.py, tool |
+| T-155 | VCS hygiene — 90+ uncommitted files, 11 days since last commit; source of truth  | P2 | process / git, scripts/passive/session_e |
+| T-156 | Phase freeze — no new tools or phases until conversation coherence is verified e | P1 | PI.md (§3 sprint goal, §12 roadmap), str |
+| T-157 | Privacy publish guard false-positives on api_key=VARIABLE references — blocks le | P2 | scripts/passive/privacy_publish_guard.py |
 <!-- END AUTO §8 -->
 
 ---
@@ -179,16 +189,16 @@ For every meaningful change:
 <!-- BEGIN AUTO §9 -->
 | Solution | Ticket | Title |
 |---|---|---|
-| S-066 | T-086 | Sprint × god isolation — sprint.py refuses god tickets; AST-checked interactive- |
-| S-065 | T-088 | Archive SelfModifier — Phase 5 cruft removed (R7) |
-| S-064 | T-085 | Resumable session exit + 5 ops moved to mid-session/cron — R4 closed |
-| S-063 | T-084 | LLMRouter tier matrix + TPD-budget brownout — R3 closed |
-| S-062 | T-097 | memory_search_semantic tool — Gemini cosine retrieval exposed to the planner |
-| S-061 | T-096 | Vault patterns from breferrari/obsidian-mind survey — 5 templates, north_star, e |
-| S-060 | T-083 (R2.1 only — R2.2/R2.3 deferred) | Tool dispatch registry pattern shipped — 74 tools migrated, agent/tools.py 1681→ |
-| S-059 | T-082 | God mode collapse — ModeConfig + unified _respond_via_config (R1) |
-| S-058 | T-080 | Semantic L2 dedup — Gemini embeddings + cosine + Haiku tiebreaker |
-| S-057 | T-082 | Full memory audit system — rules, digest, CLI, banner, Telegram, 24 tests |
+| S-088 | T-148, T-143 | Pi could not see its own prior replies. extract_text_from_messages and _build_co |
+| S-087 | T-141 | Pi claims inability (cant analyze docs) then provides accurate details anyway —  |
+| S-086 | T-146, T-147 | Awareness shortcut returned Atlanta weather when user asked about Multan; awaren |
+| S-085 | T-115 | Groq 400 tool_use_failed triggered 300s brownout — provider healthy, model just  |
+| S-084 | T-139, T-140 | memory_delete wiped entire L3 (20 entries) on a single call — _l3_fast_path retu |
+| S-083 | T-135 | Stale L3 facts never decay — a fact last accessed 6 months ago ranks identically |
+| S-082 | T-134 | Single importance int (1-10) cannot express multi-factor memory salience — a dyi |
+| S-081 | T-133 | L3 memory not user-inspectable — no way to audit or steer Pi memory without raw  |
+| S-080 | T-132 | Pi startup feels cold — all session context (last topic, last ticket touched) is |
+| S-079 | T-131 | Pi shows 3-line startup banner then goes silent — mode, cost, open tickets, L3 d |
 <!-- END AUTO §9 -->
 
 ---

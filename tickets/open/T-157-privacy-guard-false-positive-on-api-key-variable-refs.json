@@ -1,0 +1,22 @@
+{
+  "id": "T-157",
+  "source": "Claude session audit (2026-05-29) — privacy guard run before commit",
+  "title": "Privacy publish guard false-positives on api_key=VARIABLE references — blocks legitimate commits",
+  "component": "scripts/passive/privacy_publish_guard.py",
+  "what_failed": "The credential-pattern check (Section 3) flags `api_key=CEREBRAS_API_KEY` in SOLUTIONS.jsonl:48 (S-053) and docs/adr/003:61 as credential leaks and FAILs the whole guard. Both are variable references inside code snippets — the literal key lives in the gitignored app/config.py. The over-match means every commit that touches those already-tracked files trips a FAIL, training the user to ignore the guard (cry-wolf) — which defeats a privacy gate.",
+  "where_failed": "scripts/passive/privacy_publish_guard.py credential-assignment regex — matches `api_key=` followed by any token, including UPPER_CASE identifiers and other variable names.",
+  "why_likely": "The regex was written to catch `api_key=\"sk-...\"` literals but doesn't distinguish a literal/quoted secret from a variable reference. No allowance for ALL_CAPS env-var names or unquoted identifiers.",
+  "severity": "P2",
+  "status": "open",
+  "created": "2026-05-29T08:24:09+00:00",
+  "closed": null,
+  "linked_solution": null,
+  "migration_plan": [
+    "1. Tighten the credential regex: only flag api_key/secret/token assignments whose RHS is a quoted string literal OR matches a known key shape (sk-, AKIA, ghp_, etc.).",
+    "2. Explicitly do NOT flag RHS that is an ALL_CAPS identifier or a bare variable name (api_key=CEREBRAS_API_KEY, token=cfg.token).",
+    "3. Add unit tests: api_key=\"sk-abc123\" → FLAG; api_key=CEREBRAS_API_KEY → PASS; token=os.environ['X'] → PASS.",
+    "4. Re-run on the current tree; Section 3 should go green without weakening real-secret detection."
+  ],
+  "implementation_notes": "A privacy gate that cries wolf is worse than no gate — it gets routinely overridden. The guard's OTHER sections (private impl tracked, data/logs tracked, tracked-files-match-gitignore) are valuable and correctly PASS; only the credential regex is too loose. Note: this script is itself under the gitignored scripts/ tree, so the fix won't be version-controlled until T-155 is addressed.",
+  "analysis": "PERSPECTIVE: This bit us immediately — the guard blocked this very session's commit on two variable references. Either the gate is trustworthy or it's theater; a false-positive FAIL on every commit makes it theater. Tighten the regex so a FAIL always means a real secret. Cheap, high-trust-value fix."
+}

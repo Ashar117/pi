@@ -1,9 +1,21 @@
 # CURRENT — pointer to active checkpoint
 
-**Phase:** 8.5 — Hardening Track (R1–R10 from pi_architecture.md)
-**Status:** R1 ✅ R2.1 ✅ R3 ✅ R4 ✅ R5 ✅ R7 ✅. R8 Stage A landed (T-089 stays open; B+C next session). Next session: R8 Stages B+C, then R6 (30m) + R9 (4h) + R10 (1d) to close the track.
-**Active checkpoint:** [phase-7-week-1.md](phase-7-week-1.md)
-**Last updated:** 2026-05-18
+**Phase:** Coherence track (interrupts roadmap per T-156 freeze)
+**Status:** Keystone conversation-coherence bug fixed (T-148) — assistant turns were dropped from all context paths. verify PASS (218 files, 93 tests). 8 follow-up tickets filed (T-149–T-156); T-143 corrected.
+**Active checkpoint:** this file
+**Last updated:** 2026-05-29
+
+## Session 2026-05-29 — conversation coherence
+
+**What changed**
+- **T-148 (closed, S-088):** `_block_text()` helper in [agent/truncation.py](agent/truncation.py) now captures canonical `{"type":"text"}` assistant dicts that `hasattr(block,"text")` silently dropped. Fixed in both `extract_text_from_messages` (normie session ctx + L2 session summary) and `_build_context` (root compression). Added empty-history guard to `truncate_messages_safely`. New regression test [testing/test_context_fidelity.py](testing/test_context_fidelity.py) stores messages in the real production shape.
+- **T-143 updated:** original self-reported fix ("bump keep_recent") was wrong; corrected with verified root cause.
+- **Filed open:** T-149 (normie real history) · T-150 (compression fidelity) · T-151 (prefetch recall) · T-152 (coherence harness) · T-153 (doc drift) · T-154 (self-report confidence gate) · T-155 (VCS hygiene) · T-156 (phase freeze).
+
+**Next step (sequenced under T-156 freeze)**
+1. **T-152** — build the fake-client multi-turn coherence harness (protects every coherence fix from regressing).
+2. **T-149** — give normie a real truncated message array instead of the single-message + 300-char window.
+3. Then T-151 (prefetch → semantic) and T-150 (compression budget). Re-measure coherence before resuming roadmap.
 
 ## At-a-glance state
 
