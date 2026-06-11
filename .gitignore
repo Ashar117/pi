@@ -1,9 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Pi .gitignore — PRIVATE repo model (T-155).
-# This repo is PRIVATE; the implementation IS tracked here so the code finally
-# has version history. Only true secrets, machine-local data, and the god-mode
-# private layer are excluded — never commit those, even to a private remote.
-# (Set via GitHub API 2026-05-29; see T-158.)
+# Pi .gitignore — PUBLIC repo model.
+# Code is open; the identity prompts, architecture rationale, and private layers
+# stay off the remote. Never commit the items below, even to a private remote.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # API keys & credentials — NEVER track
@@ -13,6 +11,13 @@
 app/config.py
 .mcp.json
 pi_dna.txt
+
+# Identity prompts — the recipe; never expose publicly
+prompts/
+
+# Architecture internals — design rationale, honest audit
+docs/adr/
+docs/PROJECT_MAP.md
 
 # God-mode private layer — strongest boundary, never track
 prompts/god_consciousness.txt
