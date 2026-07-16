@@ -164,11 +164,17 @@ def test_l2_write_not_blocked_by_source():
 # ── Test 7: consciousness.txt has INFERRED VS STATED section ─────────────────
 
 def test_consciousness_has_inferred_vs_stated_section():
-    """consciousness.txt must contain the INFERRED VS STATED FACTS guardrail."""
+    """consciousness.txt must contain the INFERRED VS STATED FACTS guardrail.
+
+    consciousness.txt is private/gitignored (the identity "recipe") — skip on a
+    public/CI checkout where only consciousness.default.txt is tracked.
+    """
     path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "prompts", "consciousness.txt"
     )
+    if not os.path.exists(path):
+        pytest.skip("prompts/consciousness.txt is private/gitignored — not present in this checkout")
     content = open(path, encoding="utf-8").read()
     assert "INFERRED VS STATED" in content, (
         "prompts/consciousness.txt is missing the 'INFERRED VS STATED FACTS' section. "

@@ -13,19 +13,31 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pathlib import Path
 
+import pytest
+
 _ROOT = Path(__file__).parent.parent
 
 
 # ── Prompt contract presence ──────────────────────────────────────────────────
+# prompts/consciousness*.txt are the private identity prompts (gitignored — the
+# "recipe"). These tests enforce content rules where the real files exist
+# (Ash's machine); they skip on a public/CI checkout where only
+# consciousness.default.txt is tracked.
 
 def test_consciousness_txt_has_output_contract():
-    text = (_ROOT / "prompts" / "consciousness.txt").read_text(encoding="utf-8")
+    path = _ROOT / "prompts" / "consciousness.txt"
+    if not path.exists():
+        pytest.skip("prompts/consciousness.txt is private/gitignored — not present in this checkout")
+    text = path.read_text(encoding="utf-8")
     assert "OUTPUT CONTRACT" in text or "Sources" in text, \
         "consciousness.txt missing OUTPUT CONTRACT section"
 
 
 def test_consciousness_normie_has_output_contract():
-    text = (_ROOT / "prompts" / "consciousness_normie.txt").read_text(encoding="utf-8")
+    path = _ROOT / "prompts" / "consciousness_normie.txt"
+    if not path.exists():
+        pytest.skip("prompts/consciousness_normie.txt is private/gitignored — not present in this checkout")
+    text = path.read_text(encoding="utf-8")
     assert "Output contract" in text or "OUTPUT CONTRACT" in text or "Sources" in text, \
         "consciousness_normie.txt missing output contract"
 
