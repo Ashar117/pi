@@ -38,7 +38,6 @@ def test_continuation_line_renders_when_data_present(tmp_path):
     fake_ticket.write_text("{}")
 
     with patch("agent.startup_banner._PUBLIC_DB", tmp_path / "pi.db"), \
-         patch("agent.startup_banner._GOD_DB", tmp_path / "god_memory.db"), \
          patch("agent.startup_banner._CLOSED_TICKETS", tmp_path), \
          patch("agent.startup_banner.sqlite3.connect", return_value=db_mock), \
          patch.object(Path, "exists", return_value=True):
@@ -98,31 +97,6 @@ def test_db_error_returns_empty_no_crash(tmp_path):
         line = _format_continuation_line("root")
 
     assert line == ""
-
-
-def test_god_mode_reads_from_god_db(tmp_path):
-    """god mode must query _GOD_DB, not _PUBLIC_DB."""
-    god_db = tmp_path / "god_memory.db"
-    public_db = tmp_path / "pi.db"
-    public_db.write_bytes(b"")  # exists
-
-    row = ("god session note", "2026-05-24T09:00:00+00:00")
-    db_mock = _mock_db(row)
-
-    calls = []
-    def recording_connect(path, **kw):
-        calls.append(path)
-        return db_mock
-
-    with patch("agent.startup_banner._PUBLIC_DB", public_db), \
-         patch("agent.startup_banner._GOD_DB", god_db), \
-         patch("agent.startup_banner._CLOSED_TICKETS", tmp_path), \
-         patch("agent.startup_banner.sqlite3.connect", side_effect=recording_connect), \
-         patch.object(Path, "exists", return_value=True):
-        _format_continuation_line("god")
-
-    assert any(str(god_db) in str(c) for c in calls), \
-        f"god_db not queried; calls were: {calls}"
 
 
 def test_continuation_absent_when_db_missing(tmp_path):

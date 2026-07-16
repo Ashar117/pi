@@ -1,0 +1,21 @@
+{
+  "id": "T-193",
+  "source": "Claude gap analysis 2026-06-11 (Track D \u2014 identity accretes from lived history)",
+  "title": "Identity-from-memory: distill SOLUTIONS lessons + L2 self-facts into a compact self-model block",
+  "component": "memory/pipeline.py, agent/prompt.py (warm segment), scripts/retro.py",
+  "current_state": "Pi's 101 solutions and months of L2 facts contain its actual lived identity \u2014 recurring bug classes it has learned (write/read divergence), preferences Ash has expressed, what it is good and bad at. None of that reaches the prompt; identity is whatever consciousness.txt asserted months ago.",
+  "target_state": "A weekly distillation (hook into retro.py's Friday cadence) produces vault/memory/L3/self_model.md (~30 lines): top recurring root-cause classes, confirmed strengths/weaknesses with ticket evidence, active commitments. It is promoted into the WARM prompt segment (~200 token cap) like other L3 ambient context. Pi introduces changes to itself with evidence ('write/read divergence is my recurring bug class \u2014 12 solutions') instead of static prose.",
+  "severity": "P2",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-06-11T15:00:00+00:00",
+  "migration_plan": [
+    "1. retro.py gains build_self_model(): Groq tier='cheap' over SOLUTIONS.jsonl root_causes + L2 category='self' facts \u2192 structured 30-line md.",
+    "2. Write as a pinned L3 entry (category='self_model', high importance, refreshed not appended \u2014 dedup by category).",
+    "3. Token cap enforced at write time; get_l3_context already budget-aware.",
+    "4. Tests: distillation output respects cap; refresh replaces not duplicates; degraded path (no Groq) keeps last version."
+  ],
+  "risk_notes": "Free-tier Groq cost only. The dedup-not-append detail is the L3 duplicate class \u2014 test it.",
+  "closed": "2026-06-12T19:15:27.694167+00:00",
+  "linked_solution": "S-125"
+}

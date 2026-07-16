@@ -124,8 +124,63 @@ class TestRegenerate:
                        "## §6 Architecture",
                        "## §10 File-touch policy",
                        "## §11 Session protocol",
-                       "## §12 Phases beyond 6"):
+                       "## §12 Roadmap"):  # renamed from "Phases beyond 6" in the 2026-07-07 doc rewrite
             assert marker in regen, f"hand-curated section lost: {marker}"
+
+
+class TestRefreshAboutMd:
+    def test_updates_auto_tagged_counts(self, tmp_path):
+        about = tmp_path / "ABOUT.md"
+        about.write_text(
+            "<!-- AUTO:closed_tickets -->5<!-- /AUTO:closed_tickets --> tickets, "
+            "<!-- AUTO:solutions -->3<!-- /AUTO:solutions --> solutions\n"
+            "10 tickets closed. 8 solutions on record.\n",
+            encoding="utf-8",
+        )
+        closed_dir = tmp_path / "tickets" / "closed"
+        closed_dir.mkdir(parents=True)
+        for i in range(12):
+            (closed_dir / f"T-{i:03d}.json").write_text("{}", encoding="utf-8")
+        sols_file = tmp_path / "solutions" / "SOLUTIONS.jsonl"
+        sols_file.parent.mkdir(parents=True)
+        sols_file.write_text("\n".join(["{}" for _ in range(9)]) + "\n", encoding="utf-8")
+
+        with patch.object(refresh_pi, "ABOUT_MD", about), \
+             patch.object(refresh_pi, "TICKETS_CLOSED", closed_dir), \
+             patch.object(refresh_pi, "SOLUTIONS", sols_file):
+            changed = refresh_pi._refresh_about_md()
+
+        text = about.read_text(encoding="utf-8")
+        assert "<!-- AUTO:closed_tickets -->12<!-- /AUTO:closed_tickets -->" in text
+        assert "<!-- AUTO:solutions -->9<!-- /AUTO:solutions -->" in text
+        assert "12 tickets closed. 9 solutions on record." in text
+        assert changed is True
+
+    def test_idempotent(self, tmp_path):
+        about = tmp_path / "ABOUT.md"
+        about.write_text(
+            "<!-- AUTO:closed_tickets -->3<!-- /AUTO:closed_tickets --> "
+            "<!-- AUTO:solutions -->2<!-- /AUTO:solutions -->\n"
+            "3 tickets closed. 2 solutions on record.\n",
+            encoding="utf-8",
+        )
+        closed_dir = tmp_path / "tickets" / "closed"
+        closed_dir.mkdir(parents=True)
+        for i in range(3):
+            (closed_dir / f"T-{i}.json").write_text("{}", encoding="utf-8")
+        sols_file = tmp_path / "solutions" / "SOLUTIONS.jsonl"
+        sols_file.parent.mkdir(parents=True)
+        sols_file.write_text("{}\n{}\n", encoding="utf-8")
+
+        with patch.object(refresh_pi, "ABOUT_MD", about), \
+             patch.object(refresh_pi, "TICKETS_CLOSED", closed_dir), \
+             patch.object(refresh_pi, "SOLUTIONS", sols_file):
+            refresh_pi._refresh_about_md()
+            before = about.read_text(encoding="utf-8")
+            changed2 = refresh_pi._refresh_about_md()
+
+        assert changed2 is False
+        assert about.read_text(encoding="utf-8") == before
 
 
 class TestCLI:

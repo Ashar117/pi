@@ -1,0 +1,25 @@
+{
+  "id": "T-266",
+  "title": "Memory hygiene: act on the memory-pollution passive WARN (L2 backfill / dedup as confirmed)",
+  "component": "memory/audit.py, memory/semantic_dedup.py, tools/tools_memory.py",
+  "severity": "P3",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "current_state": "The passive daily digest's memory-pollution skill reports WARN (exact findings unreviewed - T-253 triages the report). Suspects per the audit: stale or contradictory L2 facts, L3 entries that should have been distilled or expired, possible L2 backfill gaps from sessions where the Groq session-end distiller failed silently. The tooling to act already exists and must be reused: memory/audit.py + memory/audit_rules.py (contradiction/conflict detection), memory/semantic_dedup.py (word-overlap dedup on L3 write), memory/salience.py (importance scoring).",
+  "target_state": "Every finding in the memory-pollution report is resolved: polluted entries corrected or expired through the existing memory tools (never raw SQL against pi.db), confirmed L2 gaps backfilled via the existing distillation path, and the memory-pollution passive returns PASS. Scope is bounded by what T-253's triage confirms is real - no speculative memory refactoring.",
+  "depends_on": [
+    "T-253"
+  ],
+  "status": "closed",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. Read the memory-pollution report in reports/ (as triaged by T-253); enumerate concrete findings.",
+    "2. For each polluted/contradictory entry: resolve via memory_write/memory_delete or the audit tooling - keep Supabase and SQLite in agreement (the recurring write/read-divergence bug class, see solutions S-xxx for T-148/T-149/T-151, lives exactly here).",
+    "3. If L2 backfill gaps are confirmed: re-run the L1->L2 distillation (memory/pipeline.py) for the affected sessions on Groq (free tier per cost policy).",
+    "4. Rerun the memory-pollution passive - expect PASS.",
+    "5. python scripts/verify.py PASS; the memory roundtrip contract tests must stay green."
+  ],
+  "risk_notes": "The write/read-divergence bug class is Pi's most recurrent (3+ solutions on record) - any fix here must go through the existing memory tool paths, never direct db edits, and must keep testing/test_memory_context_columns.py and the roundtrip contract tests green.",
+  "resolution": "implemented",
+  "solution_id": "S-203",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

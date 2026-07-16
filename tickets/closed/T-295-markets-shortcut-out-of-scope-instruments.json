@@ -1,0 +1,23 @@
+{
+  "id": "T-295",
+  "title": "Awareness markets shortcut hijacks out-of-scope instrument queries (wheat/soybean/futures → canned BTC/ETH line)",
+  "component": "agent/awareness_shortcut.py",
+  "severity": "P2",
+  "source": "Ash live normie session 2026-07-12 ('this has been a nightmare')",
+  "root_cause_confidence": "verified",
+  "current_state": "In normie mode (cfg.awareness_shortcut=True), try_answer_from_awareness routes any message containing a _MARKET_SIGNALS word to _extract_markets, which returned the snapshot's 'Markets:' line UNCONDITIONALLY. 'for futures trading and shyt, whats up with wheat and soybean' contains 'trading' (a market signal) -> _detect_topic returns 'markets' -> the user got the canned 'Markets: BTC-USD ... | ETH-USD ...' line instead of an actual wheat/soybean answer. The snapshot only carries crypto/index/stock tickers; it has no commodities, forex, or bonds. The news path already guards this exact class (T-160: business/finance and specific-entity queries return None so the LLM+tools handle them); markets never got the guard.",
+  "target_state": "_extract_markets declines (returns None) when the user names a specific instrument the snapshot does not carry (commodities, forex, bonds, futures), so those defer to the LLM+tools. Generic market questions ('how's the market') and instruments actually present in the snapshot line still fire. Mirrors the T-160 news specificity guard.",
+  "status": "closed",
+  "created": "2026-07-12T00:00:00+00:00",
+  "resolution": "Added _SPECIFIC_INSTRUMENT_WORDS frozenset (commodities/forex/bonds/futures) and a scope guard in _extract_markets: tokenize the user message and the snapshot Markets line; if the user names a specific-instrument word that is not a subset of the snapshot's tokens, return None. _extract_markets now takes user_lower (call site at line ~105 updated). 2 regression tests in test_awareness_shortcut.py: the exact wheat/soybean/futures/forex/bond cases fall through, generic + in-snapshot queries still fire.",
+  "solution_id": "S-219",
+  "closed": "2026-07-12T00:00:00+00:00",
+  "migration_plan": [
+    "1. Add _SPECIFIC_INSTRUMENT_WORDS near _MARKET_SIGNALS.",
+    "2. Guard in _extract_markets: named = message tokens & _SPECIFIC_INSTRUMENT_WORDS; if named and not named.issubset(snapshot Markets-line tokens) -> None.",
+    "3. Thread user_lower through the _extract_markets call site.",
+    "4. Regression tests: commodity/forex/bond/futures queries -> None; generic + in-snapshot -> fire.",
+    "5. python scripts/verify.py PASS."
+  ],
+  "risk_notes": "Known adjacent gap left unfixed on purpose (out of scope): 'eth' is not in _MARKET_SIGNALS, so 'what's eth at' never reaches topic=markets even though the snapshot carries ETH-USD. Separate one-line fix if wanted. Also observed but separate: the snapshot's Markets line was crypto-only in Ash's session (no S&P/Nasdaq/Dow), so even a generic 'how's the market' fires with crypto-only data — that is an awareness-snapshot data-completeness issue in the snapshot builder, not this shortcut."
+}

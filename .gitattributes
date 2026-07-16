@@ -1,0 +1,26 @@
+# T-199: normalize line endings; enforce LF for text formats.
+* text=auto
+
+*.py    text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.txt   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.sh    text eol=lf
+*.cfg   text eol=lf
+*.ini   text eol=lf
+*.toml  text eol=lf
+
+# Binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.mp3   binary
+*.mp4   binary
+*.wav   binary
+*.db    binary
+*.sqlite binary

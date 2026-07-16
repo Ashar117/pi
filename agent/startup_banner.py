@@ -23,7 +23,6 @@ _STATUS_PATH = _ROOT / "docs" / "STATUS.md"
 _OPEN_TICKETS = _ROOT / "tickets" / "open"
 _CLOSED_TICKETS = _ROOT / "tickets" / "closed"
 _PUBLIC_DB = _ROOT / "data" / "pi.db"
-_GOD_DB = _ROOT / "data" / "god_memory.db"
 
 
 def _read_verify_status() -> str:
@@ -57,7 +56,7 @@ def _format_continuation_line(mode: str) -> str:
     Format: 'Last session 2026-05-24 14:32 · "summary text..." · last touched T-099'
     """
     try:
-        db_path = _GOD_DB if mode == "god" else _PUBLIC_DB
+        db_path = _PUBLIC_DB
         if not db_path.exists():
             return ""
 

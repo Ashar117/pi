@@ -10,6 +10,7 @@ Watcher types
   url       — alert when a URL's content changes or matches a keyword
   keyword   — alert when a file contains a new occurrence of a keyword
   price     — alert when a stock/crypto ticker crosses a threshold (uses yfinance)
+  email     — alert on unread Gmail from the last day not seen in a prior sweep (T-257)
 
 Storage: data/watchers.db  (SQLite — gitignored runtime data)
 
@@ -55,6 +56,10 @@ def _db(path: Path = _DB_PATH) -> Generator[sqlite3.Connection, None, None]:
         conn.close()
 
 
+_ANALYZE_RATE_LIMIT = 6   # max analyzed watcher events per hour
+_WATCHER_CONV_ID = "watchers"  # dedicated conversation — never bleeds into Ash's active chat
+
+
 def _init_db(path: Path = _DB_PATH) -> None:
     with _db(path) as conn:
         conn.executescript("""
@@ -69,7 +74,9 @@ def _init_db(path: Path = _DB_PATH) -> None:
                 last_fire   TEXT,
                 next_check  TEXT,
                 fire_count  INTEGER DEFAULT 0,
-                created_at  TEXT NOT NULL
+                created_at  TEXT NOT NULL,
+                analyze     INTEGER NOT NULL DEFAULT 0,
+                state       TEXT NOT NULL DEFAULT '{}'
             );
             CREATE TABLE IF NOT EXISTS watcher_events (
                 id          TEXT PRIMARY KEY,
@@ -79,6 +86,13 @@ def _init_db(path: Path = _DB_PATH) -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_we_wid ON watcher_events(watcher_id);
         """)
+        # T-206: idempotent migration for existing DBs missing the analyze column
+        existing = {r[1] for r in conn.execute("PRAGMA table_info(watchers)").fetchall()}
+        if "analyze" not in existing:
+            conn.execute("ALTER TABLE watchers ADD COLUMN analyze INTEGER NOT NULL DEFAULT 0")
+        # T-289: idempotent migration for existing DBs missing the state column
+        if "state" not in existing:
+            conn.execute("ALTER TABLE watchers ADD COLUMN state TEXT NOT NULL DEFAULT '{}'")
 
 
 # ── Watcher evaluators ─────────────────────────────────────────────────────────
@@ -200,6 +214,46 @@ def _check_keyword(config: Dict, state: Dict) -> tuple[bool, str, Dict]:
     return False, "", new_state
 
 
+_EMAIL_QUERY = "is:unread newer_than:1d"
+
+
+def _check_email(config: Dict, state: Dict) -> tuple[bool, str, Dict]:
+    """T-257: alert on unread mail from the last day not seen in a prior sweep.
+
+    Fires once per message id, keyed off in-memory state like every other
+    watcher type in this module (no persistence beyond a restart — matches
+    the existing file/url/keyword watchers' limitation, not a new one).
+    """
+    try:
+        from tools.tools_gmail import GmailTools
+    except ImportError:
+        return False, "Gmail tools not installed", state
+
+    gmail = GmailTools()
+    if not gmail.is_configured():
+        return False, "Gmail not configured (data/gmail_credentials.json missing)", state
+
+    result = gmail.gmail_search(query=_EMAIL_QUERY, max_results=10)
+    if not result.get("success"):
+        return False, f"Gmail search error: {result.get('error', 'unknown')}", state
+
+    seen_ids = set(state.get("seen_ids", []))
+    messages = result.get("messages", [])
+    new_messages = [m for m in messages if m["id"] not in seen_ids]
+
+    new_state = {"seen_ids": list(seen_ids | {m["id"] for m in messages})[-200:]}
+
+    if not new_messages:
+        return False, "", new_state
+
+    m = new_messages[0]
+    detail = f"New mail from {m.get('from_short', 'unknown')}: {m.get('subject', '(no subject)')}"
+    if len(new_messages) > 1:
+        detail += f" (+{len(new_messages) - 1} more)"
+    new_state["last_fired_ids"] = [m["id"] for m in new_messages]
+    return True, detail, new_state
+
+
 def _check_price(config: Dict, state: Dict) -> tuple[bool, str, Dict]:
     """Alert when a ticker crosses a threshold."""
     try:
@@ -225,7 +279,13 @@ def _check_price(config: Dict, state: Dict) -> tuple[bool, str, Dict]:
         triggered = True
         detail = f"{ticker} @ ${price:.2f} (below ${below})"
 
-    return triggered, detail, state
+    # T-277: edge-trigger — alert on the crossing, not on every 60s sweep the
+    # price stays past the threshold (mirrors _check_url's keyword_found).
+    prev = state.get("was_triggered", False)
+    new_state = {**state, "was_triggered": triggered}
+    if triggered and prev:
+        return False, "", new_state
+    return triggered, detail, new_state
 
 
 _EVALUATORS = {
@@ -234,6 +294,7 @@ _EVALUATORS = {
     "url":      _check_url,
     "keyword":  _check_keyword,
     "price":    _check_price,
+    "email":    _check_email,
 }
 
 
@@ -246,9 +307,14 @@ class WatcherManager:
         self,
         db_path: Path = _DB_PATH,
         telegram_send_fn=None,
+        telegram_buttons_fn=None,
+        agent=None,
     ) -> None:
         self._path = db_path
         self._telegram = telegram_send_fn
+        self._telegram_buttons = telegram_buttons_fn  # T-258: (text, [(label, callback_data)]) -> dict
+        self._agent = agent  # T-206: optional PiAgent for analyzed events
+        self._analyze_timestamps: list = []  # rate-limit rolling window
         self._state: Dict[str, Dict] = {}  # watcher_id → per-type state dict
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -292,7 +358,14 @@ class WatcherManager:
             wtype = row["type"]
             config = json.loads(row["config"] or "{}")
             alert_msg = row["alert_msg"] or ""
-            state = self._state.get(wid, {})
+            # T-289: seed from the persisted column on first encounter after a
+            # restart, so watchers don't re-fire against a blank baseline.
+            if wid not in self._state:
+                try:
+                    self._state[wid] = json.loads(row["state"] or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    self._state[wid] = {}
+            state = self._state[wid]
 
             evaluator = _EVALUATORS.get(wtype)
             if not evaluator:
@@ -309,11 +382,17 @@ class WatcherManager:
 
             with _db(self._path) as conn:
                 conn.execute(
-                    "UPDATE watchers SET last_check=? WHERE id=?", [ts, wid]
+                    "UPDATE watchers SET last_check=?, state=? WHERE id=?",
+                    [ts, json.dumps(new_state), wid],
                 )
 
             if triggered:
-                self._fire(wid, row["name"], alert_msg or detail, detail)
+                analyze = bool(row["analyze"]) if "analyze" in row.keys() else False
+                email_message_id = None
+                if wtype == "email" and new_state.get("last_fired_ids"):
+                    email_message_id = new_state["last_fired_ids"][0]
+                self._fire(wid, row["name"], alert_msg or detail, detail, analyze=analyze,
+                           wtype=wtype, email_message_id=email_message_id)
                 with _db(self._path) as conn:
                     conn.execute(
                         "UPDATE watchers SET last_fire=?, fire_count=fire_count+1 WHERE id=?",
@@ -331,16 +410,64 @@ class WatcherManager:
                         [wid, wid, _MAX_EVENTS_PER_WATCHER],
                     )
 
-    def _fire(self, wid: str, name: str, alert_msg: str, detail: str) -> None:
-        msg = f"[Pi Watcher] *{name}*\n{alert_msg}"
-        if detail and detail != alert_msg:
-            msg += f"\n_{detail}_"
+    def _fire(self, wid: str, name: str, alert_msg: str, detail: str, *, analyze: bool = False,
+              wtype: str = "", email_message_id: Optional[str] = None) -> None:
         print(f"[Watchers] FIRED: {name} — {detail}")
+
+        if analyze and self._agent is not None and self._within_rate_limit():
+            msg = self._analyzed_fire(name, alert_msg, detail)
+        else:
+            msg = f"[Pi Watcher] *{name}*\n{alert_msg}"
+            if detail and detail != alert_msg:
+                msg += f"\n_{detail}_"
+
+        # T-258: email watcher alerts get triage buttons instead of plain text.
+        if wtype == "email" and email_message_id and self._telegram_buttons:
+            try:
+                self._telegram_buttons(msg, [
+                    ("Draft reply", f"emailtriage:reply:{email_message_id}"),
+                    ("Add to calendar", f"emailtriage:cal:{email_message_id}"),
+                    ("Ignore", f"emailtriage:ignore:{email_message_id}"),
+                ])
+                return
+            except Exception as e:
+                print(f"[Watchers] Telegram buttons send failed: {e}")
+                # fall through to plain send below
+
         if self._telegram:
             try:
                 self._telegram(msg)
             except Exception as e:
                 print(f"[Watchers] Telegram send failed: {e}")
+
+    def _within_rate_limit(self) -> bool:
+        """True if fewer than _ANALYZE_RATE_LIMIT analyzed events in the last hour."""
+        now = time.time()
+        cutoff = now - 3600
+        self._analyze_timestamps = [t for t in self._analyze_timestamps if t > cutoff]
+        if len(self._analyze_timestamps) >= _ANALYZE_RATE_LIMIT:
+            return False
+        self._analyze_timestamps.append(now)
+        return True
+
+    def _analyzed_fire(self, name: str, alert_msg: str, detail: str) -> str:
+        """T-206: run the watcher event through the agent in the dedicated watchers conversation."""
+        try:
+            from agent.conversation import conversation_switch
+            prompt = (
+                f"[Watcher '{name}' fired]\n{alert_msg}\n\nDetail: {detail}\n\n"
+                "Briefly explain why this matters and what (if anything) should be done. "
+                "Keep it under 3 sentences."
+            )
+            with conversation_switch(self._agent, _WATCHER_CONV_ID):
+                analysis = self._agent.process_input(prompt) or ""
+            return f"[Pi Watcher] *{name}*\n{analysis or detail}"
+        except Exception as e:
+            print(f"[Watchers] analysis failed, falling back to raw: {e}")
+            msg = f"[Pi Watcher] *{name}*\n{alert_msg}"
+            if detail and detail != alert_msg:
+                msg += f"\n_{detail}_"
+            return msg
 
     # ── Public API ─────────────────────────────────────────────────────────
 
@@ -350,14 +477,17 @@ class WatcherManager:
         type: str,
         config: Dict,
         alert_msg: str = "",
+        analyze: bool = False,
     ) -> Dict:
         """Register a new watcher.
 
         Args:
             name:      Unique display name (e.g. 'pi-log-errors')
-            type:      'file' | 'schedule' | 'url' | 'keyword' | 'price'
+            type:      'file' | 'schedule' | 'url' | 'keyword' | 'price' | 'email'
             config:    Type-specific config dict (see module docstring)
             alert_msg: Custom Telegram message on trigger (optional)
+            analyze:   T-206 — if True, route event through agent for analysis
+                       before sending to Telegram (rate-limited, normie tier).
 
         Config examples:
             file:     {"path": "/path/to/file", "event": "modified"}
@@ -365,6 +495,7 @@ class WatcherManager:
             url:      {"url": "https://...", "keyword": "error", "check_change": false}
             keyword:  {"path": "/path/to/log", "pattern": "ERROR|CRITICAL"}
             price:    {"ticker": "NVDA", "above": 200, "below": null}
+            email:    {} (no config — fixed query "is:unread newer_than:1d")
 
         Returns:
             {"id": str, "name": str, "success": bool}
@@ -376,9 +507,9 @@ class WatcherManager:
         try:
             with _db(self._path) as conn:
                 conn.execute(
-                    "INSERT INTO watchers (id,name,type,config,alert_msg,status,created_at) "
-                    "VALUES (?,?,?,?,?,'active',?)",
-                    [wid, name, type, json.dumps(config), alert_msg, now],
+                    "INSERT INTO watchers (id,name,type,config,alert_msg,status,created_at,analyze) "
+                    "VALUES (?,?,?,?,?,'active',?,?)",
+                    [wid, name, type, json.dumps(config), alert_msg, now, int(analyze)],
                 )
             return {"id": wid, "name": name, "type": type, "success": True}
         except sqlite3.IntegrityError:
@@ -455,6 +586,7 @@ def _handle_watcher_add(agent, tool_input, *, memory_override=None):
         type=tool_input["type"],
         config=tool_input.get("config", {}),
         alert_msg=tool_input.get("alert_msg", ""),
+        analyze=bool(tool_input.get("analyze", False)),  # T-277: was silently dropped
     )
 
 
@@ -513,7 +645,7 @@ TOOLS = [
             "action='remove': delete watcher by name. "
             "action='list': list all watchers. "
             "action='status': show system stats and recent events. "
-            "Types: file, schedule, url, keyword, price."
+            "Types: file, schedule, url, keyword, price, email."
         ),
         input_schema={
             "type": "object",
@@ -523,17 +655,23 @@ TOOLS = [
                               "description": "Operation to perform"},
                 "name":      {"type": "string", "description": "Unique display name (add/remove)"},
                 "type":      {"type": "string",
-                              "enum": ["file", "schedule", "url", "keyword", "price"],
+                              "enum": ["file", "schedule", "url", "keyword", "price", "email"],
                               "description": "Watcher type (add only)"},
                 "config":    {"type": "object",
                               "description": "Type-specific config (add only)"},
                 "alert_msg": {"type": "string",
                               "description": "Custom Telegram message (add, optional)"},
+                "analyze":   {"type": "boolean",
+                              "description": "Route fired events through Pi for a short "
+                                             "analysis before alerting (add, optional; "
+                                             "rate-limited to 6/hour)"},
             },
             "required": ["action"],
         },
         handler=_handle_watcher,
-        success_predicate=lambda r: r.get("success", False),
+        # T-277: list/status results carry no "success" key — treat their shapes
+        # as success instead of logging every read call as a failed tool use.
+        success_predicate=lambda r: bool(r.get("success", "watchers" in r or "total_watchers" in r)),
         aliases=("watcher_add", "watcher_list", "watcher_remove", "watcher_status"),
     ),
 ]

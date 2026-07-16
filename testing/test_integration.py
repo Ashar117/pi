@@ -138,7 +138,7 @@ def test_integration_pi_agent_imports():
     import ast
     for f in required_files:
         full_path = os.path.join(pi_agent_path, f)
-        with open(full_path, 'r') as fh:
+        with open(full_path, 'r', encoding='utf-8') as fh:
             source = fh.read()
         try:
             ast.parse(source)

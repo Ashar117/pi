@@ -1,0 +1,73 @@
+================================================================================
+PI AGENT - AUTO-GENERATED FAILURE TICKETS
+================================================================================
+Generated: 2026-07-03T22:34:16.972573+00:00
+Total Failures: 3
+================================================================================
+
+TICKET #001
+--------------------------------------------------------------------------------
+Test: Memory Read After Write
+Related Ticket: #1
+Status: OPEN
+Priority: P0 - CRITICAL
+
+FAILURE REASON:
+Read returned empty list
+
+FULL TRACEBACK:
+Traceback (most recent call last):
+  File "E:\pi\testing\test_runner.py", line 37, in run_test
+    result = test_func()
+  File "E:\pi\testing\test_memory.py", line 67, in test_001_memory_read_after_write
+    assert len(read_result) > 0, f"Read returned empty list"
+           ^^^^^^^^^^^^^^^^^^^^
+AssertionError: Read returned empty list
+
+
+================================================================================
+
+TICKET #002
+--------------------------------------------------------------------------------
+Test: Bulk Memory Read (empty query)
+Related Ticket: #1
+Status: OPEN
+Priority: P0 - CRITICAL
+
+FAILURE REASON:
+Bulk test query returned no results
+
+FULL TRACEBACK:
+Traceback (most recent call last):
+  File "E:\pi\testing\test_runner.py", line 37, in run_test
+    result = test_func()
+  File "E:\pi\testing\test_memory.py", line 106, in test_001_memory_bulk_read
+    assert len(read_result) > 0, "Bulk test query returned no results"
+           ^^^^^^^^^^^^^^^^^^^^
+AssertionError: Bulk test query returned no results
+
+
+================================================================================
+
+TICKET #003
+--------------------------------------------------------------------------------
+Test: Single Fact Recall
+Related Ticket: #1
+Status: OPEN
+Priority: P0 - CRITICAL
+
+FAILURE REASON:
+Single fact query returned no results
+
+FULL TRACEBACK:
+Traceback (most recent call last):
+  File "E:\pi\testing\test_runner.py", line 37, in run_test
+    result = test_func()
+  File "E:\pi\testing\test_memory.py", line 138, in test_001_single_fact_recall
+    assert len(result) > 0, "Single fact query returned no results"
+           ^^^^^^^^^^^^^^^
+AssertionError: Single fact query returned no results
+
+
+================================================================================
+

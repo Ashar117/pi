@@ -1,0 +1,20 @@
+{
+  "id": "T-280",
+  "title": "Test suite sends real Telegram messages to Ash's phone (guest-approval notify path) + approval message renders literal <code> tags",
+  "component": "testing/conftest.py (new), agent/tools.py",
+  "severity": "P1",
+  "source": "Ash's phone, 2026-07-07 03:09 - '[Approval needed] alice wants to run run_script' arrived during a background verify.py run; screenshot in session",
+  "current_state": "Two bugs, one incident. (1) agent/tools.py:317-328: when a guest profile requests a gated tool, the approval path best-effort notifies Ash via tools.tools_telegram.send_message, which reads TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID straight from .env at import time. testing/ had NO conftest.py and the approval tests (test_execution_approval.py / test_guest_gates.py, 'alice' fixtures) patch get_registry but not the Telegram send - so every verify.py run fired real approval messages at Ash's phone. (2) The message body hand-writes <code>...</code> HTML, but send_message escapes its input before sending (its contract is unformatted text), so the tags render literally on the phone.",
+  "target_state": "testing/conftest.py blanks TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID before any test module imports (pytest guarantees conftest-first; app/config.py's load_dotenv() never overrides existing env vars, so the blanks win over .env in every pytest subprocess verify.py spawns). The approval message contains no hand-written HTML. Acceptance: a full verify.py run completes with zero messages arriving on Ash's phone.",
+  "depends_on": [],
+  "status": "open",
+  "created": "2026-07-07T00:00:00+00:00",
+  "root_cause_confidence": "verified",
+  "migration_plan": [
+    "1. Add testing/conftest.py setting TELEGRAM_BOT_TOKEN='' and TELEGRAM_CHAT_ID='' via os.environ at module level.",
+    "2. Strip the <code> tags from the approval notify f-string in agent/tools.py (send_message escapes input itself).",
+    "3. python scripts/verify.py must print PASS (never pipe, T-214) AND Ash confirms no Telegram message arrived during the run.",
+    "4. SOLUTIONS.jsonl; close; refresh_pi.py."
+  ],
+  "risk_notes": "The env blank makes _get_bot() return None so every real-send path degrades to {'success': False, ...} - all senders in the codebase treat that as best-effort already (try/except or ignored result). Tests that exercise Telegram behavior use fake bots or patch module functions and are unaffected. Do NOT 'fix' this by mocking send_message in the two approval tests only - any future test touching any best-effort send path would regress it; the env blank kills the class."
+}

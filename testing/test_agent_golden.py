@@ -50,7 +50,6 @@ def test_init_subsystems():
     assert isinstance(a.session_id, str) and len(a.session_id) == 8, f"session_id shape: {a.session_id!r}"
     assert a.mode == "normie", f"default mode should be 'normie', got {a.mode!r}"
     assert a.messages == [], "messages should start empty"
-    assert a.history == [], "history should start empty"
 
 
 def test_normie_mode_command():
@@ -220,7 +219,7 @@ def test_generate_session_summary_nonempty():
         print("    SKIPPED (SKIP_COSTLY set)")
         return
     a = _fresh_agent()
-    a.history = [
+    a.messages = [
         {"role": "user", "content": "what is 2 plus 2?"},
         {"role": "assistant", "content": "4"},
         {"role": "user", "content": "and 3 times 5?"},

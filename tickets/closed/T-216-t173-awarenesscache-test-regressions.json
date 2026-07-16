@@ -1,0 +1,18 @@
+{
+  "id": "T-216",
+  "source": "verify.py FAIL after T-173 AwarenessCache extraction.",
+  "title": "T-173 left two tests poking removed PiAgent._awareness_snapshot_cache attribute",
+  "what_failed": "T-173 moved the six _awareness_* attributes into AwarenessCache (agent/awareness_cache.py). test_awareness_atomic.py and test_provider_error_handling.py still set/read PiAgent._awareness_snapshot_cache directly, so they silently created a dead attribute and asserted None==''.",
+  "where_failed": "testing/test_awareness_atomic.py (white-box agent internals), testing/test_provider_error_handling.py:193,211.",
+  "why_likely": "T-173 updated the property but not the white-box tests that reached past it.",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-06-20T20:15:02.274543+00:00",
+  "closed": "2026-06-20T20:15:02.274543+00:00",
+  "linked_solution": "S-148",
+  "depends_on": [
+    "T-173"
+  ],
+  "resolution": "Rewrote test_awareness_atomic.py to exercise AwarenessCache directly; updated test_provider_error_handling.py to set/read agent._awareness_cache._cache. Both pass.",
+  "analysis": "White-box tests that poke private attrs break on refactor. Prefer testing the public surface (the property) or the extracted unit directly."
+}

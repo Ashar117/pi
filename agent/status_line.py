@@ -6,7 +6,6 @@ Never fires in Telegram or voice paths (those never call run()).
 Format:
     [root · turn 14 · session a3f2e1c · $0.038 today · 2 open · L3: 184]
 
-god mode redacts session_id → '????????'.
 ENV: PI_STATUS_LINE=on enables. Default off.
 """
 from __future__ import annotations
@@ -65,7 +64,7 @@ def format_status_line(
     l3_rows: int,
 ) -> str:
     """Pure formatter — all data collected by the caller. Easy to unit-test."""
-    sid = "????????" if mode == "god" else session_id
+    sid = session_id
     l3_str = str(l3_rows) if l3_rows >= 0 else "?"
     return (
         f"[{mode} · turn {turns_today} · session {sid} · "

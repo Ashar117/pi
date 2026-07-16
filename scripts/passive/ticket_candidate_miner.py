@@ -51,11 +51,27 @@ CANDIDATES_FILE  = "analysis/candidate_tickets.jsonl"
 MAX_LOG_TURNS    = 200   # scan last N turns.jsonl entries
 
 # Source tags for candidates
-SRC_STATUS   = "status_md"
-SRC_CHECKS   = "checkpoints"
-SRC_REPORTS  = "passive_reports"
-SRC_CODE     = "code_marker"
-SRC_LOGS     = "turn_logs"
+SRC_STATUS      = "status_md"
+SRC_CHECKS      = "checkpoints"
+SRC_REPORTS     = "passive_reports"
+SRC_CODE        = "code_marker"
+SRC_LOGS        = "turn_logs"
+SRC_CORRECTION  = "correction_signal"
+
+# T-287: user corrections/frustration are the highest-signal, least-captured
+# failure evidence — code bugs auto-ticket via the sources above, conversation
+# bugs don't unless Ash hand-pastes them into the analysis pipeline. Anchored
+# to turn-initial or direct-address forms so benign uses ("see you again
+# tomorrow") don't fire.
+_CORRECTION_PATTERNS = [
+    re.compile(r"^\s*again\b", re.IGNORECASE),
+    re.compile(r"\bi (?:already told you|told you)\b", re.IGNORECASE),
+    re.compile(r"^\s*no,\s", re.IGNORECASE),
+    re.compile(r"\bthat'?s not\b", re.IGNORECASE),
+    re.compile(r"^\s*actually,?\s+i\b", re.IGNORECASE),
+    re.compile(r"what'?s wrong with you\b", re.IGNORECASE),
+    re.compile(r"\b(?:wtf|bruh|donkey)\b", re.IGNORECASE),
+]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -172,7 +188,7 @@ def scan_passive_reports(reports_dir: Path) -> List[Dict]:
 
 def scan_code_markers(root: Path) -> List[Dict]:
     """Collect TODO/FIXME comments from Python source across private dirs."""
-    pattern = re.compile(r"#\s*(TODO|FIXME|HACK|STUB)\s*[:\-]?\s*(.+)", re.IGNORECASE)
+    pattern = re.compile(r"#\s*(TODO|FIXME|HACK|STUB)\b\s*[:\-]?\s*(.+)", re.IGNORECASE)
     scan_dirs = ["tools", "agent", "scripts", "core", "memory", "llm", "app"]
     candidates: List[Dict] = []
     seen: Set[str] = set()
@@ -233,6 +249,43 @@ def scan_turn_logs(root: Path, max_turns: int = MAX_LOG_TURNS) -> List[Dict]:
     return candidates
 
 
+def scan_correction_signals(root: Path, max_turns: int = MAX_LOG_TURNS) -> List[Dict]:
+    """T-287: flag user corrections/frustration in recent turns.jsonl."""
+    logs_path = root / "logs" / "turns.jsonl"
+    if not logs_path.exists():
+        return []
+    try:
+        turns = read_jsonl(logs_path)
+    except Exception:
+        return []
+
+    recent = turns[-max_turns:]
+    candidates: List[Dict] = []
+    seen: Set[Tuple[str, str]] = set()
+
+    for i, t in enumerate(recent):
+        user_text = str(t.get("user_input") or "")
+        if not user_text:
+            continue
+        matched = next((p for p in _CORRECTION_PATTERNS if p.search(user_text)), None)
+        if not matched:
+            continue
+        day = str(t.get("ts") or "")[:10]
+        dedup_key = (day, matched.pattern)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
+        prev_reply = str(recent[i - 1].get("response_preview") or "") if i > 0 else ""
+        candidates.append(_make_candidate(
+            SRC_CORRECTION,
+            f"Conversation correction/frustration signal: {user_text[:50]}",
+            f"Prior reply: {prev_reply[:300]}\nUser: {user_text[:300]}",
+            "P2",
+        ))
+    return candidates
+
+
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
 def run_check(
@@ -252,6 +305,7 @@ def run_check(
         (scan_passive_reports, (reports,)),
         (scan_code_markers,    (root,)),
         (scan_turn_logs,       (root,)),
+        (scan_correction_signals, (root,)),
     ]:
         try:
             all_candidates.extend(scan_fn(*args))
@@ -324,6 +378,78 @@ def run_check(
     return overall
 
 
+# T-203: auto-file draft tickets from candidates above threshold
+_DRAFTS_DIR = _DEFAULT_ROOT / "tickets" / "drafts"
+_CONF_THRESHOLD = 2  # candidate must appear in ≥2 sources to become a draft
+
+
+def _draft_from_candidate(candidate: Dict, draft_id: str) -> Dict:
+    """Convert a miner candidate into a full ticket-shaped JSON for tickets/drafts/."""
+    return {
+        "id": draft_id,
+        "source": f"auto-mined from {candidate.get('source', '?')} — promote with 'promote {draft_id}'",
+        "title": candidate.get("title", "")[:100],
+        "component": candidate.get("source", "unknown"),
+        "current_state": candidate.get("description", "")[:400],
+        "target_state": "(to be filled on promotion)",
+        "severity": candidate.get("severity", "P3"),
+        "status": "draft",
+        "created": datetime.now(timezone.utc).isoformat(),
+        "auto_mined": True,
+        "candidate_id": candidate.get("id", ""),
+    }
+
+
+def _load_draft_titles(drafts_dir: Path) -> Set[str]:
+    titles: Set[str] = set()
+    if not drafts_dir.exists():
+        return titles
+    for p in drafts_dir.glob("*.json"):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            titles.add(data.get("title", "").lower().strip())
+        except Exception:
+            pass
+    return titles
+
+
+def emit_drafts(
+    candidates: List[Dict],
+    root: Path = _DEFAULT_ROOT,
+    min_confidence: int = 1,
+) -> List[str]:
+    """Write high-confidence candidates as draft ticket JSONs into tickets/drafts/.
+
+    Deduplicates against open/, closed/, and existing drafts/.
+    Returns list of draft filenames written.
+    """
+    drafts_dir = root / "tickets" / "drafts"
+    drafts_dir.mkdir(parents=True, exist_ok=True)
+
+    existing_titles = _load_existing_titles(
+        root / "tickets" / "open",
+        root / "tickets" / "closed",
+    )
+    existing_titles |= _load_draft_titles(drafts_dir)
+
+    written: List[str] = []
+    draft_counter = sum(1 for _ in drafts_dir.glob("T-draft-*.json")) + 1
+
+    for candidate in candidates:
+        if _is_duplicate(candidate["title"], existing_titles):
+            continue
+        draft_id = f"T-draft-{draft_counter:03d}"
+        draft = _draft_from_candidate(candidate, draft_id)
+        filename = f"{draft_id}-{re.sub(r'[^a-z0-9]+', '-', draft['title'][:40].lower())}.json"
+        out_path = drafts_dir / filename
+        out_path.write_text(json.dumps(draft, indent=2), encoding="utf-8")
+        existing_titles.add(candidate["title"].lower().strip())
+        written.append(filename)
+        draft_counter += 1
+
+    return written
+
+
 def main() -> int:
     args = sys.argv[1:]
     if "--help" in args:
@@ -331,12 +457,32 @@ def main() -> int:
         return 0
     strict = "--strict" in args
     quiet  = "--quiet" in args
+    emit = "--emit-drafts" in args
     status = run_check(strict=strict)
     if not quiet:
         icon = {"PASS": "[PASS]", "WARN": "[WARN]", "FAIL": "[FAIL]",
                 "BLOCKED": "[BLOCKED]"}.get(status.value, "[?]")
         print(f"[ticket_candidate_miner] {icon} {status.value}")
         print(f"  Report: reports/{REPORT_FILE}")
+
+    if emit:
+        # Load candidates and emit drafts for non-duplicate ones
+        candidates_path = _DEFAULT_ROOT / CANDIDATES_FILE
+        candidates: List[Dict] = []
+        if candidates_path.exists():
+            for line in candidates_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line:
+                    try:
+                        candidates.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+        written = emit_drafts(candidates)
+        if written:
+            print(f"[ticket_candidate_miner] Drafted {len(written)} tickets to tickets/drafts/")
+        else:
+            print("[ticket_candidate_miner] No new drafts (all candidates are duplicates)")
+
     return status_to_exit_code(status)
 
 

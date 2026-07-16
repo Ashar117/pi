@@ -26,6 +26,7 @@ _TOOL_MODULES: tuple = (
     "tools.tools_awareness",
     "tools.tools_project",
     "tools.tools_web",
+    "tools.tools_research",     # T-227: grounded_search (Gemini Google-Search grounding)
     "tools.tools_obsidian",
     "tools.tools_image",
     "tools.tools_video_gen",
@@ -39,7 +40,8 @@ _TOOL_MODULES: tuple = (
     "tools.tools_telegram",
     "tools.tools_tts",
     "tools.tools_stt",
-    "tools.tools_scheduler",
+    # tools_scheduler exports no ToolSpecs (it is a background cron service, not a tool
+    # registry member) — excluded so the registry import is not wasted (T-170).
     "agent.watchers",  # WatcherManager TOOLS export (T-083 step 3 batch E)
 )
 
@@ -90,8 +92,8 @@ def _system_introspect(agent, memory_override=None) -> Dict:
     """Read live system state and return a structured dict.
 
     Never raises — individual failures are captured as None values so the caller
-    always gets a complete (if partial) result. `memory_override` lets god mode
-    introspect its private DB instead of `agent.memory` (T-082).
+    always gets a complete (if partial) result. `memory_override` lets a mode
+    with its own namespace introspect that DB instead of `agent.memory` (T-082).
     """
     result: Dict = {}
 
@@ -235,9 +237,9 @@ def execute_tool(agent, tool_name: str, tool_input: Dict, memory_override=None) 
     subsystems. Mechanical lift from PiAgent._execute_tool — same dispatch
     table, same success-flag logic, same evolution.track_pattern call.
 
-    T-082: `memory_override` lets per-mode callers (god) route memory tool
-    calls through a private MemoryTools instance (different DB / namespace)
-    without mutating `agent.memory`. When None, falls back to `agent.memory`.
+    T-082: `memory_override` lets a per-mode caller route memory tool calls
+    through a separate MemoryTools instance (different DB / namespace) without
+    mutating `agent.memory`. When None, falls back to `agent.memory`.
 
     T-083 R2.1: registry dispatch runs first. If the name is owned by a
     ToolSpec, dispatch via spec.handler + spec.success_predicate; the
@@ -269,6 +271,71 @@ def execute_tool(agent, tool_name: str, tool_input: Dict, memory_override=None) 
             "expected_schema": spec.input_schema,
             "success": False,
         }
+
+    # T-224: guest capability gates — enforced in dispatch, not in prompt.
+    # Fail-closed: explicitly classified fs-mutating tools are denied/queued.
+    current_profile = getattr(agent, "current_profile", None)
+    if current_profile is not None and getattr(current_profile, "is_guest", False):
+        try:
+            from agent.profile import GUEST_DENIED_TOOLS, GUEST_APPROVAL_TOOLS
+        except ImportError:
+            GUEST_DENIED_TOOLS = frozenset()
+            GUEST_APPROVAL_TOOLS = frozenset()
+        if tool_name in GUEST_DENIED_TOOLS:
+            return {
+                "error": f"Tool '{tool_name}' is not available for guests.",
+                "success": False,
+                "denied": True,
+            }
+        if tool_name in GUEST_APPROVAL_TOOLS:
+            # Queue for Ash's approval rather than executing immediately (T-225).
+            token = "unavailable"
+            try:
+                from agent.profile import get_registry
+                import secrets as _sec, json as _json
+                from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+                token = _sec.token_urlsafe(16)
+                reg = get_registry()
+                requester_chat_id = getattr(agent, "_current_chat_id", None) or ""
+                with reg._connect() as conn:
+                    conn.execute(
+                        "CREATE TABLE IF NOT EXISTS approvals "
+                        "(token TEXT PRIMARY KEY, profile_name TEXT, tool TEXT, args_json TEXT, "
+                        "status TEXT DEFAULT 'pending', created_at TEXT, expires_at TEXT, "
+                        "requester_chat_id TEXT DEFAULT '')"
+                    )
+                    now = _dt.now(_tz.utc).isoformat()
+                    expires = (_dt.now(_tz.utc) + _td(minutes=30)).isoformat()
+                    conn.execute(
+                        "INSERT INTO approvals "
+                        "(token, profile_name, tool, args_json, status, created_at, expires_at, requester_chat_id) "
+                        "VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)",
+                        [token, current_profile.name, tool_name,
+                         _json.dumps(tool_input), now, expires, requester_chat_id],
+                    )
+                    conn.commit()
+                # Best-effort: notify Ash on Telegram that approval is needed.
+                try:
+                    from tools.tools_telegram import send_message as _tg_send
+                    args_preview = _json.dumps(tool_input)[:120]
+                    # T-280: no hand-written HTML here — send_message escapes its
+                    # input itself, so literal tags render as "<code>" on the phone.
+                    _tg_send(
+                        f"[Approval needed] {current_profile.name} wants to run "
+                        f"{tool_name}\nArgs: {args_preview}\n"
+                        f"Token: {token}\n"
+                        f"Reply /approve {token} or /deny {token}"
+                    )
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            return {
+                "status": "pending_approval",
+                "message": f"'{tool_name}' requires Ash's approval. Token: {token}",
+                "token": token,
+                "success": False,
+            }
 
     try:
         result = spec.handler(agent, tool_input, memory_override=memory_override)

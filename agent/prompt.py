@@ -97,6 +97,23 @@ HARD RULES (always apply, no exceptions):
 ═══════════════════════════════════════════════════════════"""
 
 
+def build_session_state_block(cfg, conversation_id: str, turn_number: int, n_tools: int) -> str:
+    """T-194: 4-line dynamic block injected each turn so the model knows its own state.
+
+    Cheap (~40 tokens). Goes into the DYNAMIC segment only — never the cached static.
+    n_tools is post-allowlist (what _filtered_tool_defs actually returned this turn).
+    """
+    lines = [
+        "── CURRENT SESSION STATE ──────────────────────────────────────",
+        f"MODE: {cfg.name.upper()}  |  CONVERSATION: {conversation_id}  |  TURN: {turn_number}",
+        f"TOOLS AVAILABLE THIS TURN: {n_tools}",
+    ]
+    if cfg.refusal_hint:
+        lines.append(cfg.refusal_hint)
+    lines.append("────────────────────────────────────────────────────────────────")
+    return "\n".join(lines)
+
+
 def build_system_prompt_split(consciousness: str, mode: str, memory_tools) -> tuple:
     """Return (static, warm, dynamic) for Anthropic prompt caching (T-091).
 
@@ -133,7 +150,7 @@ def build_system_prompt_split(consciousness: str, mode: str, memory_tools) -> tu
 
 
 def build_system_prompt(consciousness: str, mode: str, memory_tools) -> str:
-    """Build the full system prompt as a single string (used by normie/god modes)."""
+    """Build the full system prompt as a single string (used by normie mode)."""
     static, warm, dynamic = build_system_prompt_split(consciousness, mode, memory_tools)
     parts = [static]
     if warm:

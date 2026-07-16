@@ -1,0 +1,20 @@
+{
+  "id": "T-281",
+  "title": "Personalized recommendation asks ignore Pi's stored profile - and user corrections about themselves are never persisted",
+  "component": "prompts/consciousness.txt, testing/",
+  "severity": "P1",
+  "source": "Ash's live Telegram session 2026-07-07 03:15 (screenshots in session log): asked 'scholarships at gsu that match my profile and I'm eligible for'",
+  "current_state": "Pi answered a 'match MY profile' question with a raw web-search dump: it recommended a women-only scholarship (Ash is male) and Georgia-resident-only aid (Ash is an F-1 international student). Ash replied 'AGAIN why are u showing me women shyt' - the word 'again' means this exact failure has recurred and nothing was learned. Two mechanical causes: (1) consciousness.txt has no rule that personalized asks (my/me/eligible/recommend-for-me) must first read the stored profile and apply it as hard eligibility constraints - the model does retrieve+summarize with zero cross-referencing even when profile facts sit in the L3 prompt segment; (2) when Ash corrected Pi in-chat ('And I'm an F1 studnet?'), the correction produced an apology but no memory_write - the corrected fact evaporates and the failure recurs next session. Note: T-282 covers the parallel data problem (the identity facts are largely MISSING from L3); this ticket is the behavior even when facts are present.",
+  "target_state": "A behavior block in consciousness.txt (risk-flagged file - diff-first review per PI.md section 10): (a) for any personalized recommendation ask, first consult profile facts (they are injected in the L3 prompt segment; use memory_read if thin), open the answer by naming the constraints applied (e.g. 'filtering for: male, F-1 international, CS undergrad'), and exclude or explicitly flag ineligible items; (b) whenever the user corrects a fact about themselves, call memory_write (tier l3, category permanent_profile, importance 9+, stated-not-inferred) with the corrected fact BEFORE answering. Tests: a golden-style conversation test with mocked search results containing a women-only and a residents-only item plus profile facts in the system prompt, asserting the reply excludes/flags both; a test asserting a correction message triggers a memory_write tool call with the corrected fact.",
+  "depends_on": [],
+  "status": "open",
+  "created": "2026-07-07T00:00:00+00:00",
+  "root_cause_confidence": "verified",
+  "migration_plan": [
+    "1. Tests first (testing/test_profile_aware_answers.py): drive process_input (golden-test pattern from test_conversation_golden.py) with a stubbed provider whose search tool returns 3 scholarships (one women-only, one GA-residents-only, one open); system prompt carries profile facts 'male, F-1 international student'. Assert the final reply does not recommend the first two unflagged. Second test: user message 'no, I'm an F-1 student' after a wrong answer -> assert a memory_write tool call fires with the correction before the textual reply.",
+    "2. Add the behavior block to prompts/consciousness.txt - keep it under ~15 lines, two rules, concrete trigger words; this file is risk-flagged, so present the diff to Ash before applying.",
+    "3. Run scripts/passive/consciousness_capability_sync.py (/consciousness-sync) - the block must not claim tools that don't exist.",
+    "4. python scripts/verify.py must print PASS (never pipe, T-214); SOLUTIONS.jsonl; close; refresh_pi.py."
+  ],
+  "risk_notes": "Depends on T-282 for full effect (rules can't apply facts that aren't in the prompt) but is independently testable with facts injected. consciousness.txt is risk-flagged: diff-first, never sprint-dispatched. Keep the block short - a 50-line eligibility protocol is prompt bloat that dilutes everything else. Do not add a new tool for this; memory_read/memory_write already exist."
+}

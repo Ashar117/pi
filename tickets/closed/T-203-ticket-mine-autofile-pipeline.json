@@ -1,0 +1,22 @@
+{
+  "id": "T-203",
+  "source": "Claude further-plan 2026-06-12 (Horizon 1 \u2014 autonomy)",
+  "title": "Conversation failures auto-file draft tickets: close the notice\u2192ticket loop",
+  "component": "scripts/passive/ticket_candidate_miner.py (exists), agent/turn_log.py, tickets/drafts/ (new)",
+  "current_state": "/ticket-mine already mines candidates read-only, but a human must run it and hand-write the ticket. Pi 'noticing' its own failures (pillar 2) still depends on Ash noticing first.",
+  "target_state": "A scheduled pass (piggyback the T-202 nightly) runs the miner over logs/turns.jsonl + evolution.jsonl since last run; candidates above a confidence threshold are written as FULL ticket JSONs into tickets/drafts/ (NOT open/ \u2014 drafts need Ash's promote). Telegram summary lists new drafts one line each. Promotion = Ash moves the file or says 'promote T-draft-N'.",
+  "severity": "P2",
+  "depends_on": [
+    "T-202"
+  ],
+  "status": "closed",
+  "created": "2026-06-12T10:05:00+00:00",
+  "migration_plan": [
+    "1. tickets/drafts/ directory; sprint.py and refresh_pi.py must IGNORE it (drafts are not queue).",
+    "2. Miner gains --emit-drafts: candidate \u2192 ticket JSON via router tier='cheap' (Groq writes the draft from the evidence rows).",
+    "3. Dedup against open/ + closed/ + drafts/ titles (the L2-dedup pattern) so the same failure doesn't refile nightly.",
+    "4. Tests: candidate\u2192draft shape valid, dedup suppresses refiles, drafts dir invisible to sprint list_open_tickets (extend test_sprint_isolation)."
+  ],
+  "risk_notes": "Drafts-not-open is the human-in-the-loop boundary \u2014 auto-filing into open/ would let Pi feed its own autonomous queue, which couples two autonomy systems before either is trusted. Keep the gate.",
+  "closed_at": "2026-06-13T05:01:45.517231+00:00"
+}

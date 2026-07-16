@@ -1,0 +1,19 @@
+{
+  "id": "T-175",
+  "source": "verify.py FAIL 2026-06-11 13:57 UTC (Claude fresh-eyes pass)",
+  "title": "Flaky test_provider_error_handling + unguarded awareness first-load can crash a turn",
+  "component": "pi_agent.py (awareness_snapshot property), testing/test_provider_error_handling.py",
+  "what_failed": "test_429_gives_friendly_message failed in the 13:57 verify run but passes standalone and on re-run \u2014 flaky. The fixture builds a real PiAgent and only mocks router.chat; the first awareness_snapshot access does a SYNCHRONOUS live fetch (weather/news/stocks/geo-IP) with no try/except. A transient network failure escapes the property, is caught by the generic _process_input_inner handler, and the user gets '[Pi] Error: HTTPSConnectionPool...' \u2014 which fails the friendly-indicator assert (and in production means a turn can die because a weather API hiccuped).",
+  "where_failed": "pi_agent.py awareness_snapshot property first-load branch (no exception guard, unlike the background-refresh branch which IS guarded); test fixture not hermetic (live network inside a unit test).",
+  "why_likely": "T-041 lazy awareness moved the fetch from startup into the property; the bg-refresh path got a try/except (T-067) but the first-load path never did. The test predates the lazy property and was never made hermetic.",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-06-11T14:30:00+00:00",
+  "fix_plan": [
+    "Wrap the first-load branch in try/except: on failure, cache '' (empty snapshot), set _awareness_last_refresh so the TTL bg-refresh retries later, count via _awareness_refresh_failures, track via _track_silent. A turn must NEVER fail because an awareness API is down \u2014 empty snapshot degrades gracefully (shortcut returns None, prompt just lacks the block).",
+    "Make the test fixture hermetic: pre-seed agent._awareness_snapshot_cache='' and _awareness_last_refresh=now so no live fetch happens inside the unit test.",
+    "Add a regression test: awareness.get_awareness_snapshot raising must still produce a normal (friendly) turn."
+  ],
+  "closed": "2026-06-12T09:17:59.632396+00:00",
+  "linked_solution": "S-107"
+}

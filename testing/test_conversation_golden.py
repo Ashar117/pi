@@ -92,7 +92,6 @@ def _agent_in_mode(mode, replies):
         _AGENT_CACHE[mode] = a
     a.mode = mode
     a.messages = []
-    a.history = []
     a.turn_number = 0
     a._normie_handoff_context = ""
     a.router = RecordingRouter(replies)
@@ -206,12 +205,11 @@ def test_normie_fact_survives_within_window():
 def test_newchat_resets_short_term_context():
     agent = _agent_in_mode("root", ["r1", "r2"])
     _drive(agent, ["remember the codename is BLUEHERON", "and the deadline is friday"])
-    assert len(agent.messages) > 0 and len(agent.history) > 0
+    assert len(agent.messages) > 0, "messages should accumulate before /newchat"
     old_cid = agent.conversation_id
     out = agent.process_input("/newchat")
     assert "new chat" in out.lower()
     assert agent.messages == [], "short-term messages not cleared"
-    assert agent.history == [], "history not cleared"
     assert agent.conversation_id != old_cid, "conversation_id did not rotate"
 
 
@@ -220,6 +218,25 @@ def test_newchat_natural_phrasing():
     _drive(agent, ["hello there"])
     out = agent.process_input("new chat")
     assert "new chat" in out.lower() and agent.messages == []
+
+
+# ── C1 Phase A: no in-window turn is ever silently dropped ───────────────────
+# Generalised guard for the T-148 class — instead of checking one prior reply,
+# assert that EVERY user turn and EVERY assistant reply within the context window
+# is visible on the final turn. A silent context-drop in any tier fails this.
+
+@pytest.mark.parametrize("mode", ["root", "normie"])
+def test_no_inwindow_turn_is_dropped(mode):
+    replies = [f"ack token RPLY{i}" for i in range(5)]
+    agent = _agent_in_mode(mode, replies)
+    _drive(agent, [f"user fact USR{i}" for i in range(5)])
+    saw = _what_model_saw(agent.router.calls[-1])
+    # On the 5th call the model should see user turns 0..4 and replies 0..3
+    # (reply 4 is the output of this very call). 9 messages << any window.
+    for i in range(4):
+        assert f"USR{i}" in saw, f"[{mode}] user turn USR{i} dropped from context"
+        assert f"RPLY{i}" in saw, f"[{mode}] assistant reply RPLY{i} dropped from context"
+    assert "USR4" in saw, f"[{mode}] current user turn USR4 missing from context"
 
 
 def teardown_module(module):

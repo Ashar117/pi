@@ -1,0 +1,22 @@
+{
+  "id": "T-221",
+  "batch": "profile-system",
+  "source": "Ash feature request 2026-06-21 \u00e2\u20ac\u201d multi-profile support so family members use Pi with isolated memory/history.",
+  "title": "Profiles: core registry + ModeConfig-style namespace isolation",
+  "component": "agent/profile.py (new), agent/modes.py, tools/tools_memory.py, pi_agent.py",
+  "current_state": "Pi is single-user. Namespace isolation exists ONLY for god mode via ModeConfig (memory_db/memory_namespace/vault_path/tickets_dir) resolved in pi_agent._get_memory_for_config(). MemoryTools already supports db_path + namespace, and namespace!='pi' swaps in _NoopSupabase for local-only isolation. There is no profile concept, no profile registry, and no per-profile db routing.",
+  "target_state": "A Profile abstraction generalizes the god namespace seam. A 'profiles' SQLite table (id, slug, display_name, password_hash, salt, is_guest, allowlist_json, created_at, last_login_at) registers profiles. 'slug' is the internal lowercase ID (^[a-z0-9_]{2,24}$); 'display_name' preserves the user-chosen casing (e.g. 'MasiM') and is used in Pi's greetings and responses. Each profile resolves to an isolated namespace keyed by slug: db_path=data/pi_<slug>.db, namespace=profile_<slug> (=> _NoopSupabase, local-only, full L1/L2/L3 in that DB), vault_path=vault/<display_name>/ (folder shown to the user uses their chosen name). Ash maps to the existing default ('pi') namespace + consciousness.txt. _get_memory_for_config-style resolution is reused so all memory ops route through the per-profile MemoryTools. NO new columns on existing memory tables.",
+  "severity": "P1",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-06-21T00:00:00+00:00",
+  "migration_plan": [
+    "1. New agent/profile.py: Profile dataclass + a small ProfileRegistry backed by a 'profiles' table in the DEFAULT pi.db (the registry itself is Ash-owned). Fields: id, slug (lowercase internal key), display_name (user-chosen casing, e.g. 'MasiM'), nickname (what Pi actually calls them in conversation \u00e2\u20ac\u201d defaults to display_name if not set, but Ash or the guest can override it, e.g. 'Majesty'), password_hash, salt, is_guest, allowlist_json, created_at, last_login_at.",
+    "2. Slug validation: validate_profile_slug() enforces ^[a-z0-9_]{2,24}$ and rejects reserved names {pi, god, ash, test, default}. display_name is stored as provided (mixed case allowed); slug = display_name.lower(). Pi greets guests by nickname (fallback: display_name) in all responses and memory. A guest can say 'call me X' and Pi updates nickname in-profile. Use slug everywhere for DB paths and namespace keys.",
+    "3. profile_to_memory(profile) -> MemoryTools: mirror _get_memory_for_config \u00e2\u20ac\u201d db_path=data/pi_<name>.db, namespace=profile_<name>; cache per-namespace. Reuses MemoryTools' existing _NoopSupabase path (namespace!='pi'). Confirm/ensure all 3 tiers (L1 raw, L2 organized, L3 cache) operate in SQLite-only mode for private namespaces; if L2 currently requires Supabase, add the SQLite fallback here (god mode likely shares this gap \u00e2\u20ac\u201d verify).",
+    "4. Ash profile is implicit/default: name='ash', namespace='pi', prompt=consciousness.txt, is_guest=False. Seeded once if missing.",
+    "5. Tests: testing/test_profile_core.py \u00e2\u20ac\u201d name validation accepts/rejects correctly (incl. '../', 'god', uppercase); two profiles get distinct db paths; guest namespace yields a local-only MemoryTools (no Supabase writes); a write in profile A is invisible to profile B and to pi.db."
+  ],
+  "risk_notes": "Reuse the god-mode seam; do NOT invent a parallel isolation mechanism. The one real unknown is whether L2 (organized_memory) works without Supabase \u00e2\u20ac\u201d verify against god mode and add a SQLite path if needed (note it honestly in the solution). Keep ProfileRegistry tiny and dependency-free.",
+  "closed": "2026-06-26T23:06:38.423729+00:00"
+}

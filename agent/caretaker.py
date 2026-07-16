@@ -5,9 +5,7 @@ stale; stated facts ("User born 2006-08-17") never feed forward. The caretaker
 is a continuous-process replacement for one-off hygiene scripts (T-078
 invalidation, T-080 dedup).
 
-Stage A (T-125a, this module): derived-fact recompute only.
-Stage B (T-125b, future): embedding dedup as caretaker.full()
-Stage C (T-125c, future): contradiction resolution + deep Haiku review
+Three passes: lite (derived recompute), full (+ embedding dedup), deep (+ Haiku review).
 
 Schema (lite mode):
     L3 row may carry {kind: 'derived', source_id: <orig_id>, formula: <name>,
@@ -24,6 +22,8 @@ Concurrency: data/caretaker.lock (filelock) prevents bubble + cron from racing.
 """
 from __future__ import annotations
 
+import json
+import os
 import re
 import sqlite3
 import time
@@ -161,6 +161,44 @@ def _read_source(conn: sqlite3.Connection, source_id: str) -> Optional[str]:
     return row[0] if row else None
 
 
+def _lite_inner(
+    conn: sqlite3.Connection, now_iso: str, now: datetime, dry_run: bool, stats: Dict
+) -> None:
+    """Derived-fact recompute on an already-open connection (no locking, no commit).
+    Shared by lite() and full() so both can hold a single lock across multiple stages."""
+    due = _select_due(conn, now_iso)
+    for row in due:
+        rid, _old_content, source_id, formula_name, _recompute_after = row
+        formula_fn = _FORMULAS.get(formula_name)
+        if formula_fn is None:
+            _track("unknown_formula", None, id=rid, formula=formula_name)
+            stats["errors"] += 1
+            continue
+        if not source_id:
+            _track("missing_source_id", None, id=rid)
+            stats["errors"] += 1
+            continue
+        source_content = _read_source(conn, source_id)
+        if source_content is None:
+            _track("source_missing", None, id=rid, source_id=source_id)
+            stats["errors"] += 1
+            continue
+        try:
+            new_content, next_recompute = formula_fn(source_content, now)
+        except Exception as e:
+            _track("formula_failed", e, id=rid, formula=formula_name)
+            stats["errors"] += 1
+            continue
+        if dry_run:
+            stats["skipped"] += 1
+            continue
+        conn.execute(
+            "UPDATE l3_cache SET content = ?, recompute_after = ? WHERE id = ?",
+            (new_content, next_recompute.isoformat(), rid),
+        )
+        stats["recomputed"] += 1
+
+
 def lite(db_path: Path, dry_run: bool = False, now: Optional[datetime] = None) -> Dict[str, Any]:
     """Run lite-mode caretaker against the given SQLite DB.
 
@@ -186,39 +224,7 @@ def lite(db_path: Path, dry_run: bool = False, now: Optional[datetime] = None) -
             return stats
         conn = sqlite3.connect(str(db_path))
         try:
-            due = _select_due(conn, now_iso)
-            for row in due:
-                rid, _old_content, source_id, formula_name, _recompute_after = row
-                formula_fn = _FORMULAS.get(formula_name)
-                if formula_fn is None:
-                    _track("unknown_formula", None, id=rid, formula=formula_name)
-                    stats["errors"] += 1
-                    continue
-                if not source_id:
-                    _track("missing_source_id", None, id=rid)
-                    stats["errors"] += 1
-                    continue
-                source_content = _read_source(conn, source_id)
-                if source_content is None:
-                    _track("source_missing", None, id=rid, source_id=source_id)
-                    stats["errors"] += 1
-                    continue
-                try:
-                    new_content, next_recompute = formula_fn(source_content, now)
-                except Exception as e:
-                    _track("formula_failed", e, id=rid, formula=formula_name)
-                    stats["errors"] += 1
-                    continue
-
-                if dry_run:
-                    stats["skipped"] += 1
-                    continue
-
-                conn.execute(
-                    "UPDATE l3_cache SET content = ?, recompute_after = ? WHERE id = ?",
-                    (new_content, next_recompute.isoformat(), rid),
-                )
-                stats["recomputed"] += 1
+            _lite_inner(conn, now_iso, now, dry_run, stats)
             if not dry_run:
                 conn.commit()
         finally:
@@ -347,6 +353,7 @@ def full(
     now: Optional[datetime] = None,
     max_scan: int = _DEDUP_MAX_SCAN,
     cosine_threshold: float = _DEDUP_COSINE_THRESHOLD,
+    router=None,
 ) -> Dict[str, Any]:
     """T-125b — full caretaker pass: lite() + embedding-based dedup.
 
@@ -354,27 +361,31 @@ def full(
     for each row, finds neighbours in the SAME category with cosine >=
     cosine_threshold; marks loser with superseded_by = winner_id.
 
+    T-303: when router is not None, also runs scan_semantic_contradictions
+    (LLM-adjudicated implication-level contradiction pass, capped + cosine-
+    prefiltered). router=None (default) skips it entirely — offline behavior
+    is unchanged from before T-303.
+
     Returns combined stats:
       {recomputed, skipped, errors,        ← from lite()
-       deduped, dedup_skipped, dedup_errors, applied, dry_run}
+       deduped, dedup_skipped, dedup_errors,
+       contradictions_invalidated, contradictions_found,      ← lexical scan
+       semantic_contradictions_invalidated, semantic_contradictions_considered,
+       applied, dry_run}
 
     Bounded: scans at most max_scan rows per run. Skips entries without
     a computable embedding. Never raises.
     """
     now = now or _now()
+    now_iso = now.isoformat()
     stats: Dict[str, Any] = {
         "recomputed": 0, "skipped": 0, "errors": 0,
         "deduped": 0, "dedup_skipped": 0, "dedup_errors": 0,
         "applied": False, "dry_run": dry_run,
     }
 
-    # Stage 1: run lite() first (derived recompute)
-    lite_stats = lite(db_path, dry_run=dry_run, now=now)
-    stats["recomputed"] = lite_stats["recomputed"]
-    stats["skipped"] = lite_stats["skipped"]
-    stats["errors"] = lite_stats["errors"]
-
-    # Stage 2: dedup pass
+    # Acquire ONE lock for stages 1 (lite) + 2 (dedup) together — prevents
+    # another process writing between the two passes.
     lock_ctx = None
     if _FILELOCK_OK:
         _LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -382,7 +393,7 @@ def full(
             lock_ctx = FileLock(str(_LOCK_PATH), timeout=10)
             lock_ctx.acquire()
         except _LockTimeout:
-            _track("dedup_lock_timeout", None, db_path=str(db_path))
+            _track("full_lock_timeout", None, db_path=str(db_path))
             return stats
 
     try:
@@ -390,6 +401,8 @@ def full(
             return stats
         conn = sqlite3.connect(str(db_path))
         try:
+            # Stage 1: derived-fact recompute (shares lock with Stage 2)
+            _lite_inner(conn, now_iso, now, dry_run, stats)
             # Fetch candidates: stated facts only (no derived placeholders),
             # not invalidated, not already superseded.
             cur = conn.execute(
@@ -477,10 +490,23 @@ def full(
         stats["contradictions_invalidated"] = 0
         stats["contradictions_found"] = 0
 
+    # T-303: LLM-adjudicated implication-level contradiction pass — skipped
+    # entirely when router is None (offline; zero mutations, unchanged behavior).
+    stats["semantic_contradictions_invalidated"] = 0
+    stats["semantic_contradictions_considered"] = 0
+    if router is not None:
+        try:
+            sem_stats = scan_semantic_contradictions(db_path, router, dry_run=dry_run, now=now)
+            stats["semantic_contradictions_invalidated"] = sem_stats["invalidated"]
+            stats["semantic_contradictions_considered"] = sem_stats["pairs_considered"]
+        except Exception as e:
+            _track("semantic_contradiction_scan_failed", e)
+
     stats["applied"] = (
         stats["recomputed"]
         + stats["deduped"]
         + stats.get("contradictions_invalidated", 0)
+        + stats.get("semantic_contradictions_invalidated", 0)
     ) > 0
     return stats
 
@@ -634,21 +660,191 @@ def scan_contradictions(
     return stats
 
 
+# ── T-303 — LLM-adjudicated contradiction scan ────────────────────────────────
+# Catches IMPLICATION-level contradictions the lexical scan above misses
+# ("I moved to Boston last month" vs "my apartment in Atlanta" never share a
+# topic key, so scan_contradictions never groups them). Cosine-prefiltered
+# (cheap, no LLM call) against T-291's STORED embeddings — only the survivors
+# above threshold pay for one router.chat call each, capped per run.
+# Event-driven only (called from full(), which runs at session exit / daily
+# cron) — never a continuous background pass (rejected by design: ~50x token
+# cost for the identical outcome, since memory only changes at those moments).
+
+_CURATE_DEFAULT_MAX_CALLS = 5
+_SEMANTIC_CONTRA_COSINE_THRESHOLD = 0.60
+_SEMANTIC_CONTRA_MAX_SCAN = 200  # candidate rows fetched; LLM calls capped separately
+
+
+def adjudicate_contradiction(fact_a: str, fact_b: str, router) -> Optional[bool]:
+    """T-303: LLM-adjudicate whether two facts genuinely contradict each other.
+
+    Modeled on memory/semantic_dedup.py::haiku_tiebreak but for CONTRADICTION
+    (not duplication) and routed through LLMRouter tier='cheap' (Qwen on the
+    hackathon deploy) instead of a bare Anthropic client — "Qwen autonomously
+    curates the memory store."
+
+    Returns:
+        True  — model says the facts contradict (caller invalidates the older one)
+        False — model says they're compatible (caller keeps both)
+        None  — router unavailable/raised or response unparseable (caller keeps
+                both — conservative bias; a false-positive KEEP costs nothing,
+                a false-positive INVALIDATE silently retires a true fact)
+    """
+    if router is None:
+        return None
+    prompt = (
+        "You are a memory-curation oracle. Decide whether these two facts "
+        "genuinely CONTRADICT each other (cannot both be true) or are COMPATIBLE "
+        "(can coexist, even if about a similar topic).\n\n"
+        f"Fact A: {fact_a[:300]}\n"
+        f"Fact B: {fact_b[:300]}\n\n"
+        "Reply with exactly one word: CONTRADICTS or COMPATIBLE. Be conservative: "
+        "if you are not sure they truly conflict, say COMPATIBLE."
+    )
+    try:
+        resp = router.chat(
+            messages=[{"role": "user", "content": prompt}],
+            system="", tools=[], max_tokens=16, tier="cheap",
+        )
+        text = (resp.text or "").strip().upper()
+        if "CONTRADICTS" in text:
+            return True
+        if "COMPATIBLE" in text:
+            return False
+        return None
+    except Exception as e:
+        _track("adjudicate_contradiction_failed", e)
+        return None
+
+
+def scan_semantic_contradictions(
+    db_path: Path,
+    router,
+    dry_run: bool = False,
+    now: Optional[datetime] = None,
+    max_calls: Optional[int] = None,
+) -> Dict[str, Any]:
+    """T-303: pairwise LLM adjudication for cosine-close, different-topic-key
+    facts. Skipped entirely when router is None (offline — zero mutations,
+    today's behavior unchanged) or on a pre-T-291 schema (no embedding column).
+
+    Bounded by PI_CURATE_MAX_CALLS (env, default 5) adjudication calls per run,
+    newest-pair-first. Candidate selection is embedding-cosine only (reads the
+    T-291 stored column — no fresh embed API calls); only pairs that clear the
+    cosine floor AND the call cap pay for an LLM call.
+
+    Winner = newer created_at (matches existing supersession semantics). Loser
+    gets invalid_at set via the same plain SQL scan_contradictions already uses
+    — no new invalidation mechanism, no Supabase write (matches the existing
+    lexical scan's local-only behavior).
+
+    Returns {pairs_considered, calls_made, invalidated, dry_run}.
+    """
+    now = now or _now()
+    stats = {"pairs_considered": 0, "calls_made": 0, "invalidated": 0, "dry_run": dry_run}
+    if router is None or not Path(db_path).exists():
+        return stats
+
+    if max_calls is None:
+        try:
+            max_calls = int(os.environ.get("PI_CURATE_MAX_CALLS", str(_CURATE_DEFAULT_MAX_CALLS)))
+        except ValueError:
+            max_calls = _CURATE_DEFAULT_MAX_CALLS
+
+    lock_ctx = None
+    if _FILELOCK_OK:
+        _LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            lock_ctx = FileLock(str(_LOCK_PATH), timeout=10)
+            lock_ctx.acquire()
+        except _LockTimeout:
+            _track("semantic_contradiction_lock_timeout", None, db_path=str(db_path))
+            return stats
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT id, content, category, created_at, embedding
+                    FROM l3_cache
+                    WHERE invalid_at IS NULL
+                      AND (superseded_by IS NULL OR superseded_by = '')
+                      AND (kind IS NULL OR kind != 'derived')
+                      AND embedding IS NOT NULL
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                    """,
+                    (_SEMANTIC_CONTRA_MAX_SCAN,),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                return stats  # pre-T-291 schema — no embedding column yet
+
+            parsed = []
+            for rid, content, category, created_at, emb_json in rows:
+                try:
+                    emb = json.loads(emb_json)
+                except (TypeError, ValueError):
+                    continue
+                parsed.append((rid, content, category, created_at, emb))
+
+            candidates = []
+            for i, (rid_a, content_a, cat_a, ca_a, emb_a) in enumerate(parsed):
+                topic_a = _topic_key(content_a or "")
+                for rid_b, content_b, cat_b, ca_b, emb_b in parsed[i + 1:]:
+                    topic_b = _topic_key(content_b or "")
+                    if topic_a and topic_b and topic_a == topic_b:
+                        continue  # same topic key — the lexical scan already covers this
+                    score = _cosine_safe(emb_a, emb_b)
+                    if score < _SEMANTIC_CONTRA_COSINE_THRESHOLD:
+                        continue
+                    newer, older = (
+                        ((rid_a, content_a, ca_a), (rid_b, content_b, ca_b))
+                        if (ca_a or "") >= (ca_b or "")
+                        else ((rid_b, content_b, ca_b), (rid_a, content_a, ca_a))
+                    )
+                    candidates.append((score, newer, older))
+
+            stats["pairs_considered"] = len(candidates)
+            candidates.sort(key=lambda c: c[1][2] or "", reverse=True)  # newest pair first
+
+            now_iso = now.isoformat()
+            for score, newer, older in candidates[:max_calls]:
+                stats["calls_made"] += 1
+                verdict = adjudicate_contradiction(newer[1] or "", older[1] or "", router)
+                if verdict is not True:
+                    continue  # COMPATIBLE or unresolvable — conservative, keep both
+                if dry_run:
+                    continue
+                try:
+                    conn.execute(
+                        "UPDATE l3_cache SET invalid_at = ? WHERE id = ? AND invalid_at IS NULL",
+                        (now_iso, older[0]),
+                    )
+                    stats["invalidated"] += 1
+                except Exception as e:
+                    _track("semantic_contradiction_update_failed", e, loser_id=older[0])
+            if not dry_run:
+                conn.commit()
+        finally:
+            conn.close()
+    finally:
+        if lock_ctx is not None:
+            try:
+                lock_ctx.release()
+            except Exception as e:
+                _track("semantic_contradiction_lock_release_failed", e)
+    return stats
+
+
 # ── T-125c — deep mode (nightly Haiku review) ─────────────────────────────────
 
-def _try_haiku_review(category: str, facts: List[str]) -> Optional[str]:
-    """Ask Haiku to surface internal contradictions or stale items in a list
-    of category facts. Returns the model's reply or None on failure.
-    """
-    if not facts:
+def _try_haiku_review(category: str, facts: List[str], client=None) -> Optional[str]:
+    """Ask Haiku to surface contradictions or stale items. client is pre-built by deep()."""
+    if not facts or client is None:
         return None
     try:
-        import os as _os
-        api_key = _os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            return None
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
         prompt = (
             f"You are reviewing recent facts stored in category '{category}'. "
             "List any pairs that appear to contradict each other, or facts that "
@@ -681,6 +877,19 @@ def deep(
     stats = {"categories_reviewed": 0, "reviews": [], "dry_run": dry_run}
     if not Path(db_path).exists():
         return stats
+
+    # Build Haiku client once for the whole run — not per category.
+    haiku_client = None
+    if not dry_run:
+        try:
+            import os as _os
+            import anthropic
+            api_key = _os.environ.get("ANTHROPIC_API_KEY", "")
+            if api_key:
+                haiku_client = anthropic.Anthropic(api_key=api_key)
+        except Exception:
+            pass
+
     try:
         conn = sqlite3.connect(str(db_path))
         try:
@@ -712,7 +921,7 @@ def deep(
                 if dry_run:
                     stats["reviews"].append({"category": category, "review": "(dry_run skipped)"})
                     continue
-                review = _try_haiku_review(category, facts)
+                review = _try_haiku_review(category, facts, client=haiku_client)
                 if review:
                     stats["reviews"].append({"category": category, "review": review})
                     _track("deep_review", None, category=category, review_snippet=review[:200])

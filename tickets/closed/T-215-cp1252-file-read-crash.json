@@ -1,0 +1,16 @@
+{
+  "id": "T-215",
+  "source": "verify.py failure this session \u2014 test_integration crashed on Windows cp1252.",
+  "title": "File reads without encoding='utf-8' crash on Windows cp1252 (\u2190 char in pi_agent.py)",
+  "what_failed": "testing/test_integration.py::test_integration_pi_agent_imports did open(path,'r').read() with no encoding; Windows defaults to cp1252 which can't decode the '\u2190' (U+2190) char in pi_agent.py's chats-command display, raising UnicodeDecodeError byte 0x90.",
+  "where_failed": "testing/test_integration.py:141 (open without encoding).",
+  "why_likely": "Implicit platform-default encoding on open(); the non-ASCII arrow entered via the T-186 'chats' command display.",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-06-20T20:15:02.274543+00:00",
+  "closed": "2026-06-20T20:15:02.274543+00:00",
+  "linked_solution": "S-147",
+  "depends_on": [],
+  "resolution": "Added encoding='utf-8' to the test's file read. RESIDUAL: a repo-wide sweep for other open() calls lacking encoding= is recommended (tracked here as a note; low incidence since most code uses Read/Write helpers).",
+  "analysis": "Classic Windows landmine. Always pass encoding='utf-8' on text open(). Verified: test passes."
+}

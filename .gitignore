@@ -12,20 +12,19 @@ app/config.py
 .mcp.json
 pi_dna.txt
 
-# Identity prompts — the recipe; never expose publicly
-prompts/
+# Identity prompts — the recipe; never expose publicly.
+# (prompts/* not prompts/ so the one public default below can be re-included —
+# git cannot re-include a file whose parent directory is excluded)
+prompts/*
+!prompts/consciousness.default.txt
 
 # Architecture internals — design rationale, honest audit
 docs/adr/
 docs/PROJECT_MAP.md
 
-# God-mode private layer — strongest boundary, never track
-prompts/god_consciousness.txt
+# Archived god-mode layer (removed from active tree) — never track
+_god_archive/
 prompts/god_*.txt
-agent/god.py
-data/god_memory.db
-tickets/god/
-vault/.god/
 
 # Session data and local logs (machine-local, not source)
 data/

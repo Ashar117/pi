@@ -3,6 +3,7 @@ Pi Agent Tools - Execution
 Tools for running code and self-modification.
 """
 
+import difflib
 import subprocess
 import os
 from typing import Dict, Any, Optional
@@ -13,11 +14,13 @@ class ExecutionTools:
     Simple execution tools.
     Run Python, run bash, modify files.
     """
-    
+
     def __init__(self, project_root: str = None):
         if project_root is None:
             project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.project_root = project_root
+        # T-182: per-session read ledger {abs_path → mtime_at_read}
+        self._read_ledger: Dict[str, float] = {}
     
     def execute_python(self, code: str, return_output: bool = True) -> Dict:
         """
@@ -122,74 +125,105 @@ class ExecutionTools:
     def modify_file(self, path: str, old_str: str, new_str: str) -> Dict:
         """
         Modify file (including self-modification).
-        
+
         Args:
             path: File path (relative to project root or absolute)
             old_str: String to replace (must be unique)
             new_str: Replacement string
-        
+
         Returns:
-            {"success": bool, "message": str}
+            {"success": bool, "message": str, "diff": str, "lines_changed": int}
+
+        T-182: read-before-write safety.
+        - Never-read files are refused with a hint to call read_file first.
+        - Files whose mtime changed since read return a stale_read error.
+        - Every successful edit includes a unified diff + line count.
         """
-        
         # Make absolute
         if not os.path.isabs(path):
             path = os.path.join(self.project_root, path)
-        
-        if not os.path.exists(path):
+        abs_path = path
+
+        if not os.path.exists(abs_path):
+            return {"success": False, "message": f"File not found: {abs_path}"}
+
+        # T-182 preflight: read-before-write guard
+        current_mtime = os.path.getmtime(abs_path)
+        if abs_path not in self._read_ledger:
             return {
                 "success": False,
-                "message": f"File not found: {path}"
+                "error": "read_before_write",
+                "message": (
+                    f"File '{abs_path}' has not been read this session. "
+                    "Call read_file first to see the current content before modifying."
+                ),
             }
-        
+        recorded_mtime = self._read_ledger[abs_path]
+        if abs(current_mtime - recorded_mtime) > 0.01:
+            return {
+                "success": False,
+                "error": "stale_read",
+                "message": (
+                    f"File '{abs_path}' changed after you read it (mtime drift: "
+                    f"{current_mtime - recorded_mtime:+.2f}s). Re-read it first."
+                ),
+            }
+
         try:
-            # Read file
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(abs_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
-            # Check if old_str exists
+
             if old_str not in content:
                 return {
                     "success": False,
                     "message": f"String not found in file: '{old_str[:50]}...'"
                 }
-            
-            # Check if unique
+
             if content.count(old_str) > 1:
                 return {
                     "success": False,
                     "message": f"String appears {content.count(old_str)} times (must be unique)"
                 }
-            
-            # Replace
+
             new_content = content.replace(old_str, new_str)
-            
-            # Write back
-            with open(path, 'w', encoding='utf-8') as f:
+
+            with open(abs_path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
-            
-            # Verify
-            with open(path, 'r', encoding='utf-8') as f:
+
+            # T-182: generate unified diff (capped at 200 lines)
+            diff_lines = list(difflib.unified_diff(
+                content.splitlines(keepends=True),
+                new_content.splitlines(keepends=True),
+                fromfile=f"a/{os.path.basename(abs_path)}",
+                tofile=f"b/{os.path.basename(abs_path)}",
+                n=3,
+            ))
+            diff_str = "".join(diff_lines[:200])
+            lines_changed = sum(1 for l in diff_lines if l.startswith(("+", "-")) and not l.startswith(("+++", "---")))
+
+            # Update ledger mtime after successful write
+            self._read_ledger[abs_path] = os.path.getmtime(abs_path)
+
+            with open(abs_path, 'r', encoding='utf-8') as f:
                 verify_content = f.read()
-            
+
             if new_str in verify_content:
                 return {
                     "success": True,
-                    "message": f"Modified {path}",
-                    "verified": True
+                    "message": f"Modified {abs_path}",
+                    "verified": True,
+                    "diff": diff_str,
+                    "lines_changed": lines_changed,
                 }
             else:
                 return {
                     "success": False,
                     "message": "Modification failed verification",
-                    "verified": False
+                    "verified": False,
                 }
-            
+
         except Exception as e:
-            return {
-                "success": False,
-                "message": f"Error: {str(e)}"
-            }
+            return {"success": False, "message": f"Error: {str(e)}"}
     
     def read_file(self, path: str, lines: Optional[tuple] = None) -> Dict:
         """
@@ -215,6 +249,7 @@ class ExecutionTools:
             }
         
         try:
+            mtime = os.path.getmtime(path)
             with open(path, 'r', encoding='utf-8') as f:
                 if lines:
                     all_lines = f.readlines()
@@ -222,13 +257,16 @@ class ExecutionTools:
                     content = ''.join(all_lines[start-1:end])
                 else:
                     content = f.read()
-            
+
+            # T-182: record read in the ledger so modify_file can guard against stale reads
+            self._read_ledger[path] = mtime
+
             return {
                 "success": True,
                 "content": content,
                 "path": path
             }
-            
+
         except Exception as e:
             return {
                 "success": False,
@@ -252,9 +290,22 @@ class ExecutionTools:
         if not os.path.isabs(path):
             path = os.path.join(self.project_root, path)
         
+        # T-182: refuse to overwrite existing files — use modify_file instead
+        if os.path.exists(path):
+            return {
+                "success": False,
+                "error": "file_exists",
+                "message": (
+                    f"'{path}' already exists. Use modify_file to edit it, "
+                    "or choose a different path for a new file."
+                ),
+            }
+
         # Create directory if needed
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+
         try:
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(content)

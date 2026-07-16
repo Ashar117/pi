@@ -1,8 +1,9 @@
-"""T-151 — _prefetch_memory uses semantic search first, multi-keyword fallback.
+"""T-293 — _prefetch_memory uses the fused hybrid retriever (retrieve()).
 
-Pre-T-151 prefetch queried only keywords[0] via lexical memory_read. Now it
-queries the whole phrase via memory_search_semantic, and on miss falls back to
-a merged multi-keyword lexical lookup. Hermetic: memory is faked, no network.
+Pre-T-293 prefetch queried memory_search_semantic (L2-only) then fell back to
+per-keyword memory_read. Now it calls MemoryTools.retrieve() once, which
+fuses dense cosine + lexical across L3+L2 in one ranked call. Hermetic:
+memory is faked, no network.
 """
 import builtins
 import os
@@ -17,19 +18,14 @@ from pi_agent import PiAgent  # noqa: E402
 
 
 class FakeMem:
-    def __init__(self, semantic=None, by_kw=None):
-        self.semantic = semantic or []
-        self.by_kw = by_kw or {}
-        self.semantic_calls = []
-        self.read_calls = []
+    def __init__(self, hits=None):
+        self.hits = hits or []
+        self.retrieve_calls = []
 
-    def memory_search_semantic(self, query, limit=5, threshold=0.5):
-        self.semantic_calls.append(query)
-        return list(self.semantic)
-
-    def memory_read(self, query="", tier=None, limit=20, current_mode=None):
-        self.read_calls.append(query)
-        return list(self.by_kw.get(query, []))
+    def retrieve(self, query, k=6, current_mode=None,
+                 current_conversation_id=None, current_scope=None):
+        self.retrieve_calls.append(query)
+        return list(self.hits)
 
 
 _AGENT = None
@@ -43,42 +39,34 @@ def _agent(mem):
     return _AGENT
 
 
-def test_semantic_used_first_and_keyword_skipped_on_hit():
-    mem = FakeMem(semantic=[{"content": "Supabase migration is at stage 3", "tier": "l2"}])
+def test_recall_question_calls_retrieve_with_full_query():
+    mem = FakeMem(hits=[{"content": "Supabase migration is at stage 3", "tier": "l2"}])
     block = _agent(mem)._prefetch_memory("what's the status of the supabase migration?")
     assert "stage 3" in block
-    assert mem.semantic_calls, "semantic search was not attempted"
-    # whole phrase, not just the first keyword
-    assert "supabase" in mem.semantic_calls[0] and "migration" in mem.semantic_calls[0]
-    assert mem.read_calls == [], "lexical fallback fired despite a semantic hit"
+    assert mem.retrieve_calls, "retrieve() was not called"
+    assert "supabase" in mem.retrieve_calls[0].lower()
 
 
-def test_fallback_queries_multiple_keywords_on_semantic_miss():
-    mem = FakeMem(
-        semantic=[],
-        by_kw={
-            "supabase": [{"content": "SB fact", "tier": "l2"}],
-            "project":  [{"content": "PRJ fact", "tier": "l3"}],
-            "deadline": [{"content": "DL fact", "tier": "l2"}],
-        },
-    )
+def test_multiple_hits_all_included():
+    mem = FakeMem(hits=[
+        {"content": "SB fact", "tier": "l2"},
+        {"content": "PRJ fact", "tier": "l3"},
+    ])
     block = _agent(mem)._prefetch_memory("remind me about the supabase project and the deadline")
-    assert len(mem.read_calls) >= 2, f"fallback queried only: {mem.read_calls}"
-    assert "SB fact" in block
+    assert "SB fact" in block and "PRJ fact" in block
 
 
-def test_fallback_dedups_repeated_hits():
-    dup = [{"id": "x1", "content": "same row", "tier": "l2"}]
-    mem = FakeMem(semantic=[], by_kw={"supabase": dup, "project": dup, "deadline": dup})
-    block = _agent(mem)._prefetch_memory("remind me about the supabase project and the deadline")
-    assert block.count("same row") == 1, "duplicate memory row not deduped"
+def test_no_hits_returns_empty():
+    mem = FakeMem(hits=[])
+    block = _agent(mem)._prefetch_memory("remind me about the supabase project")
+    assert block == ""
 
 
 def test_non_recall_input_skips_prefetch():
-    mem = FakeMem(semantic=[{"content": "should not appear"}])
+    mem = FakeMem(hits=[{"content": "should not appear"}])
     block = _agent(mem)._prefetch_memory("the weather is nice today and I feel good")
     assert block == "", "prefetch fired on a non-recall statement"
-    assert mem.semantic_calls == []
+    assert mem.retrieve_calls == []
 
 
 def teardown_module(module):

@@ -1,0 +1,23 @@
+{
+  "id": "T-278",
+  "title": "handle_callback (inline button taps) bypasses authorization - any group member's tap triggers a full agent turn",
+  "component": "tools/tools_telegram.py",
+  "severity": "P2",
+  "source": "Claude Fable extensive fresh-eyes review 2026-07-07",
+  "current_state": "tools/tools_telegram.py:1308 registers @bot.callback_query_handler(func=lambda call: True) -> handle_callback(call), which immediately answers the callback and routes the tap into self._process_text(prompt, chat_id=...) - a full agent turn with tool access. Unlike handle_text (line ~1342), which gates on self._auth(message) / self._resolve_profile(...) and replies 'Unauthorized.' otherwise, handle_callback performs NO authorization check on call.from_user. Exposure: buttons Pi sends into a group/supergroup chat (Pi supports groups - handle_text has @mention logic at ~1348) can be tapped by ANY group member, triggering agent turns (gmail_read, calendar_create via the T-258 emailtriage flow, or arbitrary [Button selected: ...] turns) under that chat's context. Pre-existing since T-220; became load-bearing now that T-257/T-258 email-triage buttons are a primary flow. Default risk is low today because triage buttons go to TELEGRAM_CHAT_ID (Ash's private chat), but the telegram_buttons tool can place buttons in any active chat.",
+  "target_state": "handle_callback authorizes the TAPPER before doing anything: reuse the same predicate as handle_text against call.from_user (and/or the originating chat's resolved profile). Unauthorized taps get bot.answer_callback_query(call.id, 'Unauthorized') and no turn. A handler-level test in testing/test_telegram_handlers.py drives handle_callback with an unauthorized from_user and asserts _process_text is never called.",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-07-07T00:00:00+00:00",
+  "root_cause_confidence": "verified",
+  "migration_plan": [
+    "1. Test first in testing/test_telegram_handlers.py (the _FakeBot pattern from T-261): register handlers, invoke the captured callback handler with a call whose from_user.id is not the allowed user and whose chat has no resolved profile; assert _process_text was NOT called and answer_callback_query got an 'Unauthorized' text.",
+    "2. In handle_callback, before the ignore/instruction routing: build the same auth decision handle_text uses, but from call.from_user (id) + str(call.message.chat.id) profile resolution. Factor the check into a small helper only if handle_text and handle_callback can share it verbatim - otherwise inline it (ponytail).",
+    "3. Keep the T-258 'ignore' short-circuit AFTER the auth gate.",
+    "4. python scripts/verify.py must print PASS (never pipe, T-214); SOLUTIONS.jsonl; close; refresh_pi.py."
+  ],
+  "risk_notes": "tools/ is NOT in sprint.py's SAFE_COMPONENTS - hand/Sonnet ticket. Be careful not to break the single-user happy path: Ash tapping his own buttons in his private chat must still work when profiles are unconfigured (the _auth fallback semantics in handle_text are the reference). Do not add per-button permission models or callback signing - the auth gate that handle_text already uses is sufficient for a single-user bot.",
+  "resolution": "implemented",
+  "solution_id": "S-211",
+  "closed": "2026-07-07T00:00:00+00:00"
+}

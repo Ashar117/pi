@@ -1,0 +1,24 @@
+{
+  "id": "T-229",
+  "batch": "research-quality",
+  "source": "Ash feature request 2026-06-21 \u00e2\u20ac\u201d output should be smart, easy to understand, cleanly formatted, extremely well written, in BOTH modes.",
+  "title": "Research: clean, well-written, cited output contract (normie + root)",
+  "component": "prompts/consciousness.txt, prompts/consciousness_normie.txt, agent/prompt.py, pi_agent.py",
+  "current_state": "Raw LLM text is returned untouched (pi_agent final_text = resp.text). Neither root nor normie prompt gives any guidance on formatting research answers \u00e2\u20ac\u201d no structure, no 'cite your sources', no readability standard. Output quality is whatever the model defaults to.",
+  "target_state": "A shared, explicit OUTPUT CONTRACT for research/informational answers, applied in BOTH modes (scaled to each): lead with the direct answer, then tight scannable structure (short paragraphs / bullets / a small table when it helps), distinguish fact from interpretation, and end with a 'Sources' list when tools were used (titles + URLs from grounded_search/deep_research). Normie = concise version of the same contract; root = fuller. The contract lives in the prompts; a light post-step ensures a Sources section is present when citations exist.",
+  "severity": "P2",
+  "depends_on": [
+    "T-228"
+  ],
+  "status": "closed",
+  "created": "2026-06-21T00:00:00+00:00",
+  "migration_plan": [
+    "1. Author a concise OUTPUT CONTRACT block (answer-first; scannable structure; fact vs interpretation; Sources section when tools used; no walls of text). Add it to prompts/consciousness.txt (root, fuller) and prompts/consciousness_normie.txt (normie, terse) \u00e2\u20ac\u201d keep wording consistent so behavior matches across modes.",
+    "2. Ensure the contract only triggers for substantive/informational answers (don't bureaucratize a one-line chat reply) \u00e2\u20ac\u201d phrase it as 'when answering a question that used research/tools'.",
+    "3. Light post-step in the response path: if the turn used grounded_search/deep_research and the model omitted a Sources section, append one built from the tool citations. Keep it minimal and idempotent (no double Sources).",
+    "4. Verify against the T-192 consciousness tool-drift check so prompt edits don't trip verify.py's drift gate.",
+    "5. Tests: testing/test_output_contract.py \u00e2\u20ac\u201d both prompts contain the contract; the post-step appends Sources when citations exist and the model omitted them; it does NOT duplicate an existing Sources section; non-research chat replies are unaffected."
+  ],
+  "risk_notes": "Most of this is prompt-craft (cheap, high-impact); keep the code post-step tiny and idempotent. Watch the T-192 tool-drift gate and the T-168 ABOUT.md/consciousness checks in verify.py when editing prompts. Don't over-format casual chat \u00e2\u20ac\u201d the contract is for research/informational answers only.",
+  "closed": "2026-06-26T23:06:41.558885+00:00"
+}

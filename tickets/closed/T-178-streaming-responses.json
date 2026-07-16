@@ -1,0 +1,21 @@
+{
+  "id": "T-178",
+  "source": "Claude gap analysis 2026-06-11 (PROJECT_MAP.md addendum, Track B)",
+  "title": "Streaming responses: tokens print as they generate (root + normie)",
+  "component": "core/llm_router.py, core/providers/, pi_agent.py (run loop)",
+  "current_state": "router.chat() blocks until the full response exists, then run() prints it in one shot. On long answers Ash stares at a silent prompt for 10-30s. Every modern agent CLI streams.",
+  "target_state": "router.chat(stream=True) yields text deltas for providers that support it (Anthropic SSE, Groq/Cerebras OpenAI-style stream); the REPL prints deltas as they arrive. Non-streaming providers and the tool-use loop fall back to blocking (tool_use blocks need the complete message anyway). Final LLMResponse object is identical to today so logging/cost paths are untouched.",
+  "severity": "P1",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-06-11T15:00:00+00:00",
+  "migration_plan": [
+    "1. Add stream support to the Anthropic provider first (root mode, biggest latency win): client.messages.stream, accumulate into the same LLMResponse shape.",
+    "2. Thread an optional on_delta callback through router.chat; pi_agent.run() passes print-flush; all other callers omit it (zero behavior change).",
+    "3. Groq/Cerebras providers second (normie).",
+    "4. Streaming only for the FINAL text segment: if stop_reason=tool_use, suppress delta printing for that round (tool loop unchanged).",
+    "5. Tests: fake provider emitting deltas \u2014 assert accumulated text == blocking text, callback receives all deltas, tool_use rounds never stream."
+  ],
+  "risk_notes": "Touches pi_agent.py + llm_router (RISK_FLAGGED \u2192 interactive session, not sprint.py). Keep the blocking path as default; streaming is opt-in via callback so every existing test passes unchanged.",
+  "closed_at": "2026-06-13T05:20:33.986436+00:00"
+}

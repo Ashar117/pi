@@ -111,6 +111,12 @@ def _setup_clean(tmp_path: Path, open_t: int = 0, closed_t: int = 5,
     _make_status_md(tmp_path, overall=verify)
     _make_tickets(tmp_path, open_n=open_t, closed_n=closed_t)
     _make_solutions(tmp_path, count=solutions)
+    # T-285: vault briefs must be current too, or "all clean" isn't all clean.
+    if closed_t:
+        briefs = tmp_path / "vault" / "notes" / "per-ticket"
+        briefs.mkdir(parents=True, exist_ok=True)
+        for i in range(closed_t):
+            (briefs / f"T-{i:03d}-slug.md").write_text("brief", encoding="utf-8")
 
 
 # ── check_open_tickets ────────────────────────────────────────────────────────
@@ -349,3 +355,89 @@ class TestRunCheck:
             status = ddw.run_check(root=tmp_path)
 
         assert status == Status.WARN
+
+
+# ── T-153: check_capability_drift ──────────────────────────────────────────────
+
+def _make_about(tmp_path: Path, rows: list) -> Path:
+    """rows: list of (capability, status, notes)."""
+    lines = ["# About Pi", "", "## Capabilities — current state", "",
+             "| Capability | Status | Notes |", "| --- | --- | --- |"]
+    for cap, status, notes in rows:
+        lines.append(f"| {cap} | {status} | {notes} |")
+    p = tmp_path / "ABOUT.md"
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return p
+
+
+def _make_open_ticket(tmp_path: Path, tid: str, sev: str, title: str, component: str = "") -> None:
+    import json
+    d = tmp_path / "tickets" / "open"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{tid}.json").write_text(json.dumps(
+        {"id": tid, "severity": sev, "title": title, "component": component}), encoding="utf-8")
+
+
+class TestCheckCapabilityDrift:
+    def test_working_with_matching_open_p2_warns(self, tmp_path):
+        _make_about(tmp_path, [("Conversation coherence", "✅ Working", "n/a")])
+        _make_open_ticket(tmp_path, "T-999", "P2", "conversation coherence is broken")
+        status, lines = ddw.check_capability_drift(tmp_path)
+        assert status == Status.WARN
+        assert any("T-999" in l for l in lines)
+
+    def test_working_without_matching_ticket_passes(self, tmp_path):
+        _make_about(tmp_path, [("Telegram integration", "✅ Working", "n/a")])
+        _make_open_ticket(tmp_path, "T-999", "P2", "memory dedup is flaky")
+        status, _ = ddw.check_capability_drift(tmp_path)
+        assert status == Status.PASS
+
+    def test_partial_row_not_flagged(self, tmp_path):
+        _make_about(tmp_path, [("Session isolation", "◐ Partial", "n/a")])
+        _make_open_ticket(tmp_path, "T-999", "P2", "session isolation incomplete")
+        status, _ = ddw.check_capability_drift(tmp_path)
+        assert status == Status.PASS
+
+    def test_p3_ticket_does_not_trigger(self, tmp_path):
+        _make_about(tmp_path, [("Conversation coherence", "✅ Working", "n/a")])
+        _make_open_ticket(tmp_path, "T-999", "P3", "conversation coherence minor nit")
+        status, _ = ddw.check_capability_drift(tmp_path)
+        assert status == Status.PASS
+
+    def test_no_about_md_passes(self, tmp_path):
+        status, _ = ddw.check_capability_drift(tmp_path)
+        assert status == Status.PASS
+
+
+class TestCheckVaultBriefFreshness:
+    """T-285: warn when vault/notes/per-ticket/ lags tickets/closed/."""
+
+    def test_briefs_current_passes(self, tmp_path):
+        _make_tickets(tmp_path, open_n=0, closed_n=5)  # T-000..T-004
+        briefs = tmp_path / "vault" / "notes" / "per-ticket"
+        briefs.mkdir(parents=True)
+        for i in range(5):
+            (briefs / f"T-{i:03d}-slug.md").write_text("brief", encoding="utf-8")
+        status, lines = ddw.check_vault_brief_freshness(tmp_path)
+        assert status == Status.PASS
+        assert "T-4" in lines[0]
+
+    def test_briefs_lagging_warns_with_gap(self, tmp_path):
+        _make_tickets(tmp_path, open_n=0, closed_n=5)  # T-000..T-004
+        briefs = tmp_path / "vault" / "notes" / "per-ticket"
+        briefs.mkdir(parents=True)
+        (briefs / "T-002-slug.md").write_text("brief", encoding="utf-8")
+        status, lines = ddw.check_vault_brief_freshness(tmp_path)
+        assert status == Status.WARN
+        assert "T-2" in lines[0] and "T-4" in lines[0]
+
+    def test_missing_briefs_dir_warns(self, tmp_path):
+        _make_tickets(tmp_path, open_n=0, closed_n=3)
+        status, lines = ddw.check_vault_brief_freshness(tmp_path)
+        assert status == Status.WARN
+        assert "T-2" in lines[0]
+
+    def test_no_closed_tickets_passes(self, tmp_path):
+        (tmp_path / "tickets" / "closed").mkdir(parents=True)
+        status, _ = ddw.check_vault_brief_freshness(tmp_path)
+        assert status == Status.PASS

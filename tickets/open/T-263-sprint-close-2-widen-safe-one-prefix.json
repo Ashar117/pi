@@ -1,0 +1,20 @@
+{
+  "id": "T-263",
+  "title": "sprint.py production close #2 + widen SAFE_COMPONENTS by exactly one prefix",
+  "component": "scripts/sprint.py",
+  "severity": "P3",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "current_state": "Assuming T-256 lands, sprint.py will have exactly one production close, on a SAFE component (scripts/, testing/, docs/, vault/). The guardrails still refuse ~80% of the repo surface - correct caution for run #1, but autonomy scope should be earned one notch at a time, not frozen forever.",
+  "target_state": "A second production close on a different ticket, and SAFE_COMPONENTS widened by exactly one prefix - chosen from what T-256's run actually demonstrated (candidate: a single well-tested tools/ file like tools/tools_image.py, NOT agent/ or pi_agent.py which stay diff-first per PI.md section 10). The widening commit cites the two successful runs as evidence.",
+  "depends_on": ["T-256"],
+  "status": "open",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. Review T-256's run transcript in logs/sprint/: what did the runner handle well, where did it wobble.",
+    "2. Pick the one prefix to add based on that evidence; smallest defensible step (a single file path is a valid prefix).",
+    "3. Add the prefix to SAFE_COMPONENTS in scripts/sprint.py with a comment citing the two production runs.",
+    "4. Run close #2 on a verified ticket touching the newly-safe prefix: --dry-run rehearsal, then --auto-implement --max-cost 0.50, Ash gates the merge.",
+    "5. python scripts/verify.py PASS; testing/test_sprint_isolation.py must stay green (god-path refusal invariant untouched)."
+  ],
+  "risk_notes": "Never widen by more than one prefix per cycle, and never add the risk-flagged set (pi_agent.py, agent/tools.py, agent/prompt.py, prompts/consciousness.txt, app/config.py, requirements.txt, memory/). If T-256 failed or wobbled, this ticket blocks until the diagnosis ticket closes.\n\n2026-07-06: blocked on T-256 (see its notes) - not stalled by choice, there is simply no candidate ticket for either production close right now."
+}

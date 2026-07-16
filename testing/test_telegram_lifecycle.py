@@ -17,7 +17,6 @@ def _build_tt():
     agent = MagicMock()
     agent.session_id = "abc12345"
     agent.messages = ["x", "y"]
-    agent.history = ["a", "b"]
     agent.memory = MagicMock()
     agent.memory.sqlite_path = ":memory:"
 
@@ -76,11 +75,9 @@ def test_clear_rotates_session_id():
         tt._bubble.flush("42", reason="lifecycle")
     agent.session_id = _uuid.uuid4().hex[:8]
     agent.messages = []
-    agent.history = []
 
     assert agent.session_id != old_id
     assert agent.messages == []
-    assert agent.history == []
     tt._bubble.stop()
 
 
@@ -95,7 +92,6 @@ def test_clear_preserves_memory():
         tt._bubble.flush("42", reason="lifecycle")
     agent.session_id = "new12345"
     agent.messages = []
-    agent.history = []
 
     # Memory reference unchanged
     assert agent.memory is memory_before

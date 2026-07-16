@@ -1,0 +1,12 @@
+{
+  "id": "T-217",
+  "title": "Telegram: long-turn live status (typing heartbeat)",
+  "component": "tools/tools_telegram.py",
+  "current_state": "Long Pi turns have no typing indicator between first message and reply, leaving users wondering if Pi is still working.",
+  "target_state": "A _TypingHeartbeat context manager re-sends chat_action=typing every 4s while _process_text runs, so Telegram shows the typing indicator continuously.",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-06-21T00:00:00+00:00",
+  "closed_at": "2026-06-21T16:50:33.175913+00:00",
+  "solution": "Added _TypingHeartbeat inner class to TelegramTools; wraps _process_text call in _dispatch_bubble."
+}

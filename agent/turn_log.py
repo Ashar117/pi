@@ -9,7 +9,7 @@ Schema (one entry per turn):
         "turn_id":          str  (uuid4),
         "session_id":       str,
         "ts":               ISO-8601 UTC,
-        "mode":             "normie" | "root" | "god" | "research",
+        "mode":             "normie" | "root" | "research",
         "user_input":       str (full),
         "response_preview": str (first 400 chars of response),
         "response_chars":   int,
@@ -183,15 +183,16 @@ def append_turn(
     tokens_out: int = 0,
     model: str = "",
     error: Optional[str] = None,
+    profile_name: Optional[str] = None,  # T-226: guest turns route to per-profile log
 ) -> Optional[str]:
-    """Append one turn to logs/turns.jsonl. Returns the turn_id, or None on failure.
+    """Append one turn to logs/turns.jsonl (Ash) or logs/profiles/<name>/turns.jsonl (guest).
 
     Also increments the per-day counter table (T-110). Never raises.
     """
     turn_id = uuid.uuid4().hex
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    entry = {
+    entry: dict = {
         "turn_id":          turn_id,
         "session_id":       session_id,
         "ts":               datetime.now(timezone.utc).isoformat(),
@@ -208,9 +209,16 @@ def append_turn(
         "error":            error,
     }
 
+    # T-226: guest turns route to a per-profile log; Ash stays on the main log.
+    if profile_name:
+        entry["profile"] = profile_name
+        log_path_to_use = _ROOT / "logs" / "profiles" / profile_name / "turns.jsonl"
+    else:
+        log_path_to_use = _LOG_PATH
+
     try:
-        _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(_LOG_PATH, "a", encoding="utf-8") as f:
+        log_path_to_use.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path_to_use, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as e:
         # Last-resort: never break the agent because we can't write a log.
@@ -311,3 +319,31 @@ def recent_turns(limit: int = 20, session_id: Optional[str] = None) -> List[dict
 def log_path() -> Path:
     """Expose the path so tests can clean it up."""
     return _LOG_PATH
+
+
+_ROTATE_THRESHOLD_BYTES = 50_000_000  # T-259: rotate once turns.jsonl passes ~50MB
+
+
+def rotate_turns_log(threshold_bytes: int = _ROTATE_THRESHOLD_BYTES) -> Optional[Path]:
+    """T-259: gzip-archive turns.jsonl once it exceeds threshold_bytes, then truncate.
+
+    Archives land in logs/archive/turns_jsonl-<ts>.jsonl.gz — the exact
+    pattern recent_turns() already walks via _read_gz_jsonl(), so archived
+    history stays queryable. No-op (returns None) below the threshold or if
+    the log doesn't exist yet. Never deletes: the live file is truncated to
+    empty, not removed, so appends resume immediately.
+    """
+    if not _LOG_PATH.exists() or _LOG_PATH.stat().st_size < threshold_bytes:
+        return None
+
+    _ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%S")
+    archive_path = _ARCHIVE_DIR / f"turns_jsonl-{ts}.jsonl.gz"
+
+    with open(_LOG_PATH, "rb") as src, gzip.open(str(archive_path), "wb") as dst:
+        dst.write(src.read())
+
+    # Truncate (not delete) the live file so appends resume immediately.
+    open(_LOG_PATH, "w").close()
+
+    return archive_path

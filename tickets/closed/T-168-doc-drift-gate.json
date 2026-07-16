@@ -1,0 +1,22 @@
+{
+  "id": "T-168",
+  "source": "Remediation sequence C1-C6 (fresh-eyes audit 2026-06-06); filed for later manual implementation. See docs/PROJECT_MAP.md and the approved plan.",
+  "title": "Make doc drift impossible: gate ABOUT.md against ground truth (C4)",
+  "component": "ABOUT.md, scripts/refresh_pi.py or scripts/verify.py",
+  "what_failed": "ABOUT.md drifts from reality (claimed 91 closed/61 solutions vs actual 150/99; marks coherence and autonomy '\u2705' when one was mid-fix and the other has never run). Self-aware (T-153) but unfixed; misleads readers and future AI sessions.",
+  "where_failed": "ABOUT.md (hand-maintained counts/status); no enforcement in verify.py.",
+  "why_likely": "Hand-written doc; only PI.md auto-sections are regenerated.",
+  "severity": "P1",
+  "status": "closed",
+  "created": "2026-06-07T00:00:00+00:00",
+  "closed": "2026-06-12T18:44:46.032838+00:00",
+  "linked_solution": null,
+  "depends_on": [],
+  "migration_plan": [
+    "1. Preferred: put counts/status behind BEGIN/END AUTO markers in ABOUT.md and have refresh_pi.py regenerate them from tickets/closed + SOLUTIONS.jsonl (reuse the PI.md mechanism).",
+    "2. Or: a verify.py check that FAILs when ABOUT.md counts diverge from ground truth beyond a small tolerance.",
+    "3. Capability '\u2705' claims must map to a behavioral test or be marked \u25d0 (ties to T-166)."
+  ],
+  "implementation_notes": "Smart and simple: reuse refresh_pi.py's marker mechanism; do not build a new doc system. Make drift impossible, not ticketed.",
+  "analysis": "C4: portfolio + product both die on dishonest docs. Cheap, high-credibility. Effectively closes T-153."
+}

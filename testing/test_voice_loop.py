@@ -188,7 +188,6 @@ class TestVoiceLoop:
             agent = PiAgent.__new__(PiAgent)
             agent.mode = "root"
             agent.messages = []
-            agent.history = []
 
             # VoiceLoop is imported lazily inside _process_input_inner
             with patch("agent.voice_loop.VoiceLoop") as MockVL:

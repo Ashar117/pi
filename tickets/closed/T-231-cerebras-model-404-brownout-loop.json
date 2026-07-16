@@ -1,0 +1,21 @@
+{
+  "id": "T-231",
+  "batch": "provider-resilience",
+  "source": "Live session 2026-06-21: every cheap-tier turn logs 'cerebras error: 404 - Model llama-3.3-70b does not exist or you do not have access to it' then 'cerebras brownout for 300s'.",
+  "title": "Cerebras model id is invalid (404) — cheap tier brownout-loops on every turn",
+  "component": "core/llm_router.py, core/providers/cerebras.py",
+  "current_state": "cerebras_model defaults to 'llama-3.3-70b' (core/llm_router.py:99, core/providers/cerebras.py:25). Cerebras' API returns 404 model_not_found for this id, so the cheap tier's first provider hard-fails EVERY call and is re-browned every 5 min — exactly the always-browned-out pattern we fixed for Gemini in T-212. normie (tier=cheap) eats a failed Cerebras attempt on every turn before falling through.",
+  "target_state": "Cerebras uses a model id the account actually serves, and the id is env-overridable (CEREBRAS_MODEL) so a future rename is a config change, not a code change — mirroring the GEMINI_MODEL fix from T-212. The cheap tier stops logging a 404 + brownout on every turn.",
+  "severity": "P1",
+  "depends_on": [],
+  "status": "open",
+  "created": "2026-06-21T00:00:00+00:00",
+  "migration_plan": [
+    "1. Probe the live Cerebras account for valid model ids (a quick models-list or a known-good id like 'llama-3.3-70b' vs 'llama3.1-70b' vs 'llama-4-scout'); pick one the key can access.",
+    "2. core/providers/cerebras.py __init__: read os.environ.get('CEREBRAS_MODEL') or model (same pattern as GeminiProvider in T-212). Update the default to the verified id.",
+    "3. core/llm_router.py:99: update the cerebras_model default to match.",
+    "4. Optional hygiene: a persistent config 404 currently re-fails every 5 min — consider treating a 404 model_not_found as a longer/permanent brownout for that provider until restart (don't retry a config error every 5 min). Flag only; not required to unblock.",
+    "5. Tests: testing/test_cerebras_model_config.py (offline, stub the client) — default model is not the broken id; CEREBRAS_MODEL env override wins; router default matches provider default."
+  ],
+  "risk_notes": "Cerebras free-tier model ids change/rotate (just like Gemini's). The env override is the durable fix; the default just needs to be currently-valid. Verify against the real key before closing — this is a live-API correctness bug, not a pure unit-test fix."
+}

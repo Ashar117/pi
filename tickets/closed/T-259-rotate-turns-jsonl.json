@@ -1,0 +1,26 @@
+{
+  "id": "T-259",
+  "title": "Rotate logs/turns.jsonl: unbounded append-only log needs nightly size-based rotation",
+  "component": "tools/tools_scheduler.py, logs/",
+  "severity": "P2",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "root_cause_confidence": "verified",
+  "current_state": "logs/turns.jsonl is append-only with no rotation - it grows unbounded. Every turn in every mode logs there by design ('log everything' is a standing rule - rotation must not gate or drop logging). A rotation pattern already exists in the repo: scripts/passive/replication_log_rotate.py. The daemon scheduler (tools/tools_scheduler.py, APScheduler) already runs nightly jobs (memory prune, briefing).",
+  "target_state": "A nightly scheduler job rotates logs/turns.jsonl when it exceeds a size threshold (~50MB): rename to logs/turns-YYYYMMDD.jsonl and let the logger start a fresh file. Old segments are never deleted (no-delete rule; disk is cheap, reversibility is mandatory). ~20 lines modeled on replication_log_rotate.py.",
+  "depends_on": [
+    "T-272"
+  ],
+  "status": "closed",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. Add a rotate function modeled on scripts/passive/replication_log_rotate.py: if os.path.getsize(logs/turns.jsonl) > threshold, os.replace to logs/turns-YYYYMMDD.jsonl (append -1, -2 suffix if same-day rotation recurs).",
+    "2. Register it in the existing nightly APScheduler block in tools/tools_scheduler.py alongside the memory prune job.",
+    "3. Confirm agent/turn_log.py reopens/creates the file per append (if it holds a persistent handle, rotation must happen through a path the logger tolerates - check before choosing rename semantics).",
+    "4. Test: testing/test_turns_rotation.py - write a temp jsonl over a tiny threshold, run the rotate function, assert renamed segment exists and a fresh append still works (about 12 lines).",
+    "5. python scripts/verify.py PASS."
+  ],
+  "risk_notes": "The one real trap is a persistent file handle in agent/turn_log.py on Windows (rename of an open file fails on win32) - verify how the logger opens the file first; if it holds a handle, rotate at daemon startup instead of mid-run. Threshold is a constant, not a config knob.",
+  "resolution": "implemented",
+  "solution_id": "S-198",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

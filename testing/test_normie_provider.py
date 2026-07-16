@@ -31,11 +31,14 @@ def _make_mock_resp(provider: str = "cerebras") -> MagicMock:
 # ── tests ─────────────────────────────────────────────────────────────────────
 
 def test_cheap_tier_prefers_cerebras():
-    """LLMRouter cheap tier lists Cerebras before Groq."""
+    """Cheap tier: qwen first (hackathon; skipped when no key), then Cerebras before Groq."""
     from core.llm_router import LLMRouter
     order = LLMRouter._TIER_ORDERS["cheap"]
-    assert order[0] == "cerebras", (
-        f"Expected cerebras first in cheap tier, got: {order[0]}"
+    assert order[0] == "qwen", (
+        f"Expected qwen first in cheap tier (hackathon primary), got: {order[0]}"
+    )
+    assert order[1] == "cerebras", (
+        f"Expected cerebras before groq in cheap tier, got: {order[1]}"
     )
     assert "groq" in order, "Groq should be in cheap tier as fallback"
 
@@ -49,12 +52,25 @@ def test_normie_config_uses_cheap_tier():
     )
 
 
-def test_normie_config_no_tools():
-    """Normie ModeConfig has supports_tools=False (cheap providers don't support tools)."""
+def test_normie_config_read_tier_tools():
+    """Normie ModeConfig has supports_tools=True with a read-tier allowlist (T-201).
+
+    Groq supports function calling (groq_tools.py). The boundary between modes
+    is cost/model, not capability class: normie gets read-only tools, root gets all.
+    """
     from agent.modes import get_mode_config
     cfg = get_mode_config("normie")
-    assert not cfg.supports_tools
-    assert cfg.tool_allowlist == ()
+    assert cfg.supports_tools is True, "normie must have tools enabled after T-201"
+    assert cfg.tool_allowlist is not None, "normie needs an explicit allowlist"
+    assert len(cfg.tool_allowlist) > 0, "normie allowlist must not be empty"
+    # Spot-check read-tier tools present
+    assert "analyze_media" in cfg.tool_allowlist, "analyze_media must be in normie allowlist"
+    assert "web_search" in cfg.tool_allowlist, "web_search must be in normie allowlist"
+    assert "memory_read" in cfg.tool_allowlist, "memory_read must be in normie allowlist"
+    # Write tools must be absent
+    assert "modify_file" not in cfg.tool_allowlist, "modify_file must NOT be in normie allowlist"
+    assert "execute_bash" not in cfg.tool_allowlist, "execute_bash must NOT be in normie allowlist"
+    assert "gmail_send" not in cfg.tool_allowlist, "gmail_send must NOT be in normie allowlist"
 
 
 def test_normie_dispatches_cerebras_first(monkeypatch):

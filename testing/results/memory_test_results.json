@@ -1,45 +1,48 @@
 {
-  "timestamp": "2026-04-26T17:01:32.700969+00:00",
+  "timestamp": "2026-07-03T22:34:16.971517+00:00",
   "summary": {
     "total": 5,
-    "passed": 5,
-    "failed": 0,
-    "pass_rate": "100.0%"
+    "passed": 2,
+    "failed": 3,
+    "pass_rate": "40.0%"
   },
   "results": [
     {
       "test": "Memory Write L3",
       "status": "PASSED",
       "ticket": 1,
-      "timestamp": "2026-04-26T17:01:29.869571+00:00",
+      "timestamp": "2026-07-03T22:33:47.866835+00:00",
       "error": null
     },
     {
       "test": "Memory Read After Write",
-      "status": "PASSED",
+      "status": "ERROR",
       "ticket": 1,
-      "timestamp": "2026-04-26T17:01:30.482858+00:00",
-      "error": null
+      "timestamp": "2026-07-03T22:33:54.811546+00:00",
+      "error": "Read returned empty list",
+      "traceback": "Traceback (most recent call last):\n  File \"E:\\pi\\testing\\test_runner.py\", line 37, in run_test\n    result = test_func()\n  File \"E:\\pi\\testing\\test_memory.py\", line 67, in test_001_memory_read_after_write\n    assert len(read_result) > 0, f\"Read returned empty list\"\n           ^^^^^^^^^^^^^^^^^^^^\nAssertionError: Read returned empty list\n"
     },
     {
       "test": "Bulk Memory Read (empty query)",
-      "status": "PASSED",
+      "status": "ERROR",
       "ticket": 1,
-      "timestamp": "2026-04-26T17:01:31.263352+00:00",
-      "error": null
+      "timestamp": "2026-07-03T22:33:59.901351+00:00",
+      "error": "Bulk test query returned no results",
+      "traceback": "Traceback (most recent call last):\n  File \"E:\\pi\\testing\\test_runner.py\", line 37, in run_test\n    result = test_func()\n  File \"E:\\pi\\testing\\test_memory.py\", line 106, in test_001_memory_bulk_read\n    assert len(read_result) > 0, \"Bulk test query returned no results\"\n           ^^^^^^^^^^^^^^^^^^^^\nAssertionError: Bulk test query returned no results\n"
     },
     {
       "test": "Single Fact Recall",
-      "status": "PASSED",
+      "status": "ERROR",
       "ticket": 1,
-      "timestamp": "2026-04-26T17:01:31.951132+00:00",
-      "error": null
+      "timestamp": "2026-07-03T22:34:04.856847+00:00",
+      "error": "Single fact query returned no results",
+      "traceback": "Traceback (most recent call last):\n  File \"E:\\pi\\testing\\test_runner.py\", line 37, in run_test\n    result = test_func()\n  File \"E:\\pi\\testing\\test_memory.py\", line 138, in test_001_single_fact_recall\n    assert len(result) > 0, \"Single fact query returned no results\"\n           ^^^^^^^^^^^^^^^\nAssertionError: Single fact query returned no results\n"
     },
     {
       "test": "L3 and L2 Read/Write",
       "status": "PASSED",
       "ticket": 1,
-      "timestamp": "2026-04-26T17:01:32.700605+00:00",
+      "timestamp": "2026-07-03T22:34:16.970478+00:00",
       "error": null
     }
   ]

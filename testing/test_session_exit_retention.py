@@ -14,7 +14,6 @@ def _make_agent():
     agent = MagicMock()
     agent.session_id = "test_sess"
     agent.messages = []
-    agent.history = []
     agent.evolution.get_recent_interactions.return_value = []
     return agent
 

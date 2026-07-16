@@ -1,0 +1,22 @@
+{
+  "id": "T-180",
+  "source": "Claude gap analysis 2026-06-11 (Track B)",
+  "title": "Parallel tool dispatch: independent tool_use blocks execute concurrently",
+  "component": "pi_agent.py (_respond_via_config tool loop), agent/tools.py",
+  "current_state": "resp.tool_calls executes in a sequential for-loop. When the model requests 3 independent reads (weather + calendar + memory), latency is the SUM of all three.",
+  "target_state": "Tool calls in one assistant message run via ThreadPoolExecutor (max_workers=4) with per-call timeout (default 60s); results reassemble in original tool_use order so the tool_result message is byte-identical in shape to today. Side-effectful tools (modify_file, create_file, execute_bash, execute_python, computer_*, gmail_send, telegram_send) are marked serial=True in their ToolSpec and force the whole batch sequential \u2014 correctness beats speed when writes are involved.",
+  "severity": "P2",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-06-11T15:00:00+00:00",
+  "migration_plan": [
+    "1. Add ToolSpec.serial: bool = False; set True on every write/side-effect tool (enumerate explicitly, default-closed for execution tools).",
+    "2. In the tool loop: if len(tool_calls)>1 and all are serial=False \u2192 ThreadPoolExecutor, ordered collect; else today's loop.",
+    "3. Per-call timeout returns a structured timeout error as that call's tool_result (turn survives).",
+    "4. Thread-safety audit of shared tool singletons (browser/_b(), computer-use); mark non-thread-safe ones serial=True.",
+    "5. Tests: 3 fake slow tools \u2192 wall-clock < sum; ordering preserved; one serial tool in batch \u2192 sequential path; timeout produces error result not exception."
+  ],
+  "risk_notes": "RISK_FLAGGED files \u2192 interactive. SQLite connections are per-call in most handlers (check _bump_access). Default-closed: anything ambiguous gets serial=True.",
+  "closed": "2026-06-13T04:10:10.809458+00:00",
+  "linked_solution": "S-129"
+}

@@ -13,9 +13,7 @@ Usage:
   python scripts/memory_cli.py pin <id-prefix>
   python scripts/memory_cli.py why <id-prefix>
 
-Privacy:
-  Default: operates on data/pi.db only.
-  --god flag requires ALSO setting PI_GOD_CLI=1 env. Either alone refuses.
+Operates on data/pi.db.
 """
 from __future__ import annotations
 
@@ -24,34 +22,23 @@ import json
 import os
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # ── paths ─────────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).parent.parent
 _PUBLIC_DB = _ROOT / "data" / "pi.db"
-_GOD_DB = _ROOT / "data" / "god_memory.db"
-_GOD_ENV = "PI_GOD_CLI"
 
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
 
-def _db_path(god: bool) -> Path:
-    """Return SQLite path. god=True requires PI_GOD_CLI=1 in env."""
-    if god:
-        if os.environ.get(_GOD_ENV, "").lower() not in ("1", "on", "true", "yes"):
-            print(
-                f"[memory_cli] Refused: --god requires env {_GOD_ENV}=1. "
-                "See PI.md §1 rule 7 — god memory is private by design.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        return _GOD_DB
+def _db_path() -> Path:
+    """Return the SQLite path (data/pi.db)."""
     return _PUBLIC_DB
 
 
-def _connect(god: bool) -> sqlite3.Connection:
-    path = _db_path(god)
+def _connect() -> sqlite3.Connection:
+    path = _db_path()
     if not path.exists():
         print(f"[memory_cli] DB not found: {path}", file=sys.stderr)
         sys.exit(1)
@@ -100,7 +87,7 @@ def _fmt_row(cols: list[str], row: tuple, full_id: bool = False) -> str:
 
 def cmd_list(args: argparse.Namespace) -> None:
     """Print L3 rows, filtered by tier/category/limit."""
-    con = _connect(args.god)
+    con = _connect()
     cols = _row_cols(con)
 
     where_clauses = []
@@ -134,36 +121,53 @@ def cmd_list(args: argparse.Namespace) -> None:
 
 
 def cmd_forget(args: argparse.Namespace) -> None:
-    """Semantic search → show top candidates → confirm → invalidate."""
-    con = _connect(args.god)
-    query = args.query.lower()
-    cur = con.execute(
-        "SELECT id, content, importance, category, invalid_at "
-        "FROM l3_cache WHERE invalid_at IS NULL "
-        "ORDER BY importance DESC, created_at DESC"
-    )
-    all_rows = cur.fetchall()
-    con.close()
+    """Semantic search (dense cosine + BM25 fusion, T-302) → show top candidates
+    with scores → confirm → invalidate. Falls back to plain word-overlap
+    scoring if MemoryTools/retrieve is unavailable — offline L3 search still
+    works without an embedding provider (degrades to BM25 automatically).
+    """
+    query = args.query
+    if not _PUBLIC_DB.exists():
+        print(f"[memory_cli] DB not found: {_PUBLIC_DB}", file=sys.stderr)
+        sys.exit(1)
 
-    # Score by simple word overlap
-    q_words = set(query.split())
-    scored = []
-    for row in all_rows:
-        rid, content, imp, cat, _ = row
-        c_words = set((content or "").lower().split())
-        score = len(q_words & c_words) / max(len(q_words), 1)
-        if score > 0:
-            scored.append((score, row))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    candidates = [r for _, r in scored[:3]]
+    candidates: list[tuple] = []  # (id, content, importance, category, score)
+    try:
+        from tools.tools_memory import MemoryTools
+        mt = MemoryTools(supabase_url="", supabase_key="", sqlite_path=str(_PUBLIC_DB))
+        candidates = [
+            (h["id"], h["content"], h["importance"], h["category"], h.get("score", 0.0))
+            for h in mt.retrieve(query, k=3, tiers=("l3",))
+        ]
+    except Exception:
+        candidates = []
+
+    if not candidates:
+        # Fallback: plain word-overlap scoring (T-139/T-145 era behavior).
+        con = _connect()
+        all_rows = con.execute(
+            "SELECT id, content, importance, category, invalid_at "
+            "FROM l3_cache WHERE invalid_at IS NULL "
+            "ORDER BY importance DESC, created_at DESC"
+        ).fetchall()
+        con.close()
+        q_words = set(query.lower().split())
+        scored = []
+        for rid, content, imp, cat, _ in all_rows:
+            c_words = set((content or "").lower().split())
+            score = len(q_words & c_words) / max(len(q_words), 1)
+            if score > 0:
+                scored.append((score, (rid, content, imp, cat)))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        candidates = [(rid, content, imp, cat, score) for score, (rid, content, imp, cat) in scored[:3]]
 
     if not candidates:
         print(f"[memory_cli] No rows matching '{args.query}'.")
         return
 
     print(f"[memory_cli] Top matches for '{args.query}':")
-    for i, (rid, content, imp, cat, _) in enumerate(candidates):
-        print(f"  [{i+1}] {rid[:8]}  imp={imp}  [{cat}]  {(content or '')[:100]!r}")
+    for i, (rid, content, imp, cat, score) in enumerate(candidates):
+        print(f"  [{i+1}] {rid[:8]}  imp={imp}  score={score:.2f}  [{cat}]  {(content or '')[:100]!r}")
 
     if args.yes:
         chosen = candidates
@@ -180,7 +184,7 @@ def cmd_forget(args: argparse.Namespace) -> None:
             return
 
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    con = _connect(args.god)
+    con = _connect()
     for row in chosen:
         rid = row[0]
         con.execute(
@@ -194,7 +198,7 @@ def cmd_forget(args: argparse.Namespace) -> None:
 
 def cmd_pin(args: argparse.Namespace) -> None:
     """Set importance=10 on a row. No-op if pinned column missing (pre-T-135)."""
-    con = _connect(args.god)
+    con = _connect()
     cols = _row_cols(con)
     row = _find_by_prefix(con, args.id_prefix)
     if row is None:
@@ -221,7 +225,7 @@ def cmd_pin(args: argparse.Namespace) -> None:
 
 def cmd_why(args: argparse.Namespace) -> None:
     """Print full metadata trace for a row."""
-    con = _connect(args.god)
+    con = _connect()
     cols = _row_cols(con)
     row = _find_by_prefix(con, args.id_prefix)
     con.close()
@@ -251,6 +255,111 @@ def cmd_why(args: argparse.Namespace) -> None:
         print(f"  Formula     : {d.get('formula') or '-'}")
 
 
+def _parse_iso(s: str | None):
+    """Parse an ISO timestamp that may use 'Z' or '+00:00' suffix. None on failure."""
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def cmd_forgotten(args: argparse.Namespace) -> None:
+    """T-301: the forgetting ledger — recently forgotten rows, classified by why.
+
+    Precedence (a row is classified exactly once, never shown twice):
+      1. CONTRADICTED — invalid_at is set (a newer fact superseded it)
+      2. EXPIRED      — active_until has passed (scheduled/inferred expiry, or
+                         decay-archive) and invalid_at is NOT set
+      3. MERGED       — superseded_by is set (semantic-dedup merge loser) and
+                         neither of the above applies
+
+    SQL stays dumb (pulls every row carrying any of the three signals);
+    classification and the --days window are applied in Python since the
+    three timestamp columns aren't uniformly formatted across write paths.
+
+    Caveat: dedup-merge (T-125b) does not record a merge timestamp, so MERGED
+    rows are always included regardless of --days — there is nothing to window on.
+    """
+    con = _connect()
+    days = getattr(args, "days", None)
+    if days is None:
+        days = 7
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=days)
+
+    rows = con.execute(
+        "SELECT id, content, importance, category, active_until, invalid_at, superseded_by "
+        "FROM l3_cache WHERE invalid_at IS NOT NULL "
+        "   OR active_until IS NOT NULL "
+        "   OR (superseded_by IS NOT NULL AND superseded_by != '')"
+    ).fetchall()
+
+    classified = []
+    for rid, content, imp, cat, active_until, invalid_at, superseded_by in rows:
+        invalid_dt = _parse_iso(invalid_at)
+        active_dt = _parse_iso(active_until)
+
+        if invalid_dt is not None:
+            reason, when_dt, pointer_id = "CONTRADICTED", invalid_dt, None
+        elif active_dt is not None and active_dt < now:
+            reason, when_dt, pointer_id = "EXPIRED", active_dt, None
+        elif superseded_by:
+            reason, when_dt, pointer_id = "MERGED", None, superseded_by
+        else:
+            continue
+
+        if when_dt is not None and when_dt < cutoff:
+            continue
+
+        classified.append({
+            "id": rid, "content": content, "importance": imp, "category": cat,
+            "reason": reason, "when": when_dt.isoformat() if when_dt else None,
+            "pointer_id": pointer_id,
+        })
+
+    # Resolve MERGED pointer content snippets in one batch query.
+    pointer_ids = [c["pointer_id"] for c in classified if c["pointer_id"]]
+    winners = {}
+    if pointer_ids:
+        ph = ",".join("?" * len(pointer_ids))
+        winners = dict(con.execute(
+            f"SELECT id, content FROM l3_cache WHERE id IN ({ph})", pointer_ids
+        ).fetchall())
+    con.close()
+
+    for c in classified:
+        if c["pointer_id"]:
+            c["superseded_by_snippet"] = (winners.get(c["pointer_id"]) or "")[:60]
+
+    with_time = sorted((c for c in classified if c["when"]), key=lambda c: c["when"], reverse=True)
+    without_time = [c for c in classified if not c["when"]]
+    classified = with_time + without_time
+
+    if args.json:
+        print(json.dumps(classified, indent=2, ensure_ascii=False))
+        return
+
+    if not classified:
+        print(f"[memory_cli] Nothing forgotten in the last {days} day(s).")
+        return
+
+    counts = {"EXPIRED": 0, "CONTRADICTED": 0, "MERGED": 0}
+    print(f"[memory_cli] Forgotten in the last {days} day(s):")
+    for c in classified:
+        counts[c["reason"]] += 1
+        when_str = (c["when"] or "—")[:19]
+        line = f"  {c['id'][:8]}  {c['reason']:12}  {when_str}  {(c['content'] or '')[:60]!r}"
+        if c["reason"] == "MERGED":
+            line += f"  -> merged into: {c.get('superseded_by_snippet', '')!r}"
+        print(line)
+    print(
+        f"[memory_cli] {counts['EXPIRED']} expired, "
+        f"{counts['CONTRADICTED']} contradicted, {counts['MERGED']} merged"
+    )
+
+
 # ── arg parser ─────────────────────────────────────────────────────────────────
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -258,8 +367,6 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="memory_cli",
         description="Inspect and steer Pi's L3 memory.",
     )
-    p.add_argument("--god", action="store_true",
-                   help=f"Target god_memory.db (also requires {_GOD_ENV}=1 env)")
 
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -286,6 +393,11 @@ def _build_parser() -> argparse.ArgumentParser:
     wy.add_argument("id_prefix", metavar="ID-PREFIX", help="Row ID prefix (min 4 chars)")
     wy.add_argument("--json", action="store_true")
 
+    # forgotten
+    fgn = sub.add_parser("forgotten", help="The forgetting ledger — what/when/why")
+    fgn.add_argument("--days", type=int, default=7)
+    fgn.add_argument("--json", action="store_true")
+
     return p
 
 
@@ -298,6 +410,7 @@ def main() -> None:
         "forget": cmd_forget,
         "pin": cmd_pin,
         "why": cmd_why,
+        "forgotten": cmd_forgotten,
     }
     dispatch[args.cmd](args)
 

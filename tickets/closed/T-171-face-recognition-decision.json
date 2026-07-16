@@ -1,0 +1,22 @@
+{
+  "id": "T-171",
+  "source": "Remediation sequence C1-C6 (fresh-eyes audit 2026-06-06); filed for later manual implementation. See docs/PROJECT_MAP.md and the approved plan.",
+  "title": "Decide face-recognition's fate: test + privacy note, or archive (C5)",
+  "component": "tools/tools_media.py (detect_faces/recognize_face/register_face/list_registered_faces)",
+  "what_failed": "Four face tools operate on biometric data with no accuracy test and an unclear real use - a dishonest, privacy-sensitive surface.",
+  "where_failed": "tools/tools_media.py face functions; no test_*; biometric DB gitignored.",
+  "why_likely": "Added in the media feature burst; never validated or justified.",
+  "severity": "P3",
+  "status": "closed",
+  "created": "2026-06-07T00:00:00+00:00",
+  "closed": "2026-06-12T18:44:46.032838+00:00",
+  "linked_solution": null,
+  "depends_on": [],
+  "migration_plan": [
+    "1. Decide: is face-rec actually used? If YES - add a behavioral accuracy test + a privacy note (data handling, retention).",
+    "2. If NO - archive the four tools to docs/_archive/ and drop them from the pitch.",
+    "3. Default to archive unless there is a concrete use."
+  ],
+  "implementation_notes": "Smart and simple: biometric features need a test + a privacy story or they should not ship. When in doubt, archive.",
+  "analysis": "Privacy-recurrence risk (cf. T-158). The honest default for unused biometric code is to remove it."
+}

@@ -1,0 +1,22 @@
+{
+  "id": "T-192",
+  "source": "Claude gap analysis 2026-06-11 (Track D \u2014 identity)",
+  "title": "Slim consciousness.txt + make capability claims structurally un-driftable",
+  "component": "prompts/consciousness.txt, scripts/refresh_pi.py or scripts/passive/consciousness_capability_sync.py, scripts/verify.py",
+  "current_state": "consciousness.txt is 426 lines (three docs claim ~700 \u2014 even the docs about the prompt drift). It hand-lists behaviors and capabilities that the consciousness-sync passive skill then has to police after the fact. Identity and capability-inventory are tangled in one hand-edited file.",
+  "target_state": "consciousness.txt = identity + values + honesty rules ONLY (~250 lines). Capability inventory becomes an auto-generated block (from the live tool registry, same source as PI.md \u00a77) injected via the existing {{INCLUDE:}} mechanism or a marker section refreshed by refresh_pi.py. verify.py gains a cheap check: every tool name mentioned in consciousness.txt exists in the registry \u2014 a claim about a nonexistent tool FAILS the build. The LOG1/LOG2 anti-miming lesson, enforced by CI instead of vigilance.",
+  "severity": "P1",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-06-11T15:00:00+00:00",
+  "migration_plan": [
+    "1. Audit current 426 lines: classify identity / capability-claim / dead.",
+    "2. Move capability text into an AUTO block generated from get_tool_definitions() (grouped, one line per group \u2014 keep prompt tokens flat).",
+    "3. refresh_pi.py regenerates it alongside \u00a77.",
+    "4. verify.py check: regex tool-name mentions against registry names; unknown \u2192 FAIL with the offending line.",
+    "5. Re-run prompt-cache split (static segment changes) and confirm cache hit behavior unchanged."
+  ],
+  "risk_notes": "consciousness.txt + prompt.py are RISK_FLAGGED \u2192 interactive, diff-first. Behavior change risk: trim conservatively, never reword the honesty/anti-miming sections.",
+  "closed": "2026-06-12T19:15:27.694167+00:00",
+  "linked_solution": "S-124"
+}

@@ -213,27 +213,26 @@ class _ExitState:
 
 
 def generate_session_summary(
-    groq_client,
+    router,
     messages: List[Dict],
-    history: List[Dict],
     n: int = 12,
 ) -> str:
-    """Summarize the session via Groq. Falls back to history if messages empty."""
+    """Summarize the session via the LLM router (tier='cheap') from the
+    canonical messages list.
+
+    T-294: routed through core.llm_router.LLMRouter instead of a bare Groq
+    client — on the hackathon deploy this means Qwen writes the summary
+    (tier='cheap' puts qwen first when QWEN_API_KEY is set); Groq/Cerebras
+    unchanged locally. Same tier/budget/brownout/failover as every other
+    router call.
+    """
     try:
         context = extract_text_from_messages(messages, n=n)
-
-        # Fallback: use string-only history if messages gave nothing
-        if not context and history:
-            lines = []
-            for h in history[-n:]:
-                lines.append(f"{h['role']}: {str(h.get('content', ''))[:300]}")
-            context = "\n".join(lines)
 
         if not context:
             return ""
 
-        response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+        resp = router.chat(
             messages=[{
                 "role": "user",
                 "content": (
@@ -241,9 +240,12 @@ def generate_session_summary(
                     f"reference:\n\n{context}"
                 ),
             }],
+            system="",
+            tools=[],
             max_tokens=150,
+            tier="cheap",
         )
-        return response.choices[0].message.content
+        return resp.text
     except Exception as e:
         print(f"[Pi] Summary generation failed: {e}")
         return ""
@@ -276,7 +278,7 @@ def _do_flush_logs(agent) -> None:
 
 
 def _do_session_summary(agent) -> None:
-    if not (agent.messages or agent.history):
+    if not agent.messages:
         return
     summary = agent._generate_session_summary()
     if not summary:
@@ -349,7 +351,17 @@ def _do_caretaker_full(agent) -> None:
             from agent.caretaker import full as _full
             if agent is not None and hasattr(agent, "memory"):
                 db_path = _Path(agent.memory.sqlite_path)
-                _full(db_path)
+                # T-303: thread the router through so the LLM-adjudicated
+                # contradiction pass can run (tier='cheap' — Qwen on the
+                # hackathon deploy). None (router absent) skips it, unchanged.
+                _full(db_path, router=getattr(agent, "router", None))
+                # T-291 follow-up: embed L3 rows written this session (write path
+                # leaves embedding NULL to keep turns fast). Idempotent + capped;
+                # offline (no embed provider) each row no-ops instantly. Partial
+                # progress is fine — next exit picks up where this one stopped.
+                n = agent.memory.backfill_l3_embeddings(limit=25)
+                if n:
+                    print(f"[Memory] L3 embedding backfill: {n} row(s)")
         except Exception as e:
             track_silent("caretaker.session_exit_error", e)
         finally:

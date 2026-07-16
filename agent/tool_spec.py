@@ -28,3 +28,4 @@ class ToolSpec:
     handler: Callable[..., Any]
     success_predicate: Callable[[Any], bool] = field(default=_always_succeeds)
     aliases: Tuple[str, ...] = ()
+    serial: bool = False  # T-180: True = must run sequentially (side-effectful tools)

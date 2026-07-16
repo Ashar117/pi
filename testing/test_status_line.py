@@ -33,12 +33,6 @@ def test_format_normie_mode():
     assert "session b1c2d3e" in line
 
 
-def test_format_god_mode_redacts_session_id():
-    line = format_status_line("god", "secret12", 1, 0.0, 0, 10)
-    assert "secret12" not in line
-    assert "????????" in line
-
-
 def test_format_unknown_l3_shows_question_mark():
     line = format_status_line("root", "abc", 1, 0.0, 0, -1)
     assert "L3: ?" in line
@@ -107,18 +101,6 @@ def test_emit_writes_to_stderr_when_enabled(monkeypatch, capsys):
     assert "3 open" in captured.err
     assert "L3: 99" in captured.err
     assert captured.out == ""  # never stdout
-
-
-def test_emit_god_mode_redacts_session_id(monkeypatch, capsys):
-    monkeypatch.setenv("PI_STATUS_LINE", "on")
-    agent = _make_agent(mode="god", session_id="secretXY")
-    with patch("agent.status_line.count_today", return_value=1), \
-         patch("agent.status_line._count_open_tickets", return_value=0), \
-         patch("agent.status_line._count_l3_rows", return_value=0):
-        emit_if_enabled(agent)
-    captured = capsys.readouterr()
-    assert "secretXY" not in captured.err
-    assert "????????" in captured.err
 
 
 def test_emit_fallback_on_exception(monkeypatch, capsys):

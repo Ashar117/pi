@@ -129,6 +129,48 @@ class TestScanCodeMarkers:
         assert any("tools_foo" in c["title"] for c in result)
 
 
+class TestScanCorrectionSignals:
+    def _write_turns(self, tmp_path, rows):
+        logs = tmp_path / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        (logs / "turns.jsonl").write_text(
+            "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8"
+        )
+
+    def test_correction_flagged_with_both_turns(self, tmp_path):
+        self._write_turns(tmp_path, [
+            {"ts": "2026-07-07T03:14:00+00:00", "user_input": "am I eligible",
+             "response_preview": "here are some scholarships for women in tech"},
+            {"ts": "2026-07-07T03:16:00+00:00", "user_input": "no, I'm an F-1 student",
+             "response_preview": "my bad, missed that"},
+        ])
+        result = tcm.scan_correction_signals(tmp_path)
+        assert len(result) == 1
+        desc = result[0]["description"]
+        assert "F-1 student" in desc
+        assert "women in tech" in desc
+
+    def test_benign_again_not_flagged(self, tmp_path):
+        self._write_turns(tmp_path, [
+            {"ts": "2026-07-07T03:00:00+00:00",
+             "user_input": "can't wait to see you again tomorrow",
+             "response_preview": "looking forward to it"},
+        ])
+        assert tcm.scan_correction_signals(tmp_path) == []
+
+    def test_same_day_correction_deduped(self, tmp_path):
+        self._write_turns(tmp_path, [
+            {"ts": "2026-07-07T03:00:00+00:00", "user_input": "again why are you doing this",
+             "response_preview": "sorry"},
+            {"ts": "2026-07-07T03:05:00+00:00", "user_input": "again, that is wrong",
+             "response_preview": "my bad"},
+        ])
+        assert len(tcm.scan_correction_signals(tmp_path)) == 1
+
+    def test_no_log_file_returns_empty(self, tmp_path):
+        assert tcm.scan_correction_signals(tmp_path) == []
+
+
 class TestDeduplication:
     def test_existing_ticket_excluded(self, tmp_path):
         _ticket(tmp_path, "open", "T-001", "Fix failing test: foo::bar")

@@ -127,7 +127,10 @@ class TestTelegramSendMessage:
         tools_telegram._TOKEN = orig_token
         tools_telegram._ALLOWED_CHAT_ID = orig_chat
         assert result["success"] is True
-        mock_bot.send_message.assert_called_once_with(123456, "test message")
+        # T-219: send_message now passes parse_mode='HTML'; check chat_id and text
+        args, kwargs = mock_bot.send_message.call_args
+        assert args[0] == 123456
+        assert "test message" in args[1]  # _format_for_telegram may escape but preserves text
 
     def test_send_exception_returns_failure(self):
         from tools import tools_telegram
@@ -201,12 +204,14 @@ class TestPiScheduler:
         result = sched.list_jobs()
         assert result["running"] is True
         # T-085 R4: daily_briefing + memory_prune + weekly_audit.
-        # T-083 R2.3: tool_usage_audit. T-087 R6: replication_log_rotate. Five default jobs.
-        assert result["count"] == 5
+        # T-083 R2.3: tool_usage_audit. T-087 R6: replication_log_rotate.
+        # T-259: turns_log_rotate. T-285: vault_sync. Seven default jobs.
+        assert result["count"] == 7
         job_ids = {j["id"] for j in result["jobs"]}
         assert job_ids == {
             "daily_briefing", "memory_prune", "weekly_audit",
-            "tool_usage_audit", "replication_log_rotate",
+            "tool_usage_audit", "replication_log_rotate", "turns_log_rotate",
+            "vault_sync",
         }
         sched.stop()
         sched_lib.clear()
@@ -254,3 +259,20 @@ class TestPiScheduler:
         assert result["errors"] == []
         sched._agent.memory.prune_l3_expired.assert_called_once()
         sched._agent.memory.prune_l2_stale.assert_called_once()
+
+    def test_vault_sync_job_calls_sync_vault(self):
+        """T-285: daily vault sync job calls tools_obsidian.sync_vault(agent.memory)."""
+        sched = self._make_scheduler()
+        with patch("tools.tools_obsidian.sync_vault") as mock_sync:
+            mock_sync.return_value = {"success": True, "per_ticket": {"written": 5}}
+            result = sched._vault_sync_job()
+        mock_sync.assert_called_once_with(sched._agent.memory)
+        assert result == {"success": True, "per_ticket": {"written": 5}}
+
+    def test_vault_sync_job_survives_exception(self):
+        """A sync failure must not crash the scheduler thread."""
+        sched = self._make_scheduler()
+        with patch("tools.tools_obsidian.sync_vault", side_effect=RuntimeError("boom")):
+            result = sched._vault_sync_job()
+        assert result["success"] is False
+        assert "boom" in result["error"]

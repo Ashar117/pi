@@ -41,6 +41,29 @@ def test_l3_write_defaults_null_when_context_absent(tmp_path):
     assert _l3_row(m.sqlite_path, "plain fact") == (None, None)
 
 
+def test_cross_session_pattern_detected(tmp_path):
+    """T-136: an entity recurring across >=3 distinct conversations → pattern."""
+    m = _mem(tmp_path, "patterns.db")
+    # distinct content per conversation (avoids L3 dedup), shared entity "Zephyr"
+    m.memory_write(content="Zephyr launch was discussed", tier="l3", conversation_id="c1")
+    m.memory_write(content="reviewed the Zephyr budget", tier="l3", conversation_id="c2")
+    m.memory_write(content="Zephyr timeline slipped a week", tier="l3", conversation_id="c3")
+    # an entity in only one conversation must NOT pattern
+    m.memory_write(content="Quasar is a one-off note", tier="l3", conversation_id="c1")
+    patterns = m.detect_cross_session_patterns(min_sessions=3)
+    entities = {p["entity"] for p in patterns}
+    assert "Zephyr" in entities, f"recurring entity not detected: {patterns}"
+    assert "Quasar" not in entities
+    z = next(p for p in patterns if p["entity"] == "Zephyr")
+    assert z["sessions"] == 3 and z["source"] == "replay" and z["category"] == "pattern_observation"
+
+
+def test_cross_session_patterns_empty_when_no_conversation_id(tmp_path):
+    m = _mem(tmp_path, "nopat.db")
+    m.memory_write(content="Zephyr fact without conversation", tier="l3")
+    assert m.detect_cross_session_patterns(min_sessions=3) == []
+
+
 def test_migration_is_idempotent_and_adds_columns(tmp_path):
     db = str(tmp_path / "t3.db")
     MemoryTools(supabase_url="", supabase_key="", db_path=db)

@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def test_should_bypass_known_commands():
     from agent.thinking import should_bypass
-    for cmd in ["exit", "/exit", "help", "clear", "normie mode", "root", "god"]:
+    for cmd in ["exit", "/exit", "help", "clear", "normie mode", "root", "research"]:
         assert should_bypass(cmd), f"{cmd} should bypass"
 
 
@@ -151,3 +151,60 @@ def test_format_thinking_block_low_confidence_warns():
         "confidence": 0.3,
     })
     assert "confidence low" in block
+
+
+# ── T-129: extended thinking (referenced_memories + ask_clarifier) ───────────
+
+def test_lite_response_still_parses_with_default_extended_fields():
+    """Backward compat: a 3-field (lite) response parses, new fields default."""
+    from agent.thinking import _parse_response
+    raw = '{"intent": "info", "normalised_query": "q", "confidence": 0.9}'
+    parsed = _parse_response(raw)
+    assert parsed["referenced_memories"] == []
+    assert parsed["ask_clarifier"] is None
+
+
+def test_extended_output_includes_referenced_memories():
+    from agent.thinking import _parse_response
+    raw = ('{"intent": "info", "normalised_query": "the deadline", "confidence": 0.9, '
+           '"referenced_memories": ["abc123", "def456"], "ask_clarifier": null}')
+    parsed = _parse_response(raw)
+    assert parsed["referenced_memories"] == ["abc123", "def456"]
+    assert parsed["ask_clarifier"] is None
+
+
+def test_clarifier_generated_when_confidence_low():
+    from agent.thinking import _parse_response
+    raw = ('{"intent": "clarification", "normalised_query": "wdym", "confidence": 0.3, '
+           '"referenced_memories": [], "ask_clarifier": "Which order do you mean — the subway one or the pizza one?"}')
+    parsed = _parse_response(raw)
+    assert parsed["ask_clarifier"].startswith("Which order")
+
+
+def test_recall_hits_appear_in_prompt():
+    from agent.thinking import _build_prompt
+    hits = [{"id": "mem-xyz", "content": "GNN paper deadline is June 10"}]
+    prompt = _build_prompt("when is it due", history=None, recall_hits=hits)
+    assert "mem-xyz" in prompt and "GNN paper deadline" in prompt
+
+
+def test_normalise_extended_via_groq():
+    from agent import thinking
+    fake = ('{"intent": "info", "normalised_query": "gnn deadline", "confidence": 0.9, '
+            '"referenced_memories": ["mem-xyz"], "ask_clarifier": null}')
+    hits = [{"id": "mem-xyz", "content": "GNN paper deadline is June 10"}]
+    with patch.object(thinking, "_try_groq", return_value=fake), \
+         patch.object(thinking, "_try_haiku", return_value=None):
+        result = thinking.normalise("when is it due", recall_hits=hits)
+    assert result["referenced_memories"] == ["mem-xyz"]
+
+
+def test_format_block_renders_clarifier_and_refs():
+    from agent.thinking import format_thinking_block
+    block = format_thinking_block({
+        "intent": "info", "normalised_query": "q", "confidence": 0.4,
+        "referenced_memories": ["m1", "m2"],
+        "ask_clarifier": "Do you mean the budget or the timeline?",
+    })
+    assert "referenced_memories: m1, m2" in block
+    assert "Do you mean the budget" in block

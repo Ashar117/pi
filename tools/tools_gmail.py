@@ -176,7 +176,12 @@ class GmailTools:
             return {"success": False, "error": str(e), "summary": f"Gmail error: {e}"}
 
     def gmail_send(self, to: str, subject: str, body: str) -> Dict:
-        """Send an email. Returns draft info — actual send requires Ash confirmation."""
+        """Create a Gmail draft. Never sends immediately — Ash reviews and sends from Gmail.
+
+        T-271: previously called messages().send() directly despite this
+        docstring (and the module docstring) documenting draft-only behavior.
+        Fixed to match the contract every caller already assumes.
+        """
         try:
             svc = self._get_service()
 
@@ -189,14 +194,15 @@ class GmailTools:
             )
             encoded = base64.urlsafe_b64encode(raw_msg.encode("utf-8")).decode("ascii")
 
-            result = svc.users().messages().send(
+            result = svc.users().drafts().create(
                 userId="me",
-                body={"raw": encoded}
+                body={"message": {"raw": encoded}}
             ).execute()
 
             return {
                 "success":    True,
-                "message_id": result.get("id"),
+                "draft_id":   result.get("id"),
+                "message_id": result.get("message", {}).get("id"),
                 "to":         to,
                 "subject":    subject,
             }
@@ -351,7 +357,7 @@ TOOLS = [
     ),
     ToolSpec(
         name="gmail_send",
-        description="Send an email. Ash must explicitly confirm before calling this.",
+        description="Create a Gmail draft (never sends immediately). Ash reviews and sends it from Gmail.",
         input_schema={
             "type": "object",
             "properties": {

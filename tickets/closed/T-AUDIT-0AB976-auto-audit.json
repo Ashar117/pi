@@ -1,0 +1,14 @@
+{
+  "id": "T-AUDIT-0AB976",
+  "source": "tool_usage_audit.py",
+  "title": "[auto] Prune tool `list_registered_faces` \u2014 0 calls in 30d",
+  "severity": "P3",
+  "status": "closed",
+  "created": "2026-06-19T07:53:12.505222+00:00",
+  "tool": "list_registered_faces",
+  "calls_30d": 0,
+  "threshold": 3,
+  "suggested_fix": "Remove `list_registered_faces` from the tool registry or merge it (0 invocations / 30d \u2014 planner cost with no value).",
+  "closed": "2026-06-20T20:55:46.436327+00:00",
+  "resolution": "INVALID DATA: 0-call stats collected during June 2026 provider outage (494 error-turns, no LLM provider was reachable). Tool call counts are 0 across the board because Pi could not execute any tools, not because these tools are unused. Batch-closed 2026-06-21."
+}

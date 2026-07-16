@@ -38,7 +38,7 @@ def test_groq_success_no_haiku_call():
     result = compress_messages_with_groq(msgs, groq, threshold=30, keep_recent=12, anthropic_client=anthropic)
 
     assert len(result) <= 14
-    assert result[0]["content"].startswith("[CONVERSATION SUMMARY")
+    assert result[0]["content"].startswith("[CONVERSATION DIGEST")
     anthropic.messages.create.assert_not_called()
 
 
@@ -57,7 +57,7 @@ def test_groq_rate_limit_falls_back_to_haiku():
     anthropic.messages.create.assert_called_once()
     call_kwargs = anthropic.messages.create.call_args[1]
     assert call_kwargs["model"] == "claude-haiku-4-5-20251001"
-    assert result[0]["content"].startswith("[CONVERSATION SUMMARY")
+    assert result[0]["content"].startswith("[CONVERSATION DIGEST")
     assert "haiku" in result[0]["content"]
 
 
@@ -71,7 +71,7 @@ def test_groq_generic_error_falls_back_to_haiku():
     result = compress_messages_with_groq(msgs, groq, threshold=30, keep_recent=12, anthropic_client=anthropic)
 
     anthropic.messages.create.assert_called_once()
-    assert result[0]["content"].startswith("[CONVERSATION SUMMARY")
+    assert result[0]["content"].startswith("[CONVERSATION DIGEST")
 
 
 def test_both_llms_fail_raises_compression_failed():

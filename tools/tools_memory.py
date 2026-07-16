@@ -9,8 +9,19 @@ import re
 import sqlite3
 import threading
 import uuid
+import warnings
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
+
+# T-200: supabase-py 2.x internally passes deprecated timeout/verify kwargs to
+# postgrest-py. Filter at module level — we have no control over library internals
+# and the behavior is unchanged; these will become errors in a future supabase major.
+warnings.filterwarnings(
+    "ignore", category=DeprecationWarning, module=r"supabase\._sync\.client"
+)
+warnings.filterwarnings(
+    "ignore", category=DeprecationWarning, module=r"postgrest\._sync\.client"
+)
 
 try:
     from rank_bm25 import BM25Okapi as _BM25Okapi  # pip install rank-bm25
@@ -37,6 +48,64 @@ def _tokenize(text: str) -> List[str]:
     return [t for t in tokens if t not in _STOPWORDS and len(t) > 1]
 
 
+# ── T-299: write-time temporal inference (deterministic phrase table) ────────
+# NOT an NLP date parser, NOT a new dependency. False negatives are fine (the
+# fact just stays permanent — today's behavior); false positives are not, so
+# every pattern requires an explicit validity idiom — never a bare weekday
+# mention ("meeting on friday" must NOT expire; only "until friday" does).
+# First hit wins, no scoring (ponytail: simplest thing that can't misfire).
+
+_WEEKDAYS = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+    "friday": 4, "saturday": 5, "sunday": 6,
+}
+
+
+def _end_of_day(dt: datetime) -> datetime:
+    return dt.replace(hour=23, minute=59, second=59, microsecond=0)
+
+
+def _next_weekday(now: datetime, target: int) -> datetime:
+    days_ahead = (target - now.weekday()) % 7
+    if days_ahead == 0:
+        days_ahead = 7  # "until monday" said ON a monday means next monday
+    return _end_of_day(now + timedelta(days=days_ahead))
+
+
+_EPHEMERAL_PATTERNS = [
+    (re.compile(r"\b(just for today|for today only|today only|for today)\b", re.I),
+     lambda now, m: _end_of_day(now)),
+    (re.compile(r"\btonight\b", re.I),
+     lambda now, m: _end_of_day(now)),
+    (re.compile(r"\buntil tomorrow\b", re.I),
+     lambda now, m: _end_of_day(now + timedelta(days=1))),
+    (re.compile(r"\bfor the next (\d+) hours?\b", re.I),
+     lambda now, m: now + timedelta(hours=int(m.group(1)))),
+    (re.compile(r"\bfor the next (\d+) weeks?\b", re.I),
+     lambda now, m: now + timedelta(weeks=int(m.group(1)))),
+    (re.compile(r"\bfor the next (\d+) days?\b", re.I),
+     lambda now, m: now + timedelta(days=int(m.group(1)))),
+    (re.compile(r"\bthis week\b", re.I),
+     lambda now, m: now + timedelta(days=7)),
+    (re.compile(r"\bthis month\b", re.I),
+     lambda now, m: now + timedelta(days=31)),
+    (re.compile(
+        r"\buntil (monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", re.I),
+     lambda now, m: _next_weekday(now, _WEEKDAYS[m.group(1).lower()])),
+]
+
+
+def _infer_expiry(content: str, now: datetime) -> Optional[datetime]:
+    """T-299: detect ephemeral phrasing in written content and return the
+    inferred expiry, or None (permanent — unchanged default). Pure function,
+    no MemoryTools instance needed."""
+    for pattern, resolver in _EPHEMERAL_PATTERNS:
+        m = pattern.search(content)
+        if m:
+            return resolver(now, m)
+    return None
+
+
 def _extract_entities(text: str) -> set:
     return set(_ENTITY_RE.findall(text))
 # Strips trailing session markers before dedup comparison so that the same fact
@@ -51,11 +120,12 @@ class _NoopSupabase:
     """Chainable no-op Supabase shim for private-namespace MemoryTools (T-082).
 
     Every fluent attribute returns self; ``.execute()`` returns a stub with
-    ``.data=[]``. Used when ``MemoryTools(namespace='god')`` so god-mode memory
-    never reaches Supabase. Privacy-by-file-separation is ADR-001 invariant 5.
+    ``.data=[]``. Installed for a non-default (private) namespace or when
+    Supabase creds are absent, so that memory never reaches Supabase.
+    Privacy-by-file-separation is ADR-001 invariant 5.
 
     Tests that pre-assign a MagicMock continue to work — the shim only
-    activates when the constructor receives a private namespace.
+    activates when the constructor receives a private namespace or empty creds.
     """
 
     _mock_name = "_NoopSupabase"  # short-circuits the test-write guard
@@ -96,7 +166,7 @@ class MemoryTools:
         #
         # T-082 step 3: db_path is the forward-compatible alias for sqlite_path;
         # namespace partitions storage. namespace != "pi" routes Supabase calls
-        # through `_NoopSupabase` so private (god) memory never leaves the box.
+        # through `_NoopSupabase` so a private namespace never leaves the box.
         if db_path is not None:
             sqlite_path = db_path
         self.namespace = namespace
@@ -119,13 +189,22 @@ class MemoryTools:
             else:
                 sqlite_path = os.path.join(project_root, "data", "pi.db")
         elif not os.path.isabs(sqlite_path):
-            # Caller-supplied relative path (e.g. ModeConfig.memory_db =
-            # "data/god_memory.db") resolves against project root for portability.
+            # Caller-supplied relative path (e.g. a ModeConfig.memory_db)
+            # resolves against project root for portability.
             sqlite_path = os.path.join(project_root, sqlite_path)
         os.makedirs(os.path.dirname(sqlite_path), exist_ok=True)
         self.sqlite_path = sqlite_path
+        # T-165: StorageBackend seam — new conversation methods use this;
+        # legacy L3 methods still call sqlite3.connect(self.sqlite_path) directly
+        # and will be migrated incrementally (see agent/storage.py).
+        from agent.storage import SQLiteStorageBackend
+        self._sqlite_backend = SQLiteStorageBackend(self.sqlite_path)
         self._last_sync: Optional[datetime] = None  # T-011: TTL-based sync guard
         self._sync_ttl_seconds = 300  # sync at most once per 5 minutes
+        # ponytail: 5000 comfortably clears today's 1029-row l3_active_memory
+        # (T-270). Upgrade path if this cap is ever hit for real: incremental
+        # delta sync keyed on created_at instead of full wipe-and-repopulate.
+        self._L3_SYNC_ROW_CAP = 5000
         self._sync_lock = threading.Lock()  # T-066: prevents double-sync from concurrent callers
         self._supabase_init_lock = threading.Lock()  # T-075: guards lazy client creation
         self._supa_lock = threading.RLock()  # T-105: guards shared Supabase client (not thread-safe)
@@ -142,10 +221,21 @@ class MemoryTools:
         if self._supabase_client is None:
             with self._supabase_init_lock:
                 if self._supabase_client is None:
+                    import warnings
                     from supabase import create_client
-                    self._supabase_client = create_client(
-                        self._supabase_url, self._supabase_key
-                    )
+                    # T-200: supabase-py 2.x emits DeprecationWarning for timeout/verify
+                    # params it passes internally to postgrest-py. Suppress at construction;
+                    # our code never passes those kwargs — this is a library-internal issue.
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            "ignore", category=DeprecationWarning, module="supabase"
+                        )
+                        warnings.filterwarnings(
+                            "ignore", category=DeprecationWarning, module="postgrest"
+                        )
+                        self._supabase_client = create_client(
+                            self._supabase_url, self._supabase_key
+                        )
         return self._supabase_client
 
     @supabase.setter
@@ -155,7 +245,13 @@ class MemoryTools:
     
     def _init_sqlite(self):
         """Initialize SQLite cache + run idempotent migrations."""
-        conn = sqlite3.connect(self.sqlite_path)
+        # T-165: ensure _sqlite_backend is set even when __init__ is bypassed.
+        if not hasattr(self, "_sqlite_backend"):
+            from agent.storage import SQLiteStorageBackend
+            self._sqlite_backend = SQLiteStorageBackend(self.sqlite_path)
+        # Route init connection through the backend so InMemoryStorageBackend
+        # tests see the same tables that conversation methods write to.
+        conn = self._sqlite_backend.connect()
         cursor = conn.cursor()
 
         # Simple L3 cache
@@ -225,12 +321,59 @@ class MemoryTools:
         # NULL = global (visible to all conversations).
         if "conversation_id" not in existing_cols:
             cursor.execute("ALTER TABLE l3_cache ADD COLUMN conversation_id TEXT")
+        # T-137: project/ticket scope this fact belongs to. Enables same-scope
+        # retrieval boost (strongest context signal). NULL = global, no boost.
+        if "scope" not in existing_cols:
+            cursor.execute("ALTER TABLE l3_cache ADD COLUMN scope TEXT")
+        # T-234: back-reference to the L2 organized_memory row that was promoted to
+        # this L3 entry. Used to propagate supersession from L3 back to L2 so the
+        # vault never shows a corrected-away fact.
+        if "source_l2_id" not in existing_cols:
+            cursor.execute("ALTER TABLE l3_cache ADD COLUMN source_l2_id TEXT")
+
+        # T-291: JSON-encoded embedding vector for dense/semantic L3 search.
+        # NULL when no embedding provider is configured — pure additive column.
+        if "embedding" not in existing_cols:
+            cursor.execute("ALTER TABLE l3_cache ADD COLUMN embedding TEXT")
+
+        # T-186: conversation persistence tables.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS conversations (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                mode TEXT,
+                created_at TEXT,
+                last_active_at TEXT,
+                digest TEXT
+            )
+        """)
+        # T-205: idempotent migration for existing DBs without digest column.
+        conv_cols = {r[1] for r in cursor.execute("PRAGMA table_info(conversations)").fetchall()}
+        if "digest" not in conv_cols:
+            cursor.execute("ALTER TABLE conversations ADD COLUMN digest TEXT")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS conversation_turns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id TEXT NOT NULL,
+                idx INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content_json TEXT NOT NULL,
+                ts TEXT NOT NULL,
+                FOREIGN KEY (conversation_id) REFERENCES conversations(id),
+                UNIQUE(conversation_id, idx)
+            )
+        """)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_conv_turns_conv_id "
+            "ON conversation_turns(conversation_id, idx)"
+        )
 
         conn.commit()
         conn.close()
-    
+
     def memory_read(self, query: str = "", tier: Optional[str] = None, limit: int = 20,
-                    current_mode=None) -> List[Dict]:
+                    current_mode=None, current_conversation_id=None,
+                    current_scope=None) -> List[Dict]:
         """
         Search memory. Empty query returns all recent entries.
 
@@ -257,23 +400,14 @@ class MemoryTools:
                     return results
                 # tier is None — fall through to L2 below
             else:
-                rows = self._hybrid_search_l3(query, limit, current_mode=current_mode)
-
-                # If nothing in cache and we haven't synced recently, sync and retry
-                if not rows and (self._last_sync is None or
-                                 (datetime.now(timezone.utc) - self._last_sync).total_seconds() > self._sync_ttl_seconds):
-                    with self._sync_lock:
-                        now2 = datetime.now(timezone.utc)
-                        if self._last_sync is None or (now2 - self._last_sync).total_seconds() > self._sync_ttl_seconds:
-                            self._sync_l3()
-                    rows = self._hybrid_search_l3(query, limit, current_mode=current_mode)
-
-                l3_results = [
-                    {"id": r[0], "content": r[1], "importance": r[2],
-                     "category": r[3], "active_until": r[4], "tier": "l3"}
-                    for r in rows
-                ]
-                results.extend(l3_results)
+                # T-163: single gated entry — sync + scoring + shaping in one place.
+                l3_results = self._l3_active_records(
+                    query, limit,
+                    current_mode=current_mode,
+                    current_conversation_id=current_conversation_id,
+                    current_scope=current_scope,
+                )
+                results.extend(l3_results or [])  # T-235: guard against unexpected None
                 if query and l3_results:
                     print(f"[Memory] L3 search '{query[:30]}' -> {len(l3_results)} results")
                 if l3_results:
@@ -344,7 +478,10 @@ class MemoryTools:
         """Search SQLite l3_cache with LIKE — kept as fallback.
 
         T-078: filters out entries with invalid_at set (superseded facts).
+        T-163: active_until filter added to both branches so expired rows
+        never surface regardless of which reader calls this method.
         """
+        now_iso = datetime.now(timezone.utc).isoformat()
         conn = sqlite3.connect(self.sqlite_path)
         cursor = conn.cursor()
         if query:
@@ -352,23 +489,70 @@ class MemoryTools:
                 SELECT id, content, importance, category, active_until
                 FROM l3_cache
                 WHERE content LIKE ?
+                  AND (active_until IS NULL OR active_until > ?)
                   AND invalid_at IS NULL
                   AND (superseded_by IS NULL OR superseded_by = '')
                 ORDER BY importance DESC, created_at DESC
                 LIMIT ?
-            """, [f"%{query}%", limit])
+            """, [f"%{query}%", now_iso, limit])
         else:
             cursor.execute("""
                 SELECT id, content, importance, category, active_until
                 FROM l3_cache
-                WHERE invalid_at IS NULL
+                WHERE (active_until IS NULL OR active_until > ?)
+                  AND invalid_at IS NULL
                   AND (superseded_by IS NULL OR superseded_by = '')
                 ORDER BY importance DESC, created_at DESC
                 LIMIT ?
-            """, [limit])
+            """, [now_iso, limit])
         rows = cursor.fetchall()
         conn.close()
         return rows
+
+    def _l3_active_records(
+        self,
+        query: str = "",
+        limit: int = 9999,
+        current_mode=None,
+        current_conversation_id=None,
+        current_scope=None,
+    ) -> list:
+        """Single gated entry for ALL L3 reads (T-163).
+
+        Handles sync-if-stale once, then delegates to the existing
+        _hybrid_search_l3 scoring hierarchy (BM25 → fast-path → LIKE).
+        Returns canonical record dicts so all callers share one shape.
+
+        Use this instead of calling _hybrid_search_l3 or writing a
+        direct SQLite query — one reader = one place to reason about
+        what L3 returns.
+        """
+        # Skip sync when Supabase is a no-op: _sync_l3 does DELETE+repopulate
+        # from Supabase, so calling it with _NoopSupabase (empty creds / offline
+        # tests) wipes locally-written SQLite rows before the caller reads them.
+        _has_real_supa = not isinstance(self._supabase_client, _NoopSupabase)
+        now = datetime.now(timezone.utc)
+        if _has_real_supa and (
+            self._last_sync is None
+            or (now - self._last_sync).total_seconds() > self._sync_ttl_seconds
+        ):
+            with self._sync_lock:
+                now2 = datetime.now(timezone.utc)
+                if (self._last_sync is None
+                        or (now2 - self._last_sync).total_seconds() > self._sync_ttl_seconds):
+                    self._sync_l3()
+
+        rows = self._hybrid_search_l3(
+            query, limit,
+            current_mode=current_mode,
+            current_conversation_id=current_conversation_id,
+            current_scope=current_scope,
+        )
+        return [
+            {"id": r[0], "content": r[1], "importance": r[2],
+             "category": r[3], "active_until": r[4], "tier": "l3"}
+            for r in rows
+        ]
 
     @staticmethod
     def _l3_env_int(var: str, default: int) -> int:
@@ -383,32 +567,52 @@ class MemoryTools:
             track_silent("config.invalid_env", ValueError(f"{var}={raw!r}: {e}"))
             return default
 
-    # T-137: same-mode retrieval boost (encoding-specificity). Additive on the
-    # combined score so a same-mode match outranks an equally-relevant
-    # other-mode row, but never overrides a much-more-relevant off-mode row.
-    _SAME_MODE_BOOST = 0.15
+    # Context-cued recall boosts (encoding-specificity). Additive on the combined
+    # score so a same-context match outranks an equally-relevant off-context row,
+    # but never overrides a much-more-relevant off-context row. Scope and
+    # conversation are stronger signals than mode.
+    _SAME_MODE_BOOST = 0.15          # T-137
+    _SAME_SCOPE_BOOST = 0.20         # T-137
+    _SAME_CONVERSATION_BOOST = 0.20  # T-142
 
-    def _mode_map_for_cued_recall(self, current_mode) -> dict:
-        """Return {id: mode} for context-cued recall, or {} when disabled.
+    def _context_boosts(self, current_mode=None, current_conversation_id=None,
+                        current_scope=None) -> dict:
+        """Return {id: total_boost} for context-cued recall, or {} when disabled.
 
-        Gated by PI_CONTEXT_CUED_RECALL (default off, per T-137 soak plan) and
-        only built when a current_mode is supplied. Best-effort: any failure
-        (legacy schema, locked db) returns {} so retrieval is never broken.
+        Composes same-mode (T-137), same-conversation (T-142), and same-scope
+        (T-137) boosts in one pass. Gated by PI_CONTEXT_CUED_RECALL (default off,
+        per soak plan) and only computed when at least one context value is
+        supplied. Best-effort: any failure (legacy schema, locked db) returns {}
+        so retrieval is never broken (Invariant 9).
         """
-        if not current_mode or os.environ.get(
-            "PI_CONTEXT_CUED_RECALL", ""
-        ).lower() not in ("1", "true", "on", "yes"):
+        if os.environ.get("PI_CONTEXT_CUED_RECALL", "").lower() not in (
+            "1", "true", "on", "yes"
+        ):
+            return {}
+        if not any([current_mode, current_conversation_id, current_scope]):
             return {}
         try:
             conn = sqlite3.connect(self.sqlite_path)
-            m = {r[0]: r[1] for r in conn.execute(
-                "SELECT id, mode FROM l3_cache WHERE mode IS NOT NULL")}
+            rows = conn.execute(
+                "SELECT id, mode, conversation_id, scope FROM l3_cache").fetchall()
             conn.close()
-            return m
         except Exception:
             return {}
+        boosts = {}
+        for id_, mode, conv, scope in rows:
+            b = 0.0
+            if current_mode and mode == current_mode:
+                b += self._SAME_MODE_BOOST
+            if current_conversation_id and conv == current_conversation_id:
+                b += self._SAME_CONVERSATION_BOOST
+            if current_scope and scope == current_scope:
+                b += self._SAME_SCOPE_BOOST
+            if b:
+                boosts[id_] = b
+        return boosts
 
-    def _l3_fast_path(self, query: str, limit: int, current_mode=None) -> list:
+    def _l3_fast_path(self, query: str, limit: int, current_mode=None,
+                      current_conversation_id=None, current_scope=None) -> list:
         """LIKE + score fast-path for small L3 caches (< threshold rows).
 
         Score formula: 1.0 if query term in content + 0.1 * importance +
@@ -455,7 +659,7 @@ class MemoryTools:
             except Exception:
                 pass
 
-        mode_map = self._mode_map_for_cued_recall(current_mode)
+        boost_map = self._context_boosts(current_mode, current_conversation_id, current_scope)
         q_lower = query.lower()
         scored = []
         for row in rows:
@@ -485,8 +689,7 @@ class MemoryTools:
                 except (ValueError, TypeError):
                     pass
             score = match_score + imp_score + recency_bonus
-            if mode_map.get(id_) == current_mode:  # T-137 same-mode boost
-                score += self._SAME_MODE_BOOST
+            score += boost_map.get(id_, 0.0)  # T-137/T-142 context-cued boosts
             # T-145: only include rows with an actual content match; returning all
             # rows (match_score=0) caused memory_delete to wipe entire L3.
             if match_score > 0:
@@ -495,7 +698,8 @@ class MemoryTools:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [row for _, row in scored[:limit]]
 
-    def _hybrid_search_l3(self, query: str, limit: int, current_mode=None) -> list:
+    def _hybrid_search_l3(self, query: str, limit: int, current_mode=None,
+                          current_conversation_id=None, current_scope=None) -> list:
         """BM25 + entity hybrid search over l3_cache.
 
         T-111: fast-path for small caches (< PI_L3_FAST_PATH_THRESHOLD rows);
@@ -524,7 +728,10 @@ class MemoryTools:
         conn_count.close()
 
         if row_count < threshold:
-            return self._l3_fast_path(query, limit, current_mode=current_mode)
+            return self._l3_fast_path(
+                query, limit, current_mode=current_mode,
+                current_conversation_id=current_conversation_id,
+                current_scope=current_scope)
 
         # Load active entries up to BM25 cap
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -591,7 +798,7 @@ class MemoryTools:
         # from polluting recall.
         BM25_FLOOR = 0.5
 
-        mode_map = self._mode_map_for_cued_recall(current_mode)
+        boost_map = self._context_boosts(current_mode, current_conversation_id, current_scope)
         scored = []
         for i, row in enumerate(all_rows):
             if bm25_scores[i] < BM25_FLOOR:
@@ -618,13 +825,205 @@ class MemoryTools:
                 # importance nudge (1-10 -> 0.0-0.09)
                 importance_nudge = (row[2] or 5) * 0.01
             combined = bm25_norm + entity_bonus + importance_nudge
-            if mode_map.get(row[0]) == current_mode:  # T-137 same-mode boost
-                combined += self._SAME_MODE_BOOST
+            combined += boost_map.get(row[0], 0.0)  # T-137/T-142 context-cued boosts
             scored.append((combined, row[:5]))
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return [row for _, row in scored[:limit]]
-    
+
+    def retrieve(self, query: str, k: int = 6, tiers: tuple = ("l3", "l2"),
+                current_mode=None, current_conversation_id=None,
+                current_scope=None) -> list:
+        """T-292: unified query-time retriever — fuses dense cosine similarity
+        with the existing lexical ranking across L3 (SQLite) and L2 (Supabase)
+        into one ranked top-k.
+
+        Reuses (does not rewrite) the existing scoring paths: _hybrid_search_l3
+        for L3 lexical ranking (BM25 + entity + importance + context boosts —
+        untouched), memory_read(tier='l2') for L2 lexical matches, and
+        memory_search_semantic-equivalent cosine scoring for both tiers. This
+        is additive on top of proven code, not a replacement of it — existing
+        callers of _hybrid_search_l3 / memory_search_semantic are unaffected.
+
+        Degrades to pure lexical ordering when no embedding provider is
+        configured: every candidate's dense_score is then 0.0, so the fused
+        score collapses to the lexical + importance terms only.
+
+        Returns top-k dicts: {id, content, importance, category, tier, score}.
+        """
+        if not query or not query.strip():
+            return []
+
+        try:
+            from memory.semantic_dedup import get_embedding, cosine_similarity
+            q_emb = get_embedding(query)
+        except Exception:
+            q_emb = None
+            cosine_similarity = None
+
+        w_dense = float(os.environ.get("PI_RETRIEVE_W_DENSE", "0.5"))
+        w_lex = float(os.environ.get("PI_RETRIEVE_W_LEX", "0.4"))
+        w_imp = float(os.environ.get("PI_RETRIEVE_W_IMPORTANCE", "0.1"))
+
+        pool_size = max(k * 4, 20)
+        candidates: Dict[str, Dict] = {}
+
+        if "l3" in tiers:
+            lex_rows = self._hybrid_search_l3(
+                query, pool_size, current_mode=current_mode,
+                current_conversation_id=current_conversation_id,
+                current_scope=current_scope,
+            )
+            n = len(lex_rows)
+            for i, row in enumerate(lex_rows):
+                rid, content, importance, category = row[0], row[1], row[2], row[3]
+                candidates[rid] = {
+                    "id": rid, "content": content, "importance": importance,
+                    "category": category, "tier": "l3",
+                    "lex_score": 1.0 - (i / n) if n else 0.0,
+                    "dense_score": 0.0,
+                }
+
+            if q_emb is not None:
+                # T-298: active_until filter — every other L3 read path excludes
+                # expired rows; without it here, dense retrieval RESURRECTS
+                # forgotten facts (write/read divergence class).
+                now_iso = datetime.now(timezone.utc).isoformat()
+                conn = sqlite3.connect(self.sqlite_path)
+                try:
+                    emb_rows = conn.execute(
+                        "SELECT id, content, importance, category, embedding FROM l3_cache "
+                        "WHERE embedding IS NOT NULL AND invalid_at IS NULL "
+                        "AND (active_until IS NULL OR active_until > ?) "
+                        "AND (superseded_by IS NULL OR superseded_by = '') LIMIT 500",
+                        [now_iso],
+                    ).fetchall()
+                finally:
+                    conn.close()
+                for rid, content, importance, category, emb_json in emb_rows:
+                    try:
+                        emb = json.loads(emb_json)
+                    except (TypeError, ValueError):
+                        continue
+                    score = cosine_similarity(q_emb, emb)
+                    if rid in candidates:
+                        candidates[rid]["dense_score"] = score
+                    else:
+                        candidates[rid] = {
+                            "id": rid, "content": content, "importance": importance,
+                            "category": category, "tier": "l3",
+                            "lex_score": 0.0, "dense_score": score,
+                        }
+
+        if "l2" in tiers:
+            for row in self.memory_read(query, tier="l2", limit=pool_size):
+                rid = row.get("id")
+                if rid is None:
+                    continue
+                body = row.get("content") or {}
+                text = body.get("text", "") if isinstance(body, dict) else str(body)
+                candidates[rid] = {
+                    "id": rid, "content": text,
+                    "importance": int(row.get("importance") or 5),
+                    "category": row.get("category"), "tier": "l2",
+                    "lex_score": 1.0, "dense_score": 0.0,
+                }
+
+            if q_emb is not None:
+                for hit in self.memory_search_semantic(query, limit=pool_size, threshold=0.0):
+                    rid = hit["id"]
+                    if rid in candidates:
+                        candidates[rid]["dense_score"] = hit["similarity"]
+                    else:
+                        candidates[rid] = {
+                            "id": rid, "content": hit["content"],
+                            "importance": hit["importance"], "category": hit["category"],
+                            "tier": "l2", "lex_score": 0.0, "dense_score": hit["similarity"],
+                        }
+
+        if not candidates:
+            return []
+
+        # T-298: decay-aware importance for L3 candidates — one batched lookup
+        # so Ebbinghaus decay (memory/salience) influences fused ranking and
+        # pinned rows stay immune. Raw-importance fallback on pre-migration
+        # schemas (OperationalError) or salience import failure.
+        eff_imp: Dict[str, float] = {}
+        l3_ids = [c["id"] for c in candidates.values() if c["tier"] == "l3"]
+        if l3_ids:
+            try:
+                from memory.salience import effective_importance
+                conn = sqlite3.connect(self.sqlite_path)
+                try:
+                    ph = ",".join("?" * len(l3_ids))
+                    for rid, imp, rate, last, pin in conn.execute(
+                        f"SELECT id, importance, decay_rate, last_accessed_at, pinned "
+                        f"FROM l3_cache WHERE id IN ({ph})", l3_ids
+                    ):
+                        eff_imp[rid] = effective_importance(imp, rate, last, pin or 0)
+                finally:
+                    conn.close()
+            except (sqlite3.OperationalError, ImportError) as e:
+                from agent.observability import track_silent
+                track_silent("memory.retrieve_effective_importance_unavailable", e)
+                # eff_imp stays {} — every candidate falls back to raw importance below.
+
+        max_dense = max((c["dense_score"] for c in candidates.values()), default=0.0) or 1.0
+
+        scored = []
+        for c in candidates.values():
+            dense_norm = c["dense_score"] / max_dense
+            importance_basis = eff_imp.get(c["id"], float(c["importance"] or 5))
+            importance_norm = importance_basis / 10.0
+            combined = w_dense * dense_norm + w_lex * c["lex_score"] + w_imp * importance_norm
+            scored.append((combined, c))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [
+            {"id": c["id"], "content": c["content"], "importance": c["importance"],
+             "category": c["category"], "tier": c["tier"], "score": round(score, 4)}
+            for score, c in scored[:k]
+        ]
+
+    def detect_cross_session_patterns(self, min_sessions: int = 3, days: int = 7,
+                                      limit_rows: int = 500) -> List[Dict]:
+        """T-136: entities recurring across >= min_sessions DISTINCT conversations
+        in the last `days`. Returns pattern dicts ready for a pattern_observation
+        write. Local (uses the T-142 conversation_id column on l3_cache), so it
+        composes with idle replay without hitting Supabase. Never raises.
+        """
+        try:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            conn = sqlite3.connect(self.sqlite_path)
+            rows = conn.execute(
+                "SELECT content, conversation_id FROM l3_cache "
+                "WHERE conversation_id IS NOT NULL AND created_at >= ? "
+                "AND invalid_at IS NULL AND (superseded_by IS NULL OR superseded_by = '') "
+                "LIMIT ?",
+                (cutoff, limit_rows),
+            ).fetchall()
+            conn.close()
+        except Exception:
+            return []
+
+        entity_convs: Dict[str, set] = {}
+        for content, conv in rows:
+            for ent in _extract_entities(content or ""):
+                entity_convs.setdefault(ent, set()).add(conv)
+
+        patterns: List[Dict] = []
+        for ent, convs in sorted(entity_convs.items(), key=lambda kv: -len(kv[1])):
+            if len(convs) >= min_sessions:
+                patterns.append({
+                    "entity": ent,
+                    "sessions": len(convs),
+                    "content": (f"Pattern detected: '{ent}' appears across "
+                                f"{len(convs)} conversations in the last {days}d"),
+                    "category": "pattern_observation",
+                    "source": "replay",
+                })
+        return patterns
+
     def memory_write(
         self,
         content: str,
@@ -636,6 +1035,7 @@ class MemoryTools:
         source: str = "stated",
         mode: Optional[str] = None,
         conversation_id: Optional[str] = None,
+        scope: Optional[str] = None,
     ) -> Dict:
         """
         Write to memory.
@@ -666,6 +1066,16 @@ class MemoryTools:
         now = datetime.now(timezone.utc)
 
         if tier == "l3":
+            # T-299: caller didn't set an expiry — check for ephemeral phrasing
+            # ("just for today", "until friday", ...) so timely forgetting
+            # doesn't depend on the model volunteering an ISO datetime.
+            auto_expiry_inferred = False
+            if expiry is None:
+                inferred = _infer_expiry(content, now)
+                if inferred is not None:
+                    expiry = inferred
+                    auto_expiry_inferred = True
+
             # Reject inferred facts that have not been explicitly confirmed by the user.
             # Confirmed inferences (source="inferred_confirmed") and stated facts are allowed.
             if source == "inferred_unconfirmed":
@@ -743,8 +1153,8 @@ class MemoryTools:
                     INSERT INTO l3_cache
                         (id, content, importance, category, active_until, created_at,
                          surprise_score, goal_alignment, affect_tag, decay_rate,
-                         mode, conversation_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         mode, conversation_id, scope, embedding)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, [
                     entry_id,
                     content,
@@ -758,6 +1168,8 @@ class MemoryTools:
                     _decay,
                     mode,                # T-137: encoding-context mode
                     conversation_id,     # T-142: conversation thread
+                    scope,               # T-137: project/ticket scope
+                    None,                # T-291: filled by backfill_l3_embeddings, not inline (hot path)
                 ])
                 conn.commit()
             except Exception as e:
@@ -821,6 +1233,8 @@ class MemoryTools:
             result = self._verify_write(entry_id, content, tier)
             if supersedes_ids:
                 result["superseded"] = len(supersedes_ids)
+            if auto_expiry_inferred:
+                result["auto_expiry"] = expiry.isoformat()
             return result
 
         elif tier == "l2":
@@ -902,6 +1316,38 @@ class MemoryTools:
                 return {"id": entry_id, "success": False, "verified": False, "error": str(e)}
 
         return {"id": entry_id, "success": False, "error": f"Unknown tier: {tier}"}
+
+    def backfill_l3_embeddings(self, limit: int = 100) -> int:
+        """T-291: embed active L3 rows written before an embedding provider was
+        configured (or written with the network embed intentionally skipped at
+        write time — see memory_write's hot-path note). Best-effort, capped,
+        idempotent (only touches rows where embedding IS NULL). Returns the
+        number of rows updated.
+        """
+        from memory.semantic_dedup import compute_embedding_for_write
+
+        conn = sqlite3.connect(self.sqlite_path)
+        try:
+            cursor = conn.execute(
+                "SELECT id, content FROM l3_cache WHERE embedding IS NULL "
+                "AND invalid_at IS NULL LIMIT ?",
+                [limit],
+            )
+            rows = cursor.fetchall()
+            updated = 0
+            for row_id, content in rows:
+                emb = compute_embedding_for_write(content or "")
+                if emb is None:
+                    continue
+                conn.execute(
+                    "UPDATE l3_cache SET embedding = ? WHERE id = ?",
+                    [json.dumps(emb), row_id],
+                )
+                updated += 1
+            conn.commit()
+            return updated
+        finally:
+            conn.close()
 
     def log_turn(
         self,
@@ -1019,6 +1465,193 @@ class MemoryTools:
         except Exception as e:
             print(f"[Memory] L1 auto-log failed (non-fatal): {e}")
             return {"success": False, "rows": 0, "error": str(e)}
+
+    # ── T-186: conversation persistence ──────────────────────────────────────
+
+    def create_conversation(self, conversation_id: str, mode: str, created_at: str) -> None:
+        """Register a new conversation row (INSERT OR IGNORE — idempotent)."""
+        try:
+            conn = self._sqlite_backend.connect()
+            conn.execute(
+                "INSERT OR IGNORE INTO conversations(id, mode, created_at, last_active_at)"
+                " VALUES (?, ?, ?, ?)",
+                (conversation_id, mode, created_at, created_at),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[Memory] create_conversation failed (non-fatal): {e}")
+
+    def persist_turn(
+        self,
+        conversation_id: str,
+        role: str,
+        content: "str | list",
+        idx: int,
+        ts: str,
+    ) -> None:
+        """Append one message to conversation_turns (INSERT OR IGNORE on idx).
+
+        content is stored as JSON — plain strings and block lists both supported.
+        """
+        try:
+            import json as _json
+            content_json = _json.dumps(content, default=str)
+            conn = self._sqlite_backend.connect()
+            conn.execute(
+                "INSERT OR IGNORE INTO conversation_turns"
+                "(conversation_id, idx, role, content_json, ts)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (conversation_id, idx, role, content_json, ts),
+            )
+            conn.execute(
+                "UPDATE conversations SET last_active_at = ? WHERE id = ?",
+                (ts, conversation_id),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[Memory] persist_turn failed (non-fatal): {e}")
+
+    def load_conversation_turns(
+        self, conversation_id: str, max_turns: int = 40
+    ) -> List[Dict]:
+        """Load turn pairs from conversation_turns, newest-last, up to max_turns.
+
+        Returns a list of {"role": str, "content": str|list} dicts suitable for
+        self.messages. Deserializes content_json back to the original type.
+        """
+        try:
+            import json as _json
+            conn = self._sqlite_backend.connect()
+            rows = conn.execute(
+                "SELECT role, content_json FROM conversation_turns"
+                " WHERE conversation_id = ?"
+                " ORDER BY idx ASC"
+                " LIMIT ?",
+                (conversation_id, max_turns * 2),
+            ).fetchall()
+            conn.close()
+            result = []
+            for role, content_json in rows:
+                try:
+                    content = _json.loads(content_json)
+                except Exception:
+                    content = content_json
+                result.append({"role": role, "content": content})
+            return result
+        except Exception as e:
+            print(f"[Memory] load_conversation_turns failed: {e}")
+            return []
+
+    def list_conversations(self, limit: int = 10) -> List[Dict]:
+        """Return recent conversations, newest first."""
+        try:
+            conn = self._sqlite_backend.connect()
+            rows = conn.execute(
+                "SELECT id, title, mode, created_at, last_active_at"
+                " FROM conversations ORDER BY last_active_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            conn.close()
+            return [
+                {
+                    "id": r[0],
+                    "title": r[1] or "(untitled)",
+                    "mode": r[2],
+                    "created_at": r[3],
+                    "last_active_at": r[4],
+                }
+                for r in rows
+            ]
+        except Exception as e:
+            print(f"[Memory] list_conversations failed: {e}")
+            return []
+
+    def title_conversation(self, conversation_id: str, title: str) -> None:
+        """Set the title of a conversation (once, on second turn)."""
+        try:
+            title = title[:120].strip()
+            conn = self._sqlite_backend.connect()
+            conn.execute(
+                "UPDATE conversations SET title = ? WHERE id = ? AND title IS NULL",
+                (title, conversation_id),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[Memory] title_conversation failed (non-fatal): {e}")
+
+    def close_conversation(self, conversation_id: str, digest: str) -> None:
+        """Persist a digest (episode summary) on the conversations row.
+
+        digest should be a compact text summary (≤400 chars) covering what was
+        discussed and decided.  The caller is responsible for generating it
+        (e.g. via a Groq cheap-tier call over the turns).  Calling this more
+        than once for the same conversation overwrites the previous digest.
+        """
+        try:
+            digest = (digest or "").strip()[:400]
+            conn = self._sqlite_backend.connect()
+            conn.execute(
+                "UPDATE conversations SET digest = ? WHERE id = ?",
+                (digest, conversation_id),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[Memory] close_conversation failed (non-fatal): {e}")
+
+    def recall_episode(self, query: str, limit: int = 4) -> List[Dict]:
+        """Search past conversation digests for query terms.
+
+        Returns up to `limit` conversations ordered by recency, filtered to
+        those whose title or digest contain at least one query keyword.
+        Best-effort: falls back to most-recent if no keywords match.
+        """
+        try:
+            import re as _re
+            conn = self._sqlite_backend.connect()
+            rows = conn.execute(
+                "SELECT id, title, mode, created_at, last_active_at, digest"
+                " FROM conversations"
+                " WHERE digest IS NOT NULL AND digest != ''"
+                " ORDER BY last_active_at DESC"
+                " LIMIT 50"
+            ).fetchall()
+            conn.close()
+            if not rows:
+                return []
+
+            # Simple keyword filter over title+digest
+            keywords = [w.lower() for w in _re.findall(r"\b[a-zA-Z]{3,}\b", query) if len(w) > 2]
+            stop = {"the", "and", "for", "with", "that", "this", "was", "did", "our", "have"}
+            keywords = [w for w in keywords if w not in stop][:6]
+
+            def _score(row):
+                haystack = ((row[1] or "") + " " + (row[5] or "")).lower()
+                return sum(1 for kw in keywords if kw in haystack)
+
+            if keywords:
+                scored = sorted(rows, key=_score, reverse=True)
+                rows = scored[:limit]
+            else:
+                rows = rows[:limit]
+
+            return [
+                {
+                    "id": r[0],
+                    "title": r[1] or "(untitled)",
+                    "mode": r[2],
+                    "created_at": r[3],
+                    "last_active_at": r[4],
+                    "digest": r[5] or "",
+                }
+                for r in rows
+            ]
+        except Exception as e:
+            print(f"[Memory] recall_episode failed: {e}")
+            return []
 
     @staticmethod
     def _normalize_for_dedup(text: str) -> str:
@@ -1274,8 +1907,15 @@ class MemoryTools:
         """
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         _sq_status = "ok"
+        _source_l2_id = None
         try:
             conn = sqlite3.connect(self.sqlite_path)
+            # T-234: fetch source_l2_id before update so we can propagate supersession to L2.
+            row = conn.execute(
+                "SELECT source_l2_id FROM l3_cache WHERE id = ?", [entry_id]
+            ).fetchone()
+            if row:
+                _source_l2_id = row[0]
             conn.execute(
                 "UPDATE l3_cache SET invalid_at = ? WHERE id = ? AND invalid_at IS NULL",
                 [now, entry_id],
@@ -1310,6 +1950,53 @@ class MemoryTools:
             print(f"[Memory] _invalidate_l3_entry Supabase error (non-fatal): {e}")
         self._replication_log_append("invalidate", entry_id,
                                      supabase_status=_sb_status, sqlite_status=_sq_status)
+        # T-234: propagate supersession to L2 so the vault projection drops the stale fact
+        # and promote_l2_to_l3 can never resurrect it (zombie re-promotion prevention).
+        if _source_l2_id:
+            try:
+                self._invalidate_l2_entry(_source_l2_id, by_entry_id=by_entry_id)
+                print(f"[Memory] L2 supersession: archived L2 {_source_l2_id[:8]}... (via L3 {entry_id[:8]}...)")
+            except Exception as e:
+                print(f"[Memory] L2 supersession propagation error (non-fatal): {e}")
+
+    def _invalidate_l2_entry(self, entry_id: str, by_entry_id: Optional[str] = None) -> None:
+        """T-234: Archive an L2 organized_memory row that has been superseded.
+
+        Sets status='archived' and records which new entry superseded it in the
+        content metadata JSONB. Prevents promote_l2_to_l3 from resurrecting the
+        stale fact (zombie re-promotion) and causes vault projection to drop it.
+        """
+        _sb_status = "ok"
+        try:
+            with self._supa_lock:
+                r = (
+                    self.supabase.table("organized_memory")
+                    .select("content")
+                    .eq("id", entry_id)
+                    .limit(1)
+                    .execute()
+                )
+                row = (r.data or [{}])[0] or {}
+                raw_content = row.get("content") or {}
+                if isinstance(raw_content, dict):
+                    meta = raw_content.get("metadata") or {}
+                    if not isinstance(meta, dict):
+                        meta = {}
+                else:
+                    raw_content = {"text": str(raw_content), "metadata": {}}
+                    meta = {}
+                meta["superseded_by"] = by_entry_id or "unknown"
+                now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+                meta["superseded_at"] = now
+                raw_content["metadata"] = meta
+                self.supabase.table("organized_memory").update(
+                    {"status": "archived", "content": raw_content}
+                ).eq("id", entry_id).execute()
+        except Exception as e:
+            _sb_status = "failed"
+            print(f"[Memory] _invalidate_l2_entry Supabase error (non-fatal): {e}")
+        self._replication_log_append("invalidate_l2", entry_id,
+                                     supabase_status=_sb_status, sqlite_status="n/a")
 
     def get_l1_thread(self, thread_id: str) -> List[Dict]:
         """Fetch all L1 rows for a session thread from raw_wiki, ordered by (turn, seq).
@@ -1642,6 +2329,21 @@ class MemoryTools:
                 category=row.get("category", "note"),
             )
             if result.get("success"):
+                # T-234: record the L2 source ID on the new L3 entry so that
+                # _invalidate_l3_entry can propagate supersession back to L2.
+                new_l3_id = result.get("id")
+                l2_id = row.get("id")
+                if new_l3_id and l2_id and not result.get("duplicate"):
+                    try:
+                        conn = sqlite3.connect(self.sqlite_path)
+                        conn.execute(
+                            "UPDATE l3_cache SET source_l2_id = ? WHERE id = ?",
+                            [l2_id, new_l3_id],
+                        )
+                        conn.commit()
+                        conn.close()
+                    except Exception:
+                        pass  # non-fatal; supersession propagation degrades to best-effort
                 promoted += 1
             else:
                 skipped += 1
@@ -1692,7 +2394,23 @@ class MemoryTools:
                 for r in rows
             ]
         else:
-            matches = self.memory_read(target, tier="l3")
+            # T-302: semantic forget. Union, not replacement: the plain lexical
+            # set (memory_read) is kept as-is so exact-match bulk delete still
+            # catches every literal hit — retrieve()'s rank-decay scoring
+            # (1 - i/n) is tuned for "best few for context injection" and
+            # would otherwise silently drop lower-ranked TRUE ties. retrieve()
+            # (dense cosine + BM25 fusion) then ADDS memories related to
+            # `target` with zero lexical overlap ("my old internship" ->
+            # "started the summer role at Meta in June"), filtered by a score
+            # floor so a generic query can't sweep in unrelated memories.
+            lexical_matches = self.memory_read(target, tier="l3")
+            seen_ids = {m["id"] for m in lexical_matches}
+            score_floor = float(os.environ.get("PI_FORGET_SCORE_FLOOR", "0.35"))
+            semantic_matches = [
+                m for m in self.retrieve(target, k=10, tiers=("l3",))
+                if m["id"] not in seen_ids and m.get("score", 0.0) >= score_floor
+            ]
+            matches = lexical_matches + semantic_matches
 
         if not matches:
             return {"deleted": 0, "entries": []}
@@ -1739,12 +2457,20 @@ class MemoryTools:
             )
             conn.commit()
             conn.close()
+            # T-232: invalid_at lives in metadata JSONB on l3_active_memory, NOT as a
+            # top-level column. Batch via individual fetch+update (mirrors _invalidate_l3_entry).
             try:
                 with self._supa_lock:
-                    self.supabase.table("l3_active_memory")\
-                        .update({"invalid_at": now_iso})\
-                        .in_("id", deleted_ids)\
-                        .execute()
+                    for _eid in deleted_ids:
+                        try:
+                            _r = self.supabase.table("l3_active_memory").select("metadata").eq("id", _eid).execute()
+                            _meta = (((_r.data or [{}])[0]) or {}).get("metadata") or {}
+                            if not isinstance(_meta, dict):
+                                _meta = {}
+                            _meta["invalid_at"] = now_iso
+                            self.supabase.table("l3_active_memory").update({"metadata": _meta}).eq("id", _eid).execute()
+                        except Exception:
+                            pass
             except Exception as exc:
                 print(f"[Memory] Supabase soft-delete error: {exc}")
         else:
@@ -1776,40 +2502,8 @@ class MemoryTools:
         All categories are included dynamically — no silent drops (T-010).
         """
 
-        # T-011/T-066: Sync if stale; lock prevents two callers triggering the same sync
-        now = datetime.now(timezone.utc)
-        if self._last_sync is None or (now - self._last_sync).total_seconds() > self._sync_ttl_seconds:
-            with self._sync_lock:
-                # Re-check under lock — a concurrent caller may have synced already
-                now = datetime.now(timezone.utc)
-                if self._last_sync is None or (now - self._last_sync).total_seconds() > self._sync_ttl_seconds:
-                    self._sync_l3()
-
-        # Get from cache
-        conn = sqlite3.connect(self.sqlite_path)
-        cursor = conn.cursor()
-
-        # T-078: filter invalidated entries from ambient context.
-        # T-125b: also filter superseded_by (post-dedup losers).
-        cursor.execute("""
-            SELECT content, category, importance
-            FROM l3_cache
-            WHERE (active_until IS NULL OR active_until > ?)
-              AND invalid_at IS NULL
-              AND (superseded_by IS NULL OR superseded_by = '')
-            ORDER BY importance DESC, created_at DESC
-        """, [now.isoformat()])
-
-        rows = cursor.fetchall()
-        conn.close()
-
-        # T-010: Dynamic category grouping — no hardcoded list, no silent drops
-        # Priority order for display (known categories first, unknowns appended after)
-        priority_order = [
-            "permanent_profile", "active_project", "current_priority",
-            "session_history", "research_results", "timed_reminder",
-            "file_operations", "temporary_note", "note"
-        ]
+        # T-163: single gated entry — sync-if-stale + scoring + filtering in one place.
+        raw_records = self._l3_active_records(query="", limit=9999)
 
         label_map = {
             "permanent_profile": "PROFILE",
@@ -1837,8 +2531,9 @@ class MemoryTools:
         label_entries: Dict[str, list] = {}
         total_tokens = 0
 
-        for row in rows:
-            content, category, _ = row
+        for row in raw_records:
+            content = row["content"] or ""  # T-235: guard NULL content from SQLite
+            category, _ = row["category"], row["importance"]
             tokens = len(content) // 4
             if total_tokens + tokens > max_tokens:
                 break
@@ -1883,10 +2578,21 @@ class MemoryTools:
         return "\n".join(output)
     
     def _sync_l3(self):
-        """Pull latest L3 from Supabase to cache. Updates _last_sync on success."""
+        """Pull latest L3 from Supabase to cache. Updates _last_sync on success.
+
+        T-270: ordered newest-first and explicitly capped. Supabase/PostgREST
+        silently caps an unbounded select("*") at ~1000 rows in default (not
+        recency) order — once l3_active_memory crossed that size, brand-new
+        writes fell outside the arbitrary page and vanished from the local
+        cache on the very next sync (write-then-immediate-read returned
+        empty). Ordering by created_at desc guarantees new rows are always
+        included; the explicit limit makes any truncation intentional.
+        """
         try:
             with self._supa_lock:
-                response = self.supabase.table("l3_active_memory").select("*").execute()
+                response = (self.supabase.table("l3_active_memory").select("*")
+                            .order("created_at", desc=True)
+                            .limit(self._L3_SYNC_ROW_CAP).execute())
 
             conn = sqlite3.connect(self.sqlite_path)
             cursor = conn.cursor()
@@ -1957,7 +2663,7 @@ class MemoryTools:
         Graceful degrade:
         - No GEMINI_API_KEY → returns []
         - No L2 rows with stored embeddings (pre-T-080 vault) → returns []
-        - Private namespace (god, _NoopSupabase) → returns []
+        - Private namespace (_NoopSupabase) → returns []
         - Any exception inside the embedding/cosine path → returns []
 
         Returns a list of {id, content, category, importance, similarity, tier="l2-semantic"}
@@ -2017,9 +2723,9 @@ class MemoryTools:
 # ── T-083 R2.1: tool registry export ─────────────────────────────────────────
 #
 # Each handler takes (agent, tool_input, *, memory_override=None). The
-# memory_override kwarg lets god mode route tool calls through its private
-# MemoryTools instance (T-082). success_predicate is on the spec, not the
-# handler — keeps handlers returning their natural shape.
+# memory_override kwarg lets a namespaced mode route tool calls through a
+# separate MemoryTools instance (T-082). success_predicate is on the spec, not
+# the handler — keeps handlers returning their natural shape.
 
 from agent.tool_spec import ToolSpec  # noqa: E402
 
@@ -2029,6 +2735,11 @@ def _handle_memory_read(agent, tool_input, *, memory_override=None):
     return mem.memory_read(
         query=tool_input["query"],
         tier=tool_input.get("tier"),
+        # T-137/T-142: pass current context so cued-recall boosts can apply
+        # (no-op unless PI_CONTEXT_CUED_RECALL is on). getattr-guarded for mocks.
+        current_mode=getattr(agent, "mode", None),
+        current_conversation_id=getattr(agent, "conversation_id", None),
+        current_scope=getattr(agent, "current_scope", None),
     )
 
 
@@ -2045,6 +2756,10 @@ def _handle_memory_write(agent, tool_input, *, memory_override=None):
         expiry=expiry,
         session_id=agent.session_id,
         source=tool_input.get("source", "stated"),
+        # T-137/T-142: stamp encoding context so cued recall has data to boost on.
+        mode=getattr(agent, "mode", None),
+        conversation_id=getattr(agent, "conversation_id", None),
+        scope=getattr(agent, "current_scope", None),
     )
 
 
@@ -2063,6 +2778,17 @@ def _handle_memory_search_semantic(agent, tool_input, *, memory_override=None):
         limit=tool_input.get("limit", 5),
         threshold=tool_input.get("threshold", 0.5),
     )
+
+
+def _handle_recall_episode(agent, tool_input, *, memory_override=None):
+    mem = memory_override or agent.memory
+    hits = mem.recall_episode(
+        query=tool_input["query"],
+        limit=tool_input.get("limit", 4),
+    )
+    if not hits:
+        return {"episodes": [], "message": "No past episode digests match that query."}
+    return {"episodes": hits}
 
 
 TOOLS = [
@@ -2098,7 +2824,7 @@ TOOLS = [
                 "tier": {"type": "string", "enum": ["l1", "l2", "l3"], "default": "l3"},
                 "importance": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5},
                 "category": {"type": "string", "default": "note"},
-                "expiry": {"type": "string", "description": "ISO datetime"},
+                "expiry": {"type": "string", "description": "ISO datetime — SET for facts with a natural lifespan. Ephemeral phrasing in content ('just for today', 'until friday', 'for the next 3 days', ...) is auto-detected when omitted."},
                 "source": {
                     "type": "string",
                     "enum": ["stated", "inferred_confirmed", "inferred_unconfirmed"],
@@ -2156,6 +2882,35 @@ TOOLS = [
         # Failures during the embedding call also return [] — distinguishing them
         # would require changing the return shape; for now empty = success.
         success_predicate=lambda r: isinstance(r, list),
+    ),
+    ToolSpec(
+        name="recall_episode",
+        description=(
+            "Search past conversation episodes by topic. "
+            "Returns compact digests (when, mode, what was discussed / decided) "
+            "for conversations whose digest or title match the query. "
+            "Use when asked 'what did we decide about X', 'remember when', "
+            "'last time we discussed', etc."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Topic or decision to search for across past conversations.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "default": 4,
+                    "description": "Maximum episodes to return.",
+                },
+            },
+            "required": ["query"],
+        },
+        handler=_handle_recall_episode,
+        success_predicate=lambda r: isinstance(r, dict),
     ),
 ]
 

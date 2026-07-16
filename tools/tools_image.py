@@ -138,6 +138,65 @@ def _generate_huggingface(
 
 
 # ---------------------------------------------------------------------------
+# Gemini (Imagen) backend — free tier via GEMINI_API_KEY, quality tier above
+# FLUX-schnell. T-268: reuses the same key already wired for research mode
+# and the LLM router's Gemini provider — no new account, no new dependency.
+# ---------------------------------------------------------------------------
+
+GEMINI_IMAGE_MODEL = "imagen-3.0-generate-002"
+
+try:
+    from google import genai as _genai
+    from google.genai import types as _genai_types
+    _GENAI_OK = True
+except ImportError:
+    _GENAI_OK = False
+
+
+def _generate_gemini(
+    prompt: str,
+    save_path: Optional[str] = None,
+    gemini_api_key: Optional[str] = None,
+) -> dict:
+    if not _GENAI_OK:
+        return {"success": False, "error": "google-genai not installed — pip install google-genai"}
+
+    key = gemini_api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if not key:
+        return {"success": False, "error": "No GEMINI_API_KEY found. Set GEMINI_API_KEY env var."}
+
+    try:
+        client = _genai.Client(api_key=key)
+        response = client.models.generate_images(
+            model=GEMINI_IMAGE_MODEL,
+            prompt=prompt,
+            config=_genai_types.GenerateImagesConfig(number_of_images=1),
+        )
+        data = response.generated_images[0].image.image_bytes
+    except Exception as e:
+        return {"success": False, "error": f"Gemini image request failed: {e}"}
+
+    if save_path is None:
+        ts = int(time.time())
+        save_path = os.path.join(tempfile.gettempdir(), f"pi_image_{ts}.png")
+
+    try:
+        with open(save_path, "wb") as f:
+            f.write(data)
+    except Exception as e:
+        return {"success": False, "error": f"Failed to save image: {e}"}
+
+    return {
+        "success": True,
+        "path": save_path,
+        "backend": "gemini",
+        "model": GEMINI_IMAGE_MODEL,
+        "prompt": prompt,
+        "bytes": len(data),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -156,7 +215,9 @@ def generate_image(
 
     Args:
         prompt:    Text description of the image to generate.
-        backend:   "pollinations" (default, no key) or "huggingface" (HF_TOKEN needed).
+        backend:   "pollinations" (default, no key), "huggingface" (HF_TOKEN
+                   needed), or "gemini" (GEMINI_API_KEY needed — quality tier
+                   above FLUX-schnell, T-268).
         width:     Image width in pixels (pollinations only, default 1024).
         height:    Image height in pixels (pollinations only, default 1024).
         seed:      Random seed (pollinations only; None = random).
@@ -177,6 +238,8 @@ def generate_image(
         return _generate_huggingface(
             prompt, model=hf_model, save_path=save_path, hf_token=hf_token
         )
+    if backend == "gemini":
+        return _generate_gemini(prompt, save_path=save_path)
     return _generate_pollinations(
         prompt, width=width, height=height, seed=seed, save_path=save_path
     )
@@ -206,7 +269,8 @@ TOOLS = [
         description=(
             "Generate an image from a text prompt and save it to disk. Returns the "
             "absolute file path. Backend 'pollinations' is free with no API key. "
-            "Backend 'huggingface' is higher quality but needs HF_TOKEN env var."
+            "Backend 'huggingface' is higher quality but needs HF_TOKEN env var. "
+            "Backend 'gemini' is quality tier above huggingface, needs GEMINI_API_KEY."
         ),
         input_schema={
             "type": "object",
@@ -214,7 +278,7 @@ TOOLS = [
                 "prompt":    {"type": "string",
                               "description": "Text description of the image to generate"},
                 "backend":   {"type": "string",
-                              "enum": ["pollinations", "huggingface"],
+                              "enum": ["pollinations", "huggingface", "gemini"],
                               "default": "pollinations",
                               "description": "Which backend to use (default: pollinations)"},
                 "width":     {"type": "integer", "default": 1024,

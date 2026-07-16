@@ -1,0 +1,27 @@
+{
+  "id": "T-303",
+  "title": "LLM-adjudicated curation: caretaker contradiction scan gets a Qwen (tier='cheap') judgment pass for implication-level conflicts",
+  "component": "agent/caretaker.py",
+  "severity": "P2",
+  "source": "Ash idea 2026-07-13 (memory-curator breakdown; 'AI keeps track semantically' - the judgment upgrade, event-driven NOT a background daemon)",
+  "root_cause_confidence": "verified",
+  "current_state": "The caretaker's contradiction scan (agent/caretaker.py::scan_contradictions, ~line 549) groups rows by a coarse lexical topic key (~line 504) and only flags conflicts when grouped rows differ in VALUE for the same topic. It cannot see implication-level contradictions: 'I moved to Boston last month' vs 'my apartment in Atlanta' never share a topic key, so both stay active and Pi recalls contradictory facts. The codebase already has the exact pattern needed: semantic_dedup's Haiku tiebreaker (memory/semantic_dedup.py::haiku_tiebreak) LLM-adjudicates borderline duplicate pairs - but nothing adjudicates borderline CONTRADICTION pairs. Curation runs are already event-driven (session exit via _do_caretaker_full, bubble close) - the right moments; no continuous daemon wanted (rejected in the 2026-07-13 breakdown: ~50x token cost for identical outcome).",
+  "target_state": "scan_contradictions gains an optional second pass: pairs that are semantically close (cosine of stored T-291 embeddings >= 0.60) but NOT lexical topic-key matches get adjudicated by one router.chat(tier='cheap') call - on the hackathon deploy that is Qwen, i.e. 'Qwen autonomously curates the memory store'. Verdict CONTRADICTS -> loser (older row) soft-invalidated with invalid_at + pointer to winner, exactly like the existing lexical path. Hard caps: max 5 adjudication calls per caretaker run (env PI_CURATE_MAX_CALLS), pairs only among rows touched since the last run, skip when router unavailable (offline = today's behavior). Adjudication prompt mirrors haiku_tiebreak's shape: two facts, one-word verdict CONTRADICTS or COMPATIBLE, conservative bias to COMPATIBLE.",
+  "depends_on": [
+    "T-291"
+  ],
+  "status": "closed",
+  "created": "2026-07-13T00:00:00+00:00",
+  "migration_plan": [
+    "1. Add adjudicate_contradiction(fact_a, fact_b, router) -> Optional[bool] to agent/caretaker.py, modeled line-for-line on memory/semantic_dedup.py::haiku_tiebreak but calling router.chat(tier='cheap', max_tokens=16); COMPATIBLE/None -> keep both (conservative).",
+    "2. In scan_contradictions (or a sibling scan_semantic_contradictions called from full()): build candidate pairs from rows WITH embeddings (T-291 column) where cosine >= 0.60 AND lexical topic keys differ; cap pairs at PI_CURATE_MAX_CALLS (default 5) per run, newest-first.",
+    "3. Winner = newer created_at (matches existing supersession semantics); loser gets _invalidate-style invalid_at + metadata pointer. Reuse the existing invalidation write, do not invent a new one.",
+    "4. Thread the router in: _do_caretaker_full already has the agent - pass agent.router into full(); full() signature gains router=None (None = skip pass, offline tests unchanged).",
+    "5. Tests (mock router): (a) Boston/Atlanta-style pair with close mocked embeddings + CONTRADICTS verdict -> older row invalidated; (b) COMPATIBLE verdict -> both stay; (c) router None/raises -> pass skipped, zero mutations; (d) call cap respected with 10 candidate pairs.",
+    "6. python scripts/verify.py PASS."
+  ],
+  "risk_notes": "False-positive invalidation is the hazard: an LLM wrongly ruling CONTRADICTS silently retires a true fact. Mitigations: conservative prompt bias (uncertain -> COMPATIBLE), soft invalidation (recoverable, visible in T-301's forgotten ledger), 5-call cap bounds both cost and blast radius per run, and cosine >= 0.60 prefilter keeps unrelated pairs away from the LLM entirely. Cost at cap: 5 calls x ~200 tokens on cheap tier per session exit - negligible, budget-tracked by the router. Do NOT wire this into every bubble close initially - session exit + daily cron only; widen later if the ledger shows good verdicts.",
+  "resolution": "implemented + verify.py PASS (see S-227)",
+  "solution_id": "S-227",
+  "closed": "2026-07-16T20:07:39+00:00"
+}

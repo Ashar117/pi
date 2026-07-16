@@ -2,6 +2,7 @@
 
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,6 +13,13 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.passive import solution_lesson_distiller as sld
 from scripts.passive.common import Status
+
+
+def _recent_iso(days_ago: int = 1) -> str:
+    """A genuinely recent ISO date (T-176: never hardcode 'recent' dates — they rot)."""
+    return (datetime.now(timezone.utc) - timedelta(days=days_ago)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
 
 
 def _sol_file(tmp_path, records):
@@ -28,7 +36,7 @@ class TestCheckRecency:
         assert status == Status.WARN
 
     def test_recent_passes(self):
-        sols = [{"title": "Fix foo", "solved_at": "2026-05-10T00:00:00Z"}]
+        sols = [{"title": "Fix foo", "solved_at": _recent_iso()}]
         status, _ = sld.check_recency(sols)
         assert status == Status.PASS
 
@@ -117,7 +125,7 @@ class TestRunCheck:
     def test_healthy_solutions_passes(self, tmp_path):
         records = [
             {"title": f"Fix issue {i}", "root_cause": "type error",
-             "solved_at": "2026-05-10T00:00:00Z"}
+             "solved_at": _recent_iso()}
             for i in range(5)
         ]
         _sol_file(tmp_path, records)

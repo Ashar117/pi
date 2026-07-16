@@ -1,0 +1,25 @@
+{
+  "id": "T-265",
+  "title": "Runtime error alerting: throttled Telegram alert when P1-class failures land in silent_failures.db",
+  "component": "scripts/passive/silent_failure_watcher.py, tools/tools_telegram.py (reuse telegram_send)",
+  "severity": "P3",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "current_state": "Only scripts/sprint.py escalates failures to Telegram today. General runtime P1s (crashed turns, full provider-chain exhaustion in core/llm_router.py) land in logs and data/silent_failures.db and sit there until the next session - Ash can go hours without knowing Pi is degraded. The pieces already exist: silent_failure_watcher.py passive reads the db, telegram_send delivers messages.",
+  "target_state": "When a P1-class failure (crashed turn, provider chain exhausted, session-exit step failure) lands in silent_failures.db, one throttled Telegram alert goes out: max 1 alert per site per day, deduped, with site name and count. No new alerting infrastructure - the watcher passive grows an alert step.",
+  "depends_on": [
+    "T-254"
+  ],
+  "status": "closed",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. Define the P1-class site list as a constant in silent_failure_watcher.py (start with: turn-crash, provider-chain-exhausted, session-exit-failure site prefixes; extend as T-254/T-255 naming settles).",
+    "2. In the watcher's existing pass over silent_failures.db, collect new P1-class rows since last run; dedupe by site; respect a 1-per-site-per-day throttle persisted in the watcher's own state.",
+    "3. Send via the existing telegram_send tool path: one line per site - 'pi runtime alert: <site> failed <n>x since <time>'.",
+    "4. Test: testing/test_silent_failure_alerting.py - seed a temp db with P1 rows, fake telegram sender, assert exactly one alert per site and zero on the second run same-day.",
+    "5. python scripts/verify.py PASS."
+  ],
+  "risk_notes": "The throttle is the feature - an alert storm during a provider outage would be worse than silence. If TELEGRAM_BOT_TOKEN is unset the watcher must degrade to report-only exactly as it does today. Component is scripts/passive/ (SAFE) - potential sprint candidate once T-254's site naming exists.",
+  "resolution": "implemented",
+  "solution_id": "S-202",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

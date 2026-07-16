@@ -1,12 +1,15 @@
-"""tools/tools_stt.py — Speech-to-text via faster-whisper (T-047).
+"""tools/tools_stt.py — Speech-to-text via Groq Whisper API (primary) or faster-whisper (local fallback).
 
 Exposes:
   STTTools.transcribe_file(path)        — transcribe an audio file
   STTTools.transcribe_mic(seconds)      — record from mic then transcribe
   STTTools.get_tool_definitions()       — tool schema for agent dispatch
 
-Model is loaded lazily on first use. Default: base.en (74M params, fast+accurate).
-Override with STT_MODEL env var (tiny.en / base.en / small.en / medium.en / large-v3).
+Primary: Groq Whisper API (whisper-large-v3, free tier, no local model needed).
+  - Requires GROQ_API_KEY in environment.
+  - Accepts: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm.
+Fallback: faster-whisper local model (pip install faster-whisper).
+  - Override model with STT_MODEL env var (tiny / base / small / medium / large-v3).
 """
 
 from __future__ import annotations
@@ -17,17 +20,42 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-_model = None
-_model_lock = threading.Lock()
+_local_model = None
+_local_model_lock = threading.Lock()
+
+# Max file size Groq Whisper accepts (25 MB).
+_GROQ_MAX_BYTES = 25 * 1024 * 1024
 
 
-def _get_model():
-    global _model
-    if _model is not None:
-        return _model
-    with _model_lock:
-        if _model is not None:
-            return _model
+def _transcribe_groq(audio_path: str) -> str:
+    """Transcribe via Groq Whisper API. Raises on any failure."""
+    api_key = os.getenv("GROQ_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY not set")
+    file_size = Path(audio_path).stat().st_size
+    if file_size > _GROQ_MAX_BYTES:
+        raise RuntimeError(f"Audio file too large for Groq ({file_size} bytes > 25 MB)")
+    try:
+        from groq import Groq
+    except ImportError:
+        raise RuntimeError("groq package not installed — run: pip install groq")
+    client = Groq(api_key=api_key)
+    with open(audio_path, "rb") as f:
+        result = client.audio.transcriptions.create(
+            file=(Path(audio_path).name, f),
+            model="whisper-large-v3",
+            response_format="text",
+        )
+    return str(result).strip()
+
+
+def _get_local_model():
+    global _local_model
+    if _local_model is not None:
+        return _local_model
+    with _local_model_lock:
+        if _local_model is not None:
+            return _local_model
         try:
             from faster_whisper import WhisperModel
         except ImportError as e:
@@ -35,7 +63,7 @@ def _get_model():
                 "faster-whisper not installed. Run: pip install faster-whisper"
             ) from e
 
-        model_name = os.getenv("STT_MODEL", "base.en")
+        model_name = os.getenv("STT_MODEL", "base")
         device = "cpu"
         compute_type = "int8"
 
@@ -47,14 +75,23 @@ def _get_model():
         except ImportError:
             pass
 
-        _model = WhisperModel(model_name, device=device, compute_type=compute_type)
-        return _model
+        _local_model = WhisperModel(model_name, device=device, compute_type=compute_type)
+        return _local_model
+
+
+def _transcribe_local(audio_path: str) -> str:
+    model = _get_local_model()
+    segments, _ = model.transcribe(audio_path, beam_size=5)
+    return " ".join(seg.text.strip() for seg in segments).strip()
 
 
 def _transcribe(audio_path: str) -> str:
-    model = _get_model()
-    segments, _ = model.transcribe(audio_path, beam_size=5, language="en")
-    return " ".join(seg.text.strip() for seg in segments).strip()
+    """Try Groq Whisper first; fall back to local faster-whisper."""
+    try:
+        return _transcribe_groq(audio_path)
+    except Exception:
+        pass
+    return _transcribe_local(audio_path)
 
 
 def _record_mic(seconds: int, path: str) -> None:

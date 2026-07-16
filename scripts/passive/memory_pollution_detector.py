@@ -158,12 +158,16 @@ def check_l1_memory(root: Path) -> Tuple[Status, List[str]]:
 
 
 def check_vault_notes(root: Path) -> Tuple[Status, List[str]]:
-    """Check vault notes for missing frontmatter and empty content."""
+    """Check vault notes for missing frontmatter and empty content.
+
+    Any `.god`-style private vault subdir is excluded — a passive report must
+    never surface a private layer's filenames or content.
+    """
     vault_dir = root / "vault"
     if not vault_dir.exists():
         return Status.PASS, ["[ok] No vault/ dir found — skipped"]
 
-    md_files = list(vault_dir.rglob("*.md"))
+    md_files = [p for p in vault_dir.rglob("*.md") if ".god" not in p.parts]
     if not md_files:
         return Status.PASS, ["[ok] No vault markdown notes found"]
 

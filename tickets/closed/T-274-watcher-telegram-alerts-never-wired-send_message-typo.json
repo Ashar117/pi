@@ -1,0 +1,25 @@
+{
+  "id": "T-274",
+  "title": "Watcher-to-Telegram alert delivery silently never worked: pi_agent.py wired a nonexistent TelegramTools.send_message attribute",
+  "component": "pi_agent.py, tools/tools_telegram.py, agent/watchers.py",
+  "severity": "P1",
+  "source": "Claude Fable audit 2026-07-05 (discovered while wiring T-258 email-triage buttons)",
+  "root_cause_confidence": "verified",
+  "current_state": "pi_agent.py (was line 238): '_tg_send = getattr(self.telegram, \"send_message\", None) if self.telegram else None' then 'self.watchers = _WatcherManager(telegram_send_fn=_tg_send)'. TelegramTools (tools/tools_telegram.py) has NO send_message method or attribute - only a .send(text, chat_id) convenience method wrapping the module-level send_message() function. getattr therefore always returned None in production, so WatcherManager._telegram was always None, so _fire()'s 'if self._telegram: self._telegram(msg)' branch was always skipped. Every watcher type (file/schedule/url/keyword/price, and the new T-257 email watcher) has been firing internally (print statements, watcher_events rows) but NEVER actually reaching Telegram. testing/test_watchers_v2.py never caught this because its tests construct WatcherManager directly with an explicit mock telegram_send_fn, bypassing pi_agent.py's real wiring entirely - the mismatch only exists at the integration seam between the two modules.",
+  "target_state": "pi_agent.py wires telegram_send_fn from self.telegram.send (the real method) instead of the nonexistent send_message. Also wires the new telegram_buttons_fn=self.telegram.send_buttons (T-258) so email-triage alerts can use inline buttons. FIXED in this session: pi_agent.py getattr targets changed to 'send' and 'send_buttons'; TelegramTools gained a send_buttons() convenience method (tools/tools_telegram.py) mirroring the existing send() method.",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-07-05T00:00:00+00:00",
+  "migration_plan": [
+    "1. pi_agent.py: change 'getattr(self.telegram, \"send_message\", None)' to 'getattr(self.telegram, \"send\", None)'.",
+    "2. tools/tools_telegram.py: add 'def send_buttons(self, text, button_specs, chat_id=None): return send_buttons(text, button_specs, chat_id)' on TelegramTools, mirroring the existing send() method.",
+    "3. pi_agent.py: wire 'telegram_buttons_fn=getattr(self.telegram, \"send_buttons\", None) if self.telegram else None' into the WatcherManager constructor call.",
+    "4. Test: testing/test_watchers_v2.py or a small new test - assert TelegramTools has callable 'send' and 'send_buttons' attributes (the exact names pi_agent.py's getattr targets), and assert 'send_message' is NOT an attribute (regression guard documenting why the old wiring silently failed).",
+    "5. python scripts/verify.py PASS; append solutions/SOLUTIONS.jsonl; close ticket.",
+    "6. Manual smoke once Telegram is configured: add any watcher (e.g. 'watcher add schedule test {\"interval_minutes\": 1}'), confirm an actual Telegram message arrives within ~1-2 minutes - this is the first time this path has ever been exercised end-to-end."
+  ],
+  "risk_notes": "This has presumably been broken since watchers were introduced (T-206/watchers v2) - a previously-invisible gap since nothing asserted the real pi_agent.py<->TelegramTools<->WatcherManager wiring end-to-end, only each piece in isolation. Worth a mental note: integration seams between modules deserve at least one wiring-level test, not just per-module unit tests with mocks on both sides of the seam.",
+  "resolution": "implemented",
+  "solution_id": "S-208",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

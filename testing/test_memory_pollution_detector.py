@@ -91,6 +91,23 @@ class TestCheckVaultNotes:
         assert status == Status.WARN
         assert any("frontmatter" in l.lower() for l in lines)
 
+    def test_god_mode_notes_excluded(self, tmp_path):
+        """T-266: vault/.god/ must never be scanned — private layer, CLAUDE.md."""
+        god_dir = tmp_path / "vault" / ".god"
+        god_dir.mkdir(parents=True)
+        (god_dir / "missions.md").write_text("x", encoding="utf-8")  # near-empty, no frontmatter
+
+        healthy = tmp_path / "vault" / "notes"
+        healthy.mkdir(parents=True)
+        (healthy / "ok.md").write_text(
+            "---\ntitle: OK\n---\n\nHealthy content that is long enough.\n",
+            encoding="utf-8",
+        )
+
+        status, lines = mpd.check_vault_notes(tmp_path)
+        assert status == Status.PASS
+        assert not any(".god" in l for l in lines)
+
 
 class TestCheckMemoryDensity:
     def test_no_memory_dir_passes(self, tmp_path):

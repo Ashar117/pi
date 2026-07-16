@@ -1,0 +1,22 @@
+{
+  "id": "T-167",
+  "source": "Remediation sequence C1-C6 (fresh-eyes audit 2026-06-06); filed for later manual implementation. See docs/PROJECT_MAP.md and the approved plan.",
+  "title": "Complete tier round-trip coverage: L2 contract (C2/debugging)",
+  "component": "testing/, tools/tools_memory.py",
+  "what_failed": "C1 Phase A added L1/L3/in-memory round-trip contracts but L2 (organized_memory) write->read is untested - the one tier with no round-trip guard.",
+  "where_failed": "testing/ - no L2 write->read contract; tools_memory.py memory_write/read(tier='l2').",
+  "why_likely": "L2 needs Supabase, so it was skipped when the free offline contracts were written.",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-06-07T00:00:00+00:00",
+  "closed": "2026-06-12T18:44:46.032838+00:00",
+  "linked_solution": null,
+  "depends_on": [],
+  "migration_plan": [
+    "1. Offline (free): assert memory_write(tier='l2') builds a row whose text is recoverable by the L2 read path, via a recording-Supabase double (like the L1 test).",
+    "2. Optional costly: a real Supabase L2 write->read marked @pytest.mark.costly for manual runs.",
+    "3. Add the offline part to the suite (consider the gate)."
+  ],
+  "implementation_notes": "Smart and simple: reuse the _RecordingSupabase pattern from test_memory_roundtrip_contract.py. No network in the default suite.",
+  "analysis": "Completes tier coverage so the round-trip contract is honestly 'all tiers', not 'the offline ones'."
+}

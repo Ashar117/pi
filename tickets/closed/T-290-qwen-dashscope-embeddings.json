@@ -1,0 +1,24 @@
+{
+  "id": "T-290",
+  "title": "Qwen/DashScope embeddings in the embedding engine (foundation for dense retrieval + Alibaba surface)",
+  "component": "memory/semantic_dedup.py, app/config.py",
+  "severity": "P2",
+  "source": "Ash memory-retrieval review 2026-07-12 (hackathon Track 1)",
+  "root_cause_confidence": "verified",
+  "current_state": "memory/semantic_dedup.py::get_embedding() is Gemini-only: it calls _gemini_client() and client.models.embed_content(model=EMBEDDING_MODEL, contents=text) via google.genai. With no GEMINI_API_KEY it returns None, so BOTH semantic dedup (T-080) and any dense retrieval silently no-op. The hackathon build routes generation through Qwen but embeddings can't run on Alibaba Cloud at all.",
+  "target_state": "get_embedding() selects a provider: when QWEN_API_KEY is set it uses Alibaba DashScope text-embedding-v3 (OpenAI-compatible /embeddings endpoint, base https://dashscope-intl.aliyuncs.com/compatible-mode/v1) first, Gemini as fallback. Return type stays List[float]; every caller (compute_embedding_for_write, memory_search_semantic, cosine_similarity) is unchanged. Embeddings now run on Alibaba Cloud, which is extra proof-of-use for the submission.",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-07-12T00:00:00+00:00",
+  "migration_plan": [
+    "1. Add EMBEDDING_PROVIDER/QWEN embedding constants: reuse QWEN_API_KEY from app/config.py; DashScope embedding model 'text-embedding-v3' (env QWEN_EMBEDDING_MODEL to override).",
+    "2. Add a _qwen_embed(text) using the already-installed openai SDK: OpenAI(api_key=QWEN_API_KEY, base_url=<dashscope compatible-mode>).embeddings.create(model=..., input=text) -> resp.data[0].embedding. Never raises; returns None on failure (match get_embedding's contract).",
+    "3. In get_embedding(): try Qwen when QWEN_API_KEY present, else Gemini. Keep the empty-string guard and the never-raise behavior.",
+    "4. Unit test (mock the openai client): assert _qwen_embed hits the DashScope base_url + text-embedding-v3, and get_embedding returns the mocked vector when QWEN_API_KEY is set and Gemini is absent.",
+    "5. python scripts/verify.py must PASS."
+  ],
+  "risk_notes": "Embedding DIMENSION differs by provider (Gemini gemini-embedding ~768/3072, Qwen text-embedding-v3 = 1024). Vectors stored under one provider must NOT be cosine-compared against another provider's vectors. cosine_similarity already returns 0.0 on dimension mismatch, so a mixed store degrades to 'no match' (safe, not wrong). If Ash ever switches provider on an existing store, a re-embed pass is needed — note this in code, do not auto-migrate here. Keep this ticket tiny: provider selection + one helper + one test, nothing else.",
+  "resolution": "implemented + verify.py PASS (see S-214)",
+  "solution_id": "S-214",
+  "closed": "2026-07-11T22:54:09+00:00"
+}

@@ -1,0 +1,16 @@
+{
+  "id": "T-248",
+  "source": "Pi self-report (session tool call)",
+  "title": "Telegram empty photo handling",
+  "component": "telegram_integration",
+  "what_failed": "Bot receives empty photo payload",
+  "where_failed": "telegram_photo_empty_result",
+  "why_likely": "",
+  "severity": "P3",
+  "suggested_fix": "Add fallback to request image upload via external link or prompt user to resend",
+  "status": "closed",
+  "created": "2026-06-23T13:04:13.371943+00:00",
+  "closed": "2026-06-26T23:07:15.626749+00:00",
+  "linked_solution": null,
+  "root_cause_confidence": "hypothesis"
+}

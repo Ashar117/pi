@@ -1,0 +1,21 @@
+{
+  "id": "T-286",
+  "title": "Swallowed-exception ratchet in verify.py: 139 'except: pass' sites without track_silent may only ever decrease",
+  "component": "scripts/verify.py, testing/",
+  "severity": "P2",
+  "source": "Claude Fable improvement pass 2026-07-07 - AST count of non-test, non-archive except-handlers whose body is a lone 'pass' with no track_silent: exactly 139 (pi.py:76, pi_agent.py:293/362/570/587/1154/1748, ...)",
+  "current_state": "T-254/T-255 instrumented the worst ~20 silent-failure sites with track_silent and T-273 made bare 'except:' a hard FAIL, but 139 'except <Type>: pass' sites remain across non-test code with no telemetry. T-264 (open) will fix the top offenders by observed frequency once silent_failures.db accumulates data - but nothing stops NEW swallow-sites from being added faster than old ones are fixed. The count is unguarded: it can silently grow.",
+  "target_state": "verify.py gains check_swallowed_exceptions(): same AST walk as the count above (ExceptHandler, body == [Pass], no track_silent call in the handler, skipping pi_env/__pycache__/.git/.claude/_archive/testing). A checked-in baseline (scripts/verify_baselines.json, {'swallowed_pass': 139}) makes it a RATCHET: count > baseline is a FAIL listing the new offender file:line(s); count < baseline auto-lowers the baseline (write the file, print the improvement). This never blocks on the existing 139 but freezes the debt ceiling permanently. Test: testing/test_swallowed_ratchet.py builds tmp trees (one over-baseline -> offenders listed; one under -> baseline file rewritten lower).",
+  "depends_on": [],
+  "status": "open",
+  "created": "2026-07-07T00:00:00+00:00",
+  "root_cause_confidence": "verified",
+  "migration_plan": [
+    "1. Test first (testing/test_swallowed_ratchet.py): drive the new check function against a tmp ROOT containing a file with 'except ValueError: pass' and a baseline of 0 -> returns the offender; baseline 5 with 1 offender -> returns empty AND lowers baseline to 1.",
+    "2. Implement check_swallowed_exceptions() in scripts/verify.py directly below check_bare_except() (same exclusion tuple, same ast.walk shape - reuse, don't re-derive).",
+    "3. Wire into main() + write_status() as a FAIL-class check; create scripts/verify_baselines.json with the true current count (re-run the AST count at implementation time; do not trust 139 blindly).",
+    "4. python scripts/verify.py must print PASS (never pipe, T-214) - it will, because the baseline equals the current count by construction.",
+    "5. SOLUTIONS.jsonl; close; refresh_pi.py."
+  ],
+  "risk_notes": "scripts/ + testing/ only - SAFE components, root cause verified, reproducing test specified: a genuine sprint.py candidate. The ratchet must auto-lower (otherwise improvements go unrecorded and the baseline rots the other way). Detection of 'has track_silent' should be a simple walk of the handler body for a Call whose func name/attr is track_silent - do not build a data-flow analyzer (ponytail: naive name match is the ceiling, and it is enough)."
+}

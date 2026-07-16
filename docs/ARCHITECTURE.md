@@ -1,299 +1,185 @@
 # Pi — Architecture (canonical)
 
-**Version:** 2.0 (merged)
-**Date:** 2026-04-25
-**Supersedes:** `ARCHITECTURE.md` (v1.0), `ARCHITECTURE_DIRECTION.md` (v1.0). Both archived to [docs/_archive/2026-04-25/](_archive/2026-04-25/).
+**Version:** 4.0
+**Date:** 2026-07-07
 **Authority:** This is the canonical architecture document. When this disagrees with code, code wins, and this file gets a correction.
+**Prior versions:** v3 (Phase 9 delta over v2) archived at [docs/_archive/2026-07-07/ARCHITECTURE.v3.md](_archive/2026-07-07/ARCHITECTURE.v3.md). v4 is a clean rewrite — v3's body described the April 2026 system (8 tools, no registry, old ticket schema) and had become actively misleading.
 
 ---
 
-## 0. Core Principle
+## 0. Core principles
 
 Pi is **not a chatbot**. Pi is an evolving agent system built around a continuous engineering loop:
 
 ```
-build → test → create/fix ticket → run → execute → inspect output → detect failure/weakness → build again
+build → test → ticket → run → inspect output → detect failure/weakness → build again
 ```
 
-Every architectural decision must support this loop. If a new module doesn't fit, it needs to justify its existence.
+Every architectural decision must support this loop. Two further non-negotiables:
 
-A second, equally non-negotiable principle:
-
-> **Intelligence in prompt, not code.** Claude (driven by [prompts/consciousness.txt](../prompts/consciousness.txt)) makes decisions. Tools execute actions. There are no hard-coded behaviour patterns or regex routers — except for the bare minimum needed to keep the runtime safe (mode switching, exit, performance command).
+1. **Intelligence in prompt, not code.** Claude (driven by [prompts/consciousness.txt](../prompts/consciousness.txt)) makes decisions; tools execute actions. Hard-coded routing exists only where runtime safety demands it (mode switching, exit, special commands).
+2. **Honesty over narrative.** Claims live in [ABOUT.md](../ABOUT.md) with ✅/◐ status; anything unproven stays ◐ no matter how finished the code looks. The recurring failure mode of this project is docs claiming what code doesn't do — when in doubt, trust auto-generated docs (PI.md auto sections, docs/STATUS.md, prompts/capabilities.md) over hand-written ones.
 
 ---
 
-## 1. System Flow
+## 1. One turn, traced (root mode)
 
 ```
-User Input
-    ↓
-pi_agent.py :: PiAgent.process_input
-    ↓
-[mode-switch detection — loose matcher, see §6]
-    ↓
-consciousness.txt + L3 context → system prompt   ← [tools_memory.get_l3_context]
-    ↓
-Claude Sonnet 4.6 receives: system + history + user message + tools schema
-    ↓
-Claude decides: which tool(s) to use (if any) → returns stop_reason="tool_use"
-    ↓
-Tool loop ([pi_agent.py:454-482]) executes each tool, appends tool_result, calls Claude again
-    ↓
-Final response generated when stop_reason != "tool_use"
-    ↓
-evolution.log_interaction → logs/evolution.jsonl
-    ↓
-Response to user
+process_input → _process_input_inner
+  → detect mode switch / special commands → budget check
+  → _respond_via_config(cfg):
+      fetch L3 memory → filter tools by ModeConfig → awareness shortcut
+      → split system prompt (static / warm / dynamic — 3-segment Anthropic prompt cache, R10)
+      → router.chat()
+      → while stop_reason == "tool_use": execute tool → append tool_result → router.chat()
+  → finalize → async log (L1 raw_wiki + evolution.jsonl) + durable logs/turns.jsonl
 ```
 
-The tool loop is the heart of root mode. It is the difference between "Claude says it stored something" and "the database has the entry."
+The tool loop is the heart of root mode: it is the difference between "Claude says it stored something" and "the database has the entry."
+
+Every surface (terminal REPL, brain server, web UI, extension, Telegram) enters through the same `process_input` — there is exactly one turn path.
 
 ---
 
-## 2. File Responsibilities
+## 2. Modes — config, not code paths
 
-The runtime entry point is `pi_agent.py`. Status flags below match [FILE_INVENTORY.md](../FILE_INVENTORY.md).
+One `ModeConfig` dataclass ([agent/modes.py](../agent/modes.py)) drives all response paths through the single `_respond_via_config` method (ADR-001, [ADR-004](adr/004-modeconfig-unifies-response-paths.md)). There is no per-mode branching inside the turn path.
 
-| File | Role | Status |
-|---|---|---|
-| [pi_agent.py](../pi_agent.py) | Agent entry point. ~810-line monolith covering init, prompt building, mode switching, root/normie response paths, tool dispatch, research-mode dispatch, session summary, monthly review, health check, exit handling. Phase 4 of [PI_MASTER_PROMPT.md](../PI_MASTER_PROMPT.md) splits this into `agent/`. | LIVE |
-| [prompts/consciousness.txt](../prompts/consciousness.txt) | Pi's intelligence — the system prompt that drives every decision in root mode. | LIVE |
-| [prompts/system.txt](../prompts/system.txt) | Base system prompt for Groq (normie mode) and the research-mode personas. Does not list tools. | LIVE |
-| [tools/tools_memory.py](../tools/tools_memory.py) | `MemoryTools` — L3/L2/L1 read/write, `get_l3_context`, SQLite cache, Supabase sync, write verification. Owns the `l3_cache` SQLite table. | LIVE |
-| [tools/tools_execution.py](../tools/tools_execution.py) | `ExecutionTools` — `execute_python`, `execute_bash`, `read_file`, `modify_file`, `create_file`, `list_files`. | LIVE |
-| [evolution.py](../evolution.py) | `EvolutionTracker` (telemetry to `logs/evolution.jsonl` + per-pattern stats to `logs/patterns.jsonl`); `SelfModifier` (reserved — not yet wired). | LIVE |
-| [core/research_mode.py](../core/research_mode.py) | 3-agent debate (Claude + Gemini + Groq), 2 rounds, synthesised verdict. Invoked via lazy import inside `process_input`. | LIVE |
-| [app/config.py](../app/config.py) | `.env` loading, API keys, model strings, default mode, daily cost limit. | LIVE |
-| [SUPABASE_SETUP.sql](../SUPABASE_SETUP.sql) | Authoritative Supabase schema: `l3_active_memory`, `organized_memory`, `raw_wiki`, RLS policies, Ash's permanent profile seed. | LIVE |
-| [llm/routing.py](../llm/routing.py) | Old multi-provider routing layer. Not imported by anything. Will be archived in Phase 4. | DEAD (legacy) |
-| [app/state.py](../app/state.py) | Old 10-table SQLite schema (users / devices / threads / messages / memories / documents / tool_runs / cost_log / settings / audit_logs). Not imported by anything; not used at runtime. Acknowledged in [data/README.md](../data/README.md#L35). Will be archived in Phase 4. | DEAD (legacy) |
+| Mode | Model | Tools | Notes |
+|---|---|---|---|
+| root | Claude Sonnet 4.6 | all (~75 — live count in PI.md §7) | default working mode; file edits |
+| normie | Groq Llama 3.3 70B | minimal allowlist | free, fast chat |
+| research | Claude + Groq + Gemini | debate orchestration | 2 rounds + synthesis; also callable from root via `deep_debate` (T-262) |
+
+`ModeConfig.tool_allowlist` semantics: `None` = all tools, `()` = none, non-empty tuple = explicit whitelist.
+
+Mode switching is a loose matcher in `agent/modes.py::detect_mode_switch` — deliberately forgiving, because a missed switch historically made the LLM *mime* the other mode instead of refusing (L-009).
 
 ---
 
-## 3. Memory Architecture
+## 3. Tool system — registry, not dispatch ladder
 
-### Three tiers
+Each tool is a `ToolSpec` declared in its owning `tools/tools_*.py` module's `TOOLS = [...]` list and registered through [agent/tools.py](../agent/tools.py) ([ADR-002](adr/002-tool-registry-pattern.md)). Adding a tool = one list entry in the owning module. There is **no central elif ladder** — do not look for one, do not create one.
 
-**L3 — Active Context (always loaded)**
-- Storage: Supabase table `l3_active_memory` + SQLite cache `l3_cache`
-- Size: ~800 token budget at injection time
-- Purpose: Always-loaded context for the current session
-- Sync: SQLite is wiped + repopulated from Supabase at startup, then again on a 5-minute TTL ([tools/tools_memory.py:302-305](../tools/tools_memory.py#L302-L305))
-
-**L2 — Organized Memory**
-- Storage: Supabase table `organized_memory`
-- Size: unlimited
-- Purpose: Searchable structured knowledge — preferences, decisions, technical notes
-- Categories: dynamic (anything writes can produce; no hardcoded list, see L-005)
-
-**L1 — Raw Archive**
-- Storage: Supabase table `raw_wiki`
-- Size: rolling 30-day window (planned; not yet enforced)
-- Purpose: Complete interaction history, indexable for replay
-- Threading: every L1 write in a session shares the same `thread_id = session_id` (T-013, [tools/tools_memory.py:223-228](../tools/tools_memory.py#L223-L228))
-
-### Memory invariants (do not break)
-
-These were learned the hard way (see L-005, L-006, L-007, L-008, L-010 in [solutions/LESSONS.md](../solutions/LESSONS.md)):
-
-1. **Write path and read path must be tested together.** A memory entry is only real if `get_l3_context()` after writing returns it. Round-trip tests, not unit tests.
-2. **`verified=True` means durable, not cached.** `_verify_write` checks Supabase (the durable store), not just SQLite (the cache). SQLite is wiped on every `_sync_l3()`. ([tools/tools_memory.py:401-422](../tools/tools_memory.py#L401-L422))
-3. **No hardcoded category lists in read paths.** `get_l3_context()` groups dynamically by whatever categories the writes produced. ([tools/tools_memory.py:329-370](../tools/tools_memory.py#L329-L370))
-4. **`_sync_l3` is expensive — TTL it.** Full Supabase fetch + SQLite wipe + reinsert. Minimum 300s between syncs. ([tools/tools_memory.py:26-27, 302-305](../tools/tools_memory.py#L26-L27))
-5. **Session IDs propagate everywhere.** Generated once per startup ([pi_agent.py:68](../pi_agent.py#L68)). Lands in evolution log metadata, in L1 raw_wiki `thread_id`, in session summaries. Without it, logs are a pile of disconnected events.
-
-### Known limitations (not yet fixed)
-
-- **L2 search filters on title only**, not content. L2 stores full content under `content.text` (JSONB) but the search uses `ilike("title", ...)`. Plan: add a content-side filter and merge results, or full-text-index the JSONB. Tracked: [SCHEMA_MISMATCHES.md SM-003](../SCHEMA_MISMATCHES.md), Phase 3 of [PI_MASTER_PROMPT.md](../PI_MASTER_PROMPT.md).
-- **`memory_read(tier=None)` excludes L1** despite the docstring claiming "None for all". Tracked: open ticket T-017, [SCHEMA_MISMATCHES.md SM-004](../SCHEMA_MISMATCHES.md).
-- **Token budget competition.** `get_l3_context()` shares 800 tokens across all categories. `session_history` (importance=4) competes with `permanent_profile` (importance=10) and frequently loses. Plan: per-category token reservations.
-- **No deduplication on L3 write.** Repeated writes accumulate.
-- **No importance decay.** Old high-importance entries crowd out newer lower-importance ones.
-- **L1 auto-logging not implemented.** Every conversation turn should append to L1, but currently only explicit `memory_write(tier="l1")` calls populate `raw_wiki`.
+- 21 tool modules; ~75 tools. The live inventory is auto-generated into PI.md §7 and [prompts/capabilities.md](../prompts/capabilities.md).
+- Standard result shape: `{"success": true|false, "output"?, "error"?, "verified"?}`.
+- Safety contracts encoded in tools, not prompts: `gmail_send` **creates drafts only** — it cannot send (T-271). Watcher/triage flows inherit human-in-the-loop from this.
+- Message history is bounded with pair-safe truncation (never cuts inside a `tool_use`/`tool_result` pair — L-007; logic in [agent/truncation.py](../agent/truncation.py)).
 
 ---
 
-## 4. Tool System
+## 4. Memory — three tiers
 
-Eight tools, defined at [pi_agent.py:140-238](../pi_agent.py#L140-L238). Available **only in root mode** (Claude). Normie mode (Groq) has zero tools by design — see §6.
+| Tier | Store | Contents | Access |
+|---|---|---|---|
+| L1 | `raw_wiki` (Supabase) | every turn, all modes; auto-logged | pruned ~30 days; offline floor is `logs/turns.jsonl` (+ `logs/dropped_turns.jsonl`) |
+| L2 | `organized_memory` (Supabase) | distilled durable facts; Groq writes at session end | on-call via `memory_read`; lexical + embedding dedup chain on write |
+| L3 | `l3_cache` (SQLite) ← synced from `l3_active_memory` (Supabase) | hot ambient context | injected into system prompt every turn, `get_l3_context(max_tokens=800)` |
 
-| Tool | Purpose | Notes |
-|---|---|---|
-| `memory_read(query, tier?)` | Search memory across L3/L2 (and L1 if explicit) | See SM-004 limitations |
-| `memory_write(content, tier, importance, category, expiry?)` | Store; auto-verifies in both stores | tier defaults to l3 |
-| `memory_delete(target, soft)` | Soft-delete archives to L2; hard-delete removes | Default soft=True |
-| `execute_python(code)` | Run Python in a 30s-timeout subprocess | Output captured |
-| `execute_bash(command)` | Run shell command with 30s timeout | Working dir = project root |
-| `read_file(path, lines?)` | Read file, optional line range | Absolute or repo-relative |
-| `modify_file(path, old_str, new_str)` | String-replace; requires `old_str` to be unique in the file | Includes auto-log to L3 |
-| `create_file(path, content)` | Create new file; verifies existence after write | Includes auto-log to L3 |
+**L3 sync mechanics** ([tools/tools_memory.py](../tools/tools_memory.py) `_sync_l3`): SQLite is wiped and repopulated from Supabase, ordered `created_at desc`, capped at 5,000 rows, minimum 300s between syncs. The ordering+cap is T-270 — an unordered/uncapped select silently dropped the *newest* rows once the table grew past the server's default page size.
 
-### Standard tool result shape
+**Retrieval (T-292/T-293):** `MemoryTools.retrieve(query, k, tiers)` fuses dense cosine similarity (query + stored embeddings — Qwen `text-embedding-v3` when `QWEN_API_KEY` is set, Gemini otherwise) with the existing lexical ranking (`_hybrid_search_l3` BM25, `memory_read` for L2), min-max normalized and weighted (`PI_RETRIEVE_W_DENSE`/`W_LEX`/`W_IMPORTANCE`). Degrades to pure lexical ordering with no embedding provider configured. This replaced `_prefetch_memory`'s single-keyword-extraction lookup — the old path missed any paraphrase with zero lexical overlap with the stored fact. L3 rows carry an `embedding` column (T-291), filled by `backfill_l3_embeddings()` at session exit rather than inline on write (keeps the interactive write path fast).
 
-```json
-{"success": true | false, "output"?: "...", "error"?: "...", "verified"?: true | false}
-```
+**Forgetting is a four-mechanism lifecycle, not a TTL:**
 
-The agent loop ([pi_agent.py:454-482](../pi_agent.py#L454-L482)) appends each result as a `tool_result` block keyed by `tool_use_id`, then calls Claude again with the updated message list. The loop continues while `stop_reason == "tool_use"`.
+1. **Scheduled expiry** (`active_until`) — explicit (`memory_write(expiry=...)`) or auto-inferred from ephemeral phrasing ("just for today", "until friday", "for the next N days" — T-299's `_infer_expiry`). Pruned by the daily retention tick.
+2. **Neglect decay** (T-135/T-300) — `effective_importance = importance * exp(-decay_rate * days_since_access)`, per-category rates ([memory/salience.py](../memory/salience.py)); unpinned rows below threshold soft-archive daily (`PI_DECAY_ARCHIVE`, default on). Access reinforces (`_bump_access` resets the clock), so used memories survive and unused ones fade.
+3. **Contradiction** — lexical topic-key grouping (`scan_contradictions`) catches same-topic conflicts; Qwen-adjudicated `scan_semantic_contradictions` (T-303, tier='cheap', cosine-prefiltered over stored embeddings, capped at `PI_CURATE_MAX_CALLS`) catches implication-level ones the lexical scan structurally can't ("moved to Boston" vs "apartment in Atlanta" share no topic key). Both soft-invalidate (`invalid_at`) — never delete; a superseded fact stays queryable for "what did I tell you before."
+4. **Semantic dedup** (T-080) — merges paraphrase duplicates at session exit; loser gets `superseded_by`.
 
-### Truncation safety
+All four are soft/recoverable and visible in one place: `python scripts/memory_cli.py forgotten [--days N]` (T-301) — the forgetting ledger, classified EXPIRED/CONTRADICTED/MERGED by deterministic precedence. `memory_delete`/`memory_cli forget` also route non-ID targets through `retrieve()` (T-302), so "forget everything about my old internship" finds a fact phrased with zero shared words.
 
-`self.messages` is bounded to 20 entries via `_truncate_messages_safely` ([pi_agent.py:509-520](../pi_agent.py#L509-L520)). This walks forward from the naive slice point until it lands on a plain user-text message — never cutting inside a `tool_use` / `tool_result` pair. (See L-007.)
+**Memory invariants (learned the hard way — do not break):**
 
----
+1. **Write path and read path are tested together.** An entry is only real if the read path returns it after the write path stored it. Round-trip tests, not unit tests. This project's #1 recurring bug class is write/read divergence (L-005…L-010, T-270).
+2. **`verified=True` means durable (Supabase), not cached (SQLite).** SQLite is wiped on every sync.
+3. **No hardcoded category lists in read paths** — `get_l3_context` groups by whatever categories writes produced.
+4. **`_sync_l3` is expensive — TTL it** (300s minimum between syncs).
+5. **Session IDs propagate everywhere** (evolution log, L1 `thread_id`, session summaries) or the logs are a pile of disconnected events.
 
-## 5. Mode System
-
-| Mode | Model | Tools | Cost | Use case |
-|---|---|---|---|---|
-| **Normie** | Groq Llama 3.3 70B | None | $0 | Casual chat, quick questions |
-| **Root** | Claude Sonnet 4.6 | All 8 | ~$0.003/msg | Memory ops, code execution, complex tasks |
-| **Research** | Claude + Gemini + Groq | None (debate orchestration) | ~$0.02/2-round debate | Multi-perspective analysis |
-
-### Mode switching
-
-`process_input` ([pi_agent.py:344-371](../pi_agent.py#L344-L371)) uses a loose matcher (S-010, T-015):
-- Short messages (≤8 words after stripping punctuation) containing `root`/`normie`
-- Plus a switch signal: the literal word `mode`, a switch verb (`switch`, `go`, `enter`, `activate`, `use`, `into`, `to`, `now`), or just the mode name on its own
-- Strict commands (`analyze performance`, `research mode`, `exit`) stay strict
-
-**Why loose matching matters:** when the matcher missed natural variants, the LLM didn't refuse — it *mimed* the missing capability (fake banners, fake "type confirm" prompts), leaving the user stranded in the wrong mode. The fix is documented in L-009.
-
-### Cross-mode continuity
-
-Both response paths write to a single canonical store, `self.messages` ([pi_agent.py:434, 448, 552, 568](../pi_agent.py#L434)). Normie used to write only to `self.history`, leaving Claude blind to normie turns after a switch back to root. That bug (T-016 / S-011) is fixed; the rule is in L-010: **one conversation, one store**.
-
-### Daily cost gate
-
-If `evolution.get_daily_cost() >= DAILY_COST_LIMIT` ($0.50 default), the agent auto-switches root → normie ([pi_agent.py:402-406](../pi_agent.py#L402-L406)).
+**Caretaker layer** (Phase 8.8): bubble collector debounces rapid incoming messages into one atomic turn; memory caretaker reconciles contradictory/stale facts instead of appending forever; providers fail through explicit fallback chains ([ADR-007](adr/007-memory-lifecycle.md)).
 
 ---
 
-## 6. Engineering Loop
+## 5. Conversation persistence + episodic recall
 
-Pi is a system that learns from its own failures. Every component contributes to the loop:
+SQLite tables `conversations` + `conversation_turns` (schema in `MemoryTools._init_sqlite`; idempotent `INSERT OR IGNORE` on `(conversation_id, idx)`).
 
-### 6.1 Logging pipeline ([logs/](../logs/))
+- Key methods (all [tools/tools_memory.py](../tools/tools_memory.py)): `create_conversation`, `persist_turn`, `load_conversation_turns`, `list_conversations`, `title_conversation`, `close_conversation(digest)`, `recall_episode(query)`.
+- `conversation_switch(agent, target_conv_id)` ([agent/conversation.py](../agent/conversation.py)) saves/restores `agent.conversation_id` + `agent.messages` around autonomous turns — Telegram/brain-server/watcher turns never splice into the active terminal thread.
+- REPL commands: `chats`, `resume <id>`, `/newchat`.
+- Storage transport sits behind the `StorageBackend` seam ([agent/storage.py](../agent/storage.py)): `SQLiteStorageBackend` (prod) / `InMemoryStorageBackend` (tests). Phase 2 of that migration (L3 core read/write behind the seam) is intentional piggyback-debt — see ticket T-269.
 
-- `logs/evolution.jsonl` — one JSONL line per interaction. Fields: timestamp, mode, model, success, cost, tokens_in/out, `tools_used` (list of names), `metadata.session_id`. Owned by [evolution.py:25-55](../evolution.py#L25-L55).
-- `logs/patterns.jsonl` — per-tool success and duration, aggregated by `track_pattern`.
-- `logs/last_review.json` — monthly review marker (last completed / last declined timestamps).
+---
 
-**Known schema drift:** `evolution.log_interaction` writes `tools_used` (name strings) but `evolution.analyze_performance` reads `tool_calls` (full call objects) — that field is never written. Result: every analytic about tool usage and tool success is silently empty. Tracked: [SCHEMA_MISMATCHES.md SM-001](../SCHEMA_MISMATCHES.md). Phase 2 of [PI_MASTER_PROMPT.md](../PI_MASTER_PROMPT.md) fixes it.
-
-### 6.2 Ticket pipeline ([tickets/](../tickets/))
-
-`tickets/open/`, `tickets/closed/`. Schema (every ticket has all of these):
-
-```json
-{
-  "id": "T-NNN",
-  "title": "short verb-led description",
-  "component": "file:function",
-  "what_failed": "...",
-  "where_failed": "file + function + line",
-  "why_likely": "one-line hypothesis",
-  "severity": "P0|P1|P2|P3",
-  "reproduction": "exact steps",
-  "expected": "...",
-  "actual": "...",
-  "suggested_fix": "...",
-  "status": "open|in_progress|closed|blocked",
-  "created": "ISO timestamp",
-  "closed": "ISO timestamp or null",
-  "linked_solution": "S-XXX or null"
-}
-```
-
-11 tickets are currently closed (T-006 through T-016). Open tickets at the time of this writing live in [analysis/tickets.jsonl](../analysis/tickets.jsonl) — T-017, T-018, T-019 — pending promotion to `tickets/open/`.
-
-### 6.3 Solution / lesson pipeline ([solutions/](../solutions/))
-
-Every fix produces a row in `solutions/SOLUTIONS.jsonl` (S-NNN). Recurring patterns produce a lesson in `solutions/LESSONS.md` (L-NNN). These are **the engineering memory of the project** — they are what eventually let Pi (or future-Ash) say "we've seen this kind of failure before; here's the rule we extracted."
-
-L-001 through L-010 are written. Read [solutions/LESSONS.md](../solutions/LESSONS.md) before touching shared state or session logic.
-
-### 6.4 Conversation analysis pipeline ([analysis/](../analysis/))
-
-Real conversations are the highest-signal failure source: tests catch known bugs, logs catch crashes, but conversations catch *silent* failures — weak answers, lost continuity, hallucinated tool effects. The pipeline is documented in [analysis/WORKFLOW.md](../analysis/WORKFLOW.md).
+## 6. Network layer
 
 ```
-Ash pastes a conversation into analysis/chat_logs.txt
-  ↓
-Claude scans for failure signals (memory, continuity, hallucination, drift, tool misuse, refusals)
-  ↓
-Each finding → ticket in analysis/tickets.jsonl  (T-015+)
-  ↓
-Validated tickets promote to tickets/open/
-  ↓
-Recurring patterns (≥ 2 sessions) tracked in analysis/SUMMARY.md
-  ↓
-Solutions land in solutions/SOLUTIONS.jsonl
-  ↓
-Recurring patterns get a lesson in solutions/LESSONS.md
+Chrome MV3 extension (extension/)  ─┐ HTTP + SSE
+Web chat UI (web/)                 ─┤──→ app/server.py (FastAPI, 127.0.0.1:7712) ──→ process_input()
+Telegram peer (tools/tools_telegram.py) ──────────────────────────────────────────↗
 ```
 
-`analysis/chat_logs.txt` is gitignored (raw conversations are personal). Tickets in `analysis/tickets.jsonl` are public — personal content is scrubbed per the privacy rule in [analysis/WORKFLOW.md](../analysis/WORKFLOW.md).
-
-### 6.5 Health & diagnostics
-
-`_health_check()` ([pi_agent.py:629-655](../pi_agent.py#L629-L655)) runs at startup: Supabase reachability, SQLite reachability, presence of all 3 API keys. The monthly review check ([pi_agent.py:657-714](../pi_agent.py#L657-L714)) prompts Ash if 30+ days have passed since the last review.
+- **Brain server** ([app/server.py](../app/server.py), started by [pi_daemon.py](../pi_daemon.py)): localhost-only by design; Bearer auth via `hmac.compare_digest`; one turn at a time (module-level `asyncio.Lock`, FIFO); routes `GET /` (web UI), `/health`, `/conversations`, `POST /chat`, `GET /chat/stream` (SSE); CORS for `chrome-extension://` and `http://127.0.0.1:*`.
+- **Web UI** ([web/](../web/)): no framework, no build step; shared `web/chat.js` client library; SSE token streaming.
+- **Extension** ([extension/](../extension/)): side panel reusing `chat.js`; "Ask Pi about this page" context menu captures `{selection, url, title}`; conversation `extension:default`.
+- **Telegram peer**: each chat isolated as `telegram:<chat_id>`; all dispatch paths (bubble, media, voice, text, callback buttons) funnel through `_process_as_telegram_peer`. Inline keyboards: `send_buttons()`; button taps route through `handle_callback` into a normal turn (T-220), with the `emailtriage:` prefix mapping taps to Gmail/Calendar instructions (T-258).
 
 ---
 
-## 7. Long-term autonomy plan
+## 7. Background machinery
 
-Master prompt §1.10 calls `analysis/` "the most honest source of truth in the repo." That stays true because of one rule: **observe first, act later.**
+- **Watchers** ([agent/watchers.py](../agent/watchers.py)): evaluator functions `(config, state) -> (fired, detail, new_state)` registered in `_EVALUATORS` — file / schedule / url / keyword / price / **email** (T-257: `gmail_search("is:unread newer_than:1d")`, seen-id diffing). 60s sweep. Alerts go to Telegram via the functions `pi_agent.py` wires in: `TelegramTools.send` and `TelegramTools.send_buttons` — **the attribute is `send`, not `send_message`**; getting that wrong silently killed all watcher alerts for months (T-274). Email alerts get triage buttons; everything else gets plain sends. `analyze=True` routes an event through a dedicated Pi conversation (6/hour cap).
+- **Scheduler** ([tools/tools_scheduler.py](../tools/tools_scheduler.py)): cron-style jobs inside the daemon, including nightly `turns.jsonl` rotation at 03:30 (50MB threshold → gzip to `logs/archive/`, T-259; standalone fallback: `scripts/passive/turns_log_rotate.py`).
+- **Observability** ([agent/observability.py](../agent/observability.py)): `track_silent(category, exc)` writes swallowed exceptions to `data/silent_failures.db` and never raises. Bare `except:` anywhere in the repo is a verify.py **FAIL** (AST lint, T-273). P1-class categories push one throttled, deduped Telegram alert per day ([scripts/passive/silent_failure_watcher.py](../scripts/passive/silent_failure_watcher.py), T-265). Exception-handling policy: swallowing is allowed only with `track_silent`; round 2 of the cleanup (T-264) is deliberately data-driven — fix the observed top offenders, not a blind mega-audit.
 
-| Phase | Pi's autonomy level |
+---
+
+## 8. Engineering loop (the part that genuinely works)
+
+```
+ticket → reproducing test → fix → python scripts/verify.py (PASS)
+  → append solutions/SOLUTIONS.jsonl → move ticket open/ → closed/ → python scripts/refresh_pi.py
+```
+
+- **Tickets** ([tickets/open/](../tickets/open/), [tickets/closed/](../tickets/closed/)) — JSON, one per file. Current schema: `id, title, component, severity(P0–P3), source, current_state, target_state, depends_on[], status, created, migration_plan[], risk_notes`, optional `root_cause_confidence("verified"|"hypothesis")` (the sprint runner's T-154 gate reads it), and on close: `resolution, solution_id, closed`. A ticket must be executable by a cold session: file:line evidence in `current_state`, concrete steps in `migration_plan`, the proving test named.
+- **Solutions** ([solutions/SOLUTIONS.jsonl](../solutions/SOLUTIONS.jsonl)) — append-only, one JSON per line: `id, ticket_ids[], problem, countermeasure, files_changed[], result, lessons[], date, recurring`. Recurring patterns distill into [solutions/LESSONS.md](../solutions/LESSONS.md) (L-NNN).
+- **verify.py** ([scripts/verify.py](../scripts/verify.py)) — the gate: AST syntax check on every `.py`, bare-`except:` lint (FAIL), keystone coherence tests first, then every non-costly test file as its own pytest subprocess; WARN-only checks for test coverage, consciousness↔tool drift, replication-log divergence, ABOUT.md count drift. Writes [docs/STATUS.md](STATUS.md). **Never pipe or chain its invocation** — the pipe returns the last command's exit code and masks FAIL (T-214); read the printed PASS/FAIL. Costly tests (real API hits) are excluded via the `COSTLY_TESTS` set and live in [docs/LIVE_RETEST_CHECKLIST.md](LIVE_RETEST_CHECKLIST.md).
+- **Passive skills** ([scripts/passive/](../scripts/passive/)) — 13 read-only health checks (doc drift, privacy publish guard, silent failures, memory pollution, sprint readiness, …) writing to [reports/](../reports/); never auto-fix, never commit. Exit codes 0/1/2 = PASS/WARN/FAIL.
+- **Cadence**: `plan_sprint.py` (Monday, writes PI.md §3) · `retro.py` (Friday) · `refresh_pi.py` (after any ticket close or tool addition — regenerates PI.md §4/§7/§8/§9).
+
+---
+
+## 9. Autonomy — sprint runner ([scripts/sprint.py](../scripts/sprint.py))
+
+Feature-complete, heavily gated, and — honestly — **has never closed a ticket in production** (T-256 tracks the first real close; it is blocked on a genuine candidate ticket, not on code).
+
+Guardrails, all load-bearing:
+
+- `SAFE_COMPONENTS` allowlist (`scripts/`, `testing/`, `docs/`, `vault/`) — ~80% of the repo is refused; scope is widened one prefix per proven run (T-263), never preemptively.
+- T-154 confidence gate: self-filed tickets default to `hypothesis` and are refused for auto-runs; only `root_cause_confidence: "verified"` tickets qualify. `--ticket T-NNN` is the by-design manual bypass.
+- Caps: 15 min / 30 iterations / $0.50 per ticket. Commits only to `sprint/T-NNN` branches; Ash gates every merge. Failures escalate via Telegram, and the run transcript in `logs/sprint/` is itself the deliverable.
+
+The autonomy ladder is deliberate: **A** Pi generates great logs → **B** Pi proposes tickets and fixes (current) → **C** Pi executes within bounded scope (T-256 proves this) → **D** Pi proposes architectural change. Autonomy is earned through track record, never granted by config.
+
+---
+
+## 10. Design constraints
+
+- **No ceiling**: every module replaceable, extendable (registry, ModeConfig, StorageBackend seam), observable (everything logs), testable.
+- **Reversibility**: files are never deleted — archive to [docs/_archive/](_archive/). Identity ([prompts/consciousness.txt](../prompts/consciousness.txt)) and core files change only through diff-first review.
+- **Cost discipline**: [core/llm_router.py](../core/llm_router.py) picks provider/tier with per-provider tokens-per-day budgets and brownout ([ADR-003](adr/003-router-tier-and-tpd-budget.md)); daily cap in `app/config.py` auto-downgrades root → normie. Groq (free) for batch/aggregation; Claude for code precision.
+- **Privacy**: the public repo model separates open code from private prompts/architecture (gitignored). It is enforced by `/privacy` ([scripts/passive/privacy_publish_guard.py](../scripts/passive/privacy_publish_guard.py)) before any push.
+
+---
+
+## 11. Where to look next
+
+| Question | Doc |
 |---|---|
-| **A — now** | Pi generates great logs. Ash reads them and acts. |
-| **B — next** | Pi reads its own logs and proposes tickets and fixes. Ash approves. |
-| **C — later** | Pi executes approved fixes within a bounded scope. Ash reviews. |
-| **D — long-term** | Pi proposes architectural changes. Ash decides. |
-
-At no point does Pi modify its own identity (`consciousness.txt`) or core files without review. That's a design choice, not a technical limit. An autonomous agent that *earns* autonomy through track record is more interesting than one given it.
-
-### Things that must be preserved permanently
-
-These records are Pi's engineering biography:
-
-- All session traces (`logs/runs/{session_id}.jsonl` once implemented; for now `logs/evolution.jsonl`)
-- All `tickets/` (open and closed)
-- All `solutions/SOLUTIONS.jsonl` entries
-- Every version of `prompts/consciousness.txt` (versioned)
-- All `analysis/chat_logs.txt` (locally — gitignored, but never wiped)
-- Git history of `pi_agent.py` and `tools/`
-
----
-
-## 8. Design Constraint — "No Ceiling"
-
-Don't build Pi in a way that requires a rewrite to grow. Every module should be:
-
-- **Replaceable** — swap Groq for another fallback without touching `pi_agent.py`.
-- **Extendable** — add a new tool without changing the tool loop, just `_get_tool_definitions()` and the dispatch in `_execute_tool`.
-- **Observable** — every component writes to logs.
-- **Testable** — every component has, or can have, a test file. (See §11 — currently incomplete.)
-
-The architecture you build today will be running for years. Design like it.
-
----
-
-## 9. Build status (as of this document's date)
-
-The honest as-of-2026-04-25 picture is in [STATUS.md](../STATUS.md). Headline: tools wired, tool loop working, session_id propagating, telemetry has a silent drift (SM-001), memory round-trip via the tool loop is unverified by tests. See STATUS.md for citations.
-
----
-
-## 10. What this document does NOT cover
-
-- Step-by-step "how to run Pi" — see [docs/USER_GUIDE.md](USER_GUIDE.md).
-- Per-bug histories — see [tickets/closed/](../tickets/closed/) and [solutions/SOLUTIONS.jsonl](../solutions/SOLUTIONS.jsonl).
-- Operating protocol for VS Code Claude during engineering work — see [PI_MASTER_PROMPT.md](../PI_MASTER_PROMPT.md).
-- Future engineering protocol / contributing guide — Phase 6 will produce [docs/CONTRIBUTING.md](CONTRIBUTING.md).
-
-## 11. Current testing gaps (worth naming explicitly)
-
-The repo has 18 tests across 4 suites in [testing/](../testing/), but **none of them invoke `PiAgent.process_input`**. They call `MemoryTools` directly. The thing that broke in production (LOG1/LOG2 — the LLM saying "I've stored…" without a tool call) is exactly the gap. Phase 3 of [PI_MASTER_PROMPT.md](../PI_MASTER_PROMPT.md) is dedicated to closing it: a `testing/test_memory_roundtrip.py` that drives `PiAgent`, asserts a real `memory_write` tool_use was issued, tears down, rebuilds, queries, and asserts the answer comes back.
+| How do I run it / what commands exist | [docs/USER_GUIDE.md](USER_GUIDE.md) |
+| What works vs what's ◐ | [ABOUT.md](../ABOUT.md) |
+| What's in flight right now | [PI.md](../PI.md) §3/§8 (auto-refreshed) |
+| Why is X designed this way | [docs/adr/](adr/) 001–008 |
+| What broke before and what we learned | [solutions/SOLUTIONS.jsonl](../solutions/SOLUTIONS.jsonl), [solutions/LESSONS.md](../solutions/LESSONS.md) |
+| Last verify result | [docs/STATUS.md](STATUS.md) (machine-written — trust it) |

@@ -1,0 +1,25 @@
+{
+  "id": "T-300",
+  "title": "Activate the dormant decay-forgetting: PI_DECAY_ARCHIVE default ON, decay archive daily, composite salience on deploy",
+  "component": "agent/retention.py, .env.example, deploy/alibaba/README.md",
+  "severity": "P1",
+  "source": "forgetting audit 2026-07-13 (hackathon Track 1 criterion: timely forgetting)",
+  "root_cause_confidence": "verified",
+  "current_state": "Pi's best forgetting machinery is switched off by default: (1) the l3_decay_archive retention policy (archives rows whose effective_importance = importance * exp(-decay_rate * days_since_access) drops below 1.0; pinned rows immune; per-category decay rates in memory/salience.py) no-ops unless PI_DECAY_ARCHIVE=on (retention.py ~272); (2) it is scheduled WEEKLY - not 'timely'; (3) composite salience ordering (recency/surprise/affect-aware retrieval) requires PI_SALIENCE_MODE=composite. Result: in production, forgetting = explicit expiry + contradiction invalidation only; the spaced-repetition 'use it or lose it' system (access-reinforced via _bump_access, T-135) never fires.",
+  "target_state": "(1) l3_decay_archive runs when PI_DECAY_ARCHIVE is unset (default-on): the env check becomes opt-OUT (PI_DECAY_ARCHIVE=off disables). Rationale: archiving is soft (sets active_until=now, recoverable via --include-archived), pinned rows are immune, and importance-5 rows at default 0.01/day decay need ~160 untouched days to cross the 1.0 threshold - conservative by construction. (2) Schedule flips weekly -> daily. (3) PI_SALIENCE_MODE=composite + PI_DECAY_ARCHIVE=on written into deploy/alibaba/README.md .env block and documented in .env.example TUNING section.",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-07-13T00:00:00+00:00",
+  "migration_plan": [
+    "1. retention.py _handle_l3_decay_archive: invert the gate - run unless PI_DECAY_ARCHIVE in (0,off,false,no); update the docstring + DEFAULT_POLICIES comment.",
+    "2. DEFAULT_POLICIES l3_decay_archive schedule: weekly -> daily.",
+    "3. .env.example: document PI_DECAY_ARCHIVE (default on, off to disable) + PI_SALIENCE_MODE under TUNING.",
+    "4. deploy/alibaba/README.md .env block: add PI_SALIENCE_MODE=composite (deploy runs the full salience stack; local default stays legacy).",
+    "5. Tests: existing retention tests updated - decay-archive applies with env unset; PI_DECAY_ARCHIVE=off no-ops. Check testing/test_retention.py + test_retention_tick.py + test_salience.py for assertions on the old default and update them deliberately (they encode the old opt-in intent).",
+    "6. python scripts/verify.py PASS."
+  ],
+  "risk_notes": "Default-flip risk is real but bounded: worst case a long-untouched unpinned low-importance row gets archived (soft, recoverable, visible via memory_cli list --include-archived). Do NOT flip PI_SALIENCE_MODE default in code - composite changes retrieval ORDERING everywhere and hackathon week is the wrong time; it stays env-gated and is simply enabled on the deploy box. If any existing test asserts decay-archive is off by default, that test encoded the experiment gate, not a product invariant - update it with a comment saying so.",
+  "resolution": "implemented + verify.py PASS (see S-224)",
+  "solution_id": "S-224",
+  "closed": "2026-07-16T20:07:39+00:00"
+}

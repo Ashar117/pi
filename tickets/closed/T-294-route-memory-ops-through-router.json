@@ -1,0 +1,24 @@
+{
+  "id": "T-294",
+  "title": "Route session-summary + L2 distillation through the LLM router (Qwen writes the memories)",
+  "component": "agent/session.py, tools/tools_memory.py, pi_agent.py",
+  "severity": "P2",
+  "source": "Ash hackathon plan WS4 2026-07-12 (Track 1)",
+  "root_cause_confidence": "verified",
+  "current_state": "The memory-writing LLM calls bypass the router: agent/session.py::generate_session_summary is called as generate_session_summary(self.groq, self.messages, ...) with the bare Groq client; L2 distillation similarly hardcodes Groq. So memory writes can't use Qwen, ignore the tier/TPD-budget/brownout logic in core/llm_router.py, and have their own failover story.",
+  "target_state": "Both the session-end summary and L2 distillation take the router and call router.chat(..., tier='cheap'). With the hackathon tier ordering, that means Qwen-first on the deployed box and Groq locally, via one failover + budget-aware path. Narrative for the Track-1 submission: 'Qwen both writes and recalls the memories.' Output shapes (summary string / distilled fact list) are unchanged.",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-07-12T00:00:00+00:00",
+  "migration_plan": [
+    "1. Change generate_session_summary to accept the router (or an already-selected callable) instead of the Groq client; internally call router.chat(messages=..., system=..., tier='cheap', max_tokens=...).",
+    "2. Do the same for the L2 distillation call path in tools/tools_memory.py.",
+    "3. Update call sites in pi_agent.py (_generate_session_summary and the distillation trigger) to pass self.router.",
+    "4. Unit test: mock the router and assert the summary path calls router.chat with tier='cheap' (not the bare Groq client), and that the returned summary string is preserved.",
+    "5. python scripts/verify.py must PASS (test_session_exit_retention, test_persistence, and the memory contract tests included)."
+  ],
+  "risk_notes": "Keep the output contract identical — callers expect a plain summary string and a distilled-fact list; only the transport changes. Don't alter retention timing or the session-exit budget (T-112). This is independent of the retrieval tickets (T-290..T-293) and can be done in parallel. Locally (no QWEN_API_KEY) tier='cheap' still resolves to Groq/Cerebras, so behavior is unchanged off the deployed box.",
+  "resolution": "implemented + verify.py PASS (see S-218)",
+  "solution_id": "S-218",
+  "closed": "2026-07-11T22:54:09+00:00"
+}

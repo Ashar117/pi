@@ -21,6 +21,8 @@ import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from agent.observability import track_silent
+
 _ROOT       = Path(__file__).parent.parent
 _FACES_DIR  = _ROOT / "data" / "faces"
 _TEMP_DIR   = _ROOT / "data" / "media_temp"
@@ -920,8 +922,8 @@ class MediaTools:
                             os.remove(tmp_img)
                         except Exception:
                             pass
-            except Exception:
-                pass
+            except Exception as e:
+                track_silent("media.analyze_document_with_vision_pdf", e)
 
         elif ext in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
             r = MediaTools.analyze_image(path, question)

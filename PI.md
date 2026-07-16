@@ -15,13 +15,12 @@
 
 | # | Rule | Why |
 |---|---|---|
-| 1 | Never `git push`, `git commit`, or modify `.env` without explicit "go" | Ash controls remote state; surprises lose his work |
+| 1 | Never `git push`, `git commit`, or modify `.env` / `app/config.py` without explicit "go" | Ash controls remote state; surprises lose his work |
 | 2 | Never delete files — archive to `docs/_archive/` | Reversibility |
 | 3 | Compact, scannable output. No 12-line dumps. Briefing only on demand. | He told us directly to clean it up |
 | 4 | Log every conversation turn (both modes) to `logs/turns.jsonl` + `raw_wiki` | He asked to "log everything" multiple times |
-| 5 | Test before claiming success — never report a fix without `verify.py` PASS | Build→test→ticket loop is non-negotiable |
+| 5 | Test before claiming success — never report a fix without `verify.py` PASS. Never pipe/chain verify's exit code (T-214) — read the printed PASS/FAIL text | Build→test→ticket loop is non-negotiable |
 | 6 | Use existing libraries; don't hand-roll parsers | Save tokens for real work |
-| 7 | God mode is private — `agent/god.py`, `prompts/god_consciousness.txt`, `data/god_memory.db`, `tickets/god/`, `vault/.god/` are all gitignored. Never copy content out. | Privacy-by-design |
 
 **Project Pi mission:** continuous engineering loop, not a chatbot. Pi gets better at being Pi every week. Long-term goal: autonomous progression through the ticket queue without Ash driving every step.
 
@@ -58,19 +57,15 @@ If working on a specific closed ticket: also `vault/notes/per-ticket/T-NNN-slug.
 
 ## §3 NOW — this week's sprint
 
-**Week of:** 2026-05-05 → 2026-05-11
-**Sprint goal:** Ship the autonomy loop. PI.md becomes the orchestrator, `sprint.py` runs ticket→test→fix→close without Ash in the seat.
+**Week of:** 2026-07-06 → 2026-07-12
+**Sprint goal:** Prove what shipped. The hackathon-prep batch (20 tickets) is closed — this week is landing the branch and demonstrating the claims live, not building more.
 
 **Tasks, in priority order:**
 
-1. ~~T-039 — universal turn log to `logs/turns.jsonl`~~ ✅ closed 2026-05-05
-2. ~~T-040 — confirm normie L1 logging~~ ✅ already wired (T-024); verified
-3. ~~T-041 — compact startup banner + lazy awareness~~ ✅ closed 2026-05-05
-4. **T-042** — `scripts/refresh_pi.py` regenerates §4/§7/§8/§9 from live data
-5. **T-043** — `scripts/sprint.py` autonomous ticket runner (Claude-driven)
-6. **T-044** — `scripts/plan_sprint.py` weekly planning ritual
-7. **T-045** — `scripts/retro.py` Friday auto-retro to vault + Telegram
-8. **T-046** — VS Code `.vscode/extensions.json` recommends Foam graph view
+1. **T-272** (P0) — Land `fix/conversation-coherence` to main. Ash-gated git work; everything valuable sits uncommitted until this lands.
+2. **Live demo proof** — send a real email → email watcher fires → Telegram triage buttons appear → tap "Draft reply" → draft lands in Gmail. Checklist: `docs/TELEGRAM_SMOKE.md`.
+3. **T-256** (P1) — sprint.py production close #1. Blocked on a genuine small SAFE-component ticket existing in the queue — do **not** manufacture one (Ash's call, 2026-07-06).
+4. **T-264 / T-269** (P3) — deferred by design: T-264 waits for `silent_failures.db` telemetry to accumulate; T-269 piggybacks on the next L3 change.
 
 When closed: move into §6 of `CHECKPOINTS/current.md` and §9 of this file (auto).
 
@@ -79,13 +74,13 @@ When closed: move into §6 of `CHECKPOINTS/current.md` and §9 of this file (aut
 ## §4 State (auto-generated)
 
 <!-- BEGIN AUTO §4 -->
-- **Phase:** Coherence track (interrupts roadmap per T-156 freeze)
-- **Last verify:** PASS · 221/221 files clean · 96 tests · 0 failures
-- **Open tickets:** 9
-- **Closed tickets:** 141
-- **Solutions logged:** 90
-- **Turns today:** 527
-- **Last session end:** 2026-05-29
+- **Phase:** Hackathon-prep refinement → doc truth pass (fix/conversation-coherence)
+- **Last verify:** PASS · 312/312 files clean · 161 tests · 0 failures
+- **Open tickets:** 16
+- **Closed tickets:** 330
+- **Solutions logged:** 222
+- **Turns today:** 204
+- **Last session end:** 2026-07-07
 <!-- END AUTO §4 -->
 
 ---
@@ -98,11 +93,16 @@ For every meaningful change:
 1. Ticket    → tickets/open/T-NNN-slug.json (use create_ticket tool or hand-write)
 2. Test      → write a test that reproduces the bug / exercises the new feature
 3. Fix       → minimal, focused; no surrounding cleanup
-4. Verify    → python scripts/verify.py  (must say PASS)
-5. Solution  → append solutions/SOLUTIONS.jsonl with what + why + better_future_fix
-6. Close     → mv tickets/open/T-NNN-*.json tickets/closed/, set status="closed", closed=<ts>
+4. Verify    → python scripts/verify.py  (must print PASS — never pipe it; a pipe
+               swallows the real exit code, T-214)
+5. Solution  → append solutions/SOLUTIONS.jsonl one-line JSON:
+               {id, ticket_ids, problem, countermeasure, files_changed, result, lessons, date}
+6. Close     → mv tickets/open/T-NNN-*.json tickets/closed/, set status="closed",
+               resolution, solution_id, closed=<ts>
 7. Refresh   → python scripts/refresh_pi.py  (regenerates §4, §7, §8, §9)
 ```
+
+**Ticket quality bar (this is the model-independence strategy):** every ticket must be executable by a cold session — `current_state` carries file:line evidence, `migration_plan` names concrete steps, and the reproducing/proving test is named. Rich tickets make cheap models perform like expensive ones; vague tickets waste both.
 
 **Cost-aware**: prefer Groq (free) for batch / aggregation tasks; reserve Claude (paid) for code-edit precision and architectural reasoning.
 
@@ -115,24 +115,25 @@ For every meaningful change:
 - **L2 (organized_memory, Supabase)** — distilled durable facts; populated by Groq at session-end
 - **L3 (l3_cache, SQLite)** — fast-recall ambient context; injected into system prompt
 
-**Modes**
+**Modes** (config, not code paths — one `ModeConfig` dataclass drives all of them through `_respond_via_config`)
 - **normie** — Groq llama-3.3-70b, no tools, snappy chat
-- **root** — Claude Sonnet 4.6, full ~50-tool loop, file edits enabled
-- **god** — Groq + private memory, gitignored; uncensored; no filters
-- **research** — 3-agent debate (Claude/Groq/Gemini) on a single question
+- **root** — Claude Sonnet 4.6, full tool loop (live count in §7), file edits enabled
+- **research** — 3-agent debate (Claude/Groq/Gemini) on a single question; also callable from root via the `deep_debate` tool
+
+**Network layer** — every surface calls the same `process_input`: FastAPI brain server (127.0.0.1:7712, Bearer auth, SSE streaming), web chat UI at `GET /`, Chrome MV3 extension, Telegram bidirectional peer (per-chat isolation via `telegram:<chat_id>` conversation IDs).
 
 **Vault sync** — one-way at session-exit (`tools/tools_obsidian.py::sync_vault()`). Vault is a read cache; Supabase + SQLite are source of truth.
 
-**Local logs** — `logs/turns.jsonl` (every turn, durable, offline), `logs/evolution.jsonl` (per-tool stats, costs).
+**Local logs** — `logs/turns.jsonl` (every turn, durable, offline, rotated at 50MB), `logs/evolution.jsonl` (per-tool stats, costs), `data/silent_failures.db` (swallowed-exception telemetry via `track_silent`).
 
 **Key paths**
 - `pi_agent.py` — agent class, tool loop, mode switching
-- `agent/` — tool dispatch, prompt builder, mode logic, turn log, startup banner
-- `tools/` — 14 tool modules (memory, web, browse, gmail, calendar, media, telegram, tts, scheduler, etc.)
+- `agent/` — tool dispatch, prompt builder, mode logic, turn log, watchers, observability
+- `tools/` — 21 tool modules (memory, web, browse, gmail, calendar, media, telegram, tts, scheduler, image, video, computer-use, …)
 - `prompts/consciousness.txt` — system prompt, ~700 lines
-- `scripts/verify.py` — CI in a bottle; syntax-check + non-costly tests
+- `scripts/verify.py` — CI in a bottle; syntax-check + bare-except lint + non-costly tests
 
-**ADRs:** [[001-god-as-mode-config|ADR-001]] · [[002-tool-registry-pattern|ADR-002]] · [[003-router-tier-and-tpd-budget|ADR-003]] · [[004-modeconfig-unifies-response-paths|ADR-004]] · [[005-resumable-exit|ADR-005]] · [[006-retention-architecture|ADR-006]]
+**ADRs:** ADR-001 · [[002-tool-registry-pattern|ADR-002]] · [[003-router-tier-and-tpd-budget|ADR-003]] · [[004-modeconfig-unifies-response-paths|ADR-004]] · [[005-resumable-exit|ADR-005]] · [[006-retention-architecture|ADR-006]] · [[007-memory-lifecycle|ADR-007]] · [[008-self-extension-toolsmith|ADR-008]]
 
 **Tickets:** [[open|Open]] · [[closed|Closed]]
 
@@ -153,9 +154,9 @@ For every meaningful change:
 **Documents** (1): read_document
 **Faces** (4): detect_faces · recognize_face · register_face · list_registered_faces
 **Output** (2): speak · telegram_send
-**Other** (23): analyze_media · browser_click · browser_close · browser_evaluate · browser_fill · browser_get_text · browser_open · browser_screenshot · browser_wait · computer_click · computer_key · computer_screenshot · computer_scroll · computer_type · fetch · generate_video · get_location · listen · memory_search_semantic · reflect · repo_map · transcribe_file · watcher
+**Other** (34): analyze_media · browser_click · browser_close · browser_evaluate · browser_fill · browser_get_text · browser_open · browser_screenshot · browser_wait · computer_click · computer_key · computer_screenshot · computer_scroll · computer_type · deep_debate · deep_research · fetch · generate_video · get_location · grounded_search · listen · memory_search_semantic · recall_episode · reflect · repo_map · run_tests · run_verify · set_plan · telegram_buttons · telegram_edit_last · telegram_react · transcribe_file · update_plan · watcher
 
-**Total: 64 tools.**
+**Total: 75 tools.**
 <!-- END AUTO §7 -->
 
 ---
@@ -165,15 +166,22 @@ For every meaningful change:
 <!-- BEGIN AUTO §8 -->
 | ID | Title | Sev | Component |
 |---|---|---|---|
-| T-114 | Phase 8.7 — Hardening Track index (master ticket; do not implement directly) | P1 | (meta — describes the 12 sub-tickets) |
-| T-129 | Thinking layer (full) — add recall-merge + clarifier + memory-id extraction | P3 | agent/thinking.py (extend) |
-| T-136 | Idle replay — sleep-consolidation analogue; pick random past episodes during use | P3 | agent/idle_replay.py (new) + pi_agent.py |
-| T-137 | Context-cued recall — boost retrieval for same-mode and same-scope matches (enco | P3 | tools/tools_memory.py memory_read + _hyb |
-| T-142 | No multi-conversation / session isolation — all context bleeds into one stream | P2 | pi_agent.py, core/session_manager.py |
-| T-152 | Test suite validates plumbing, not conversation fidelity — no end-to-end multi-t | P2 | testing/ (new test_conversation_golden.p |
-| T-153 | Capability docs drift from reality — ABOUT.md marks everything working while P2  | P3 | ABOUT.md, README.md, scripts/passive/doc |
-| T-156 | Phase freeze — no new tools or phases until conversation coherence is verified e | P1 | PI.md (§3 sprint goal, §12 roadmap), str |
-| T-158 | PRIVACY INCIDENT — public GitHub repo leaks architecture/flowcharts, archived co | P0 | .gitignore, .git/info/exclude, github.co |
+| T-272 | Land fix/conversation-coherence to main (branch carries brain server, extension, | P0 | repo-wide (git branch fix/conversation-c |
+| T-256 | sprint.py production close #1: autonomously implement and close one real ticket  | P1 | scripts/sprint.py, ABOUT.md |
+| T-263 | sprint.py production close #2 + widen SAFE_COMPONENTS by exactly one prefix | P3 | scripts/sprint.py |
+| T-264 | Exception audit round 2, data-driven: fix top offenders by observed frequency in | P3 | tools/tools_memory.py, tools/tools_brows |
+| T-269 | StorageBackend Phase 2: migrate L3 core read/write behind the seam (piggyback-on | P3 | agent/storage.py, tools/tools_memory.py |
+| T-276 | Dormant Windows-encoding landmines: 6 test-file open() calls read prose/log file | P3 | testing/ |
+| T-280 | Test suite sends real Telegram messages to Ash's phone (guest-approval notify pa | P1 | testing/conftest.py (new), agent/tools.p |
+| T-281 | Personalized recommendation asks ignore Pi's stored profile - and user correctio | P1 | prompts/consciousness.txt, testing/ |
+| T-282 | L3 permanent_profile is trivia-heavy and identity-poor: no F-1/gender/GSU-CS fac | P1 | scripts/seed_profile.py, tools/tools_mem |
+| T-283 | test_analyze_performance_command reads live production logs/evolution.jsonl - fl | P3 | testing/test_agent_golden.py |
+| T-284 | Nothing notices when the live daemon runs stale code - record git state at daemo | P1 | pi_daemon.py, scripts/passive/daemon_sta |
+| T-285 | Vault mirror rotted silently for ~6 months (per-ticket briefs frozen at T-115) - | P2 | tools/tools_scheduler.py, scripts/passiv |
+| T-286 | Swallowed-exception ratchet in verify.py: 139 'except: pass' sites without track | P2 | scripts/verify.py, testing/ |
+| T-287 | Conversational failures evaporate unless Ash hand-pastes logs - mine correction/ | P2 | scripts/passive/ticket_candidate_miner.p |
+| T-288 | Promote L2 round-trip and L3 sync-ordering tests into verify.py's keystone GATE_ | P2 | scripts/verify.py |
+| T-289 | Watcher state is memory-only - every daemon restart re-fires file/email watchers | P3 | agent/watchers.py |
 <!-- END AUTO §8 -->
 
 ---
@@ -183,16 +191,16 @@ For every meaningful change:
 <!-- BEGIN AUTO §9 -->
 | Solution | Ticket | Title |
 |---|---|---|
-| S-095 | T-155 | privacy guard FAILed on tracked impl — wrong now repo is private. |
-| S-094 | T-143 | Pi replies lacked semantic coherence. |
-| S-093 | T-157 | privacy_publish_guard flagged api_key=CEREBRAS_API_KEY (a variable ref) as a cre |
-| S-092 | T-154 | Self-report tickets carried authoritative-but-wrong fixes (T-143); sprint runner |
-| S-091 | T-151 | _prefetch_memory queried only keywords[0] via single-keyword lexical read; multi |
-| S-090 | T-150 | Root history compression was lossy-on-lossy: 400-char per-message clip + flat 30 |
-| S-089 | T-149 | Normie sent only the current turn (single_message_ctx) + a lossy 300-char sessio |
-| S-088 | T-148, T-143 | Pi could not see its own prior replies. extract_text_from_messages and _build_co |
-| S-087 | T-141 | Pi claims inability (cant analyze docs) then provides accurate details anyway —  |
-| S-086 | T-146, T-147 | Awareness shortcut returned Atlanta weather when user asked about Multan; awaren |
+| S-227 | T-303 | The caretaker's lexical contradiction scan (scan_contradictions) groups rows by  |
+| S-226 | T-301 | Every forgetting mechanism (expiry, contradiction, dedup-merge) left a queryable |
+| S-225 | T-302 | Both forgetting entry points (MemoryTools.memory_delete, memory_cli cmd_forget)  |
+| S-224 | T-300 | Pi's best forgetting machinery - the l3_decay_archive retention policy (Ebbingha |
+| S-223 | T-299 | active_until was only set when the caller passed an explicit expiry, and the mem |
+| S-222 | T-298 | MemoryTools.retrieve()'s dense-cosine L3 query (tools_memory.py) had no active_u |
+| S-221 | T-297 | T-291 shipped backfill_l3_embeddings() as the deliberate fill mechanism for L3 e |
+| S-220 | T-296 | Residual after T-295: (1) 'eth' was not in _MARKET_SIGNALS (only 'btc'), so 'wha |
+| S-219 | T-295 | In normie mode the awareness markets shortcut (_extract_markets in agent/awarene |
+| S-218 | T-294 | agent/session.py::generate_session_summary took a bare Groq client and called gr |
 <!-- END AUTO §9 -->
 
 ---
@@ -207,24 +215,10 @@ For every meaningful change:
 | Edit `requirements.txt`, install packages | Mention what + why; proceed |
 | Delete files | **Forbidden** — archive to `docs/_archive/` |
 | `git commit`, `git push`, edit `.env`, edit `app/config.py` | **Forbidden without explicit instruction** |
-| Edit anything in `agent/god.py`, `prompts/god_consciousness.txt`, `tickets/god/`, `vault/.god/` | God-mode private layer; only edit if Ash is in god mode |
 | `--no-verify` on commits / hooks bypass | **Forbidden** |
 
 **Risk-flagged components** (require diff-first when sprint runner picks them):
 `pi_agent.py`, `agent/tools.py`, `agent/prompt.py`, `prompts/consciousness.txt`, `app/config.py`, `requirements.txt`, anything under `memory/`.
-
-**God-path forbidden list** (R5, T-086): the sprint runner refuses tickets that mention any of these paths in `component`, `files_affected`, `current_state`, `target_state`, `migration_plan`, `title`, or `risk_notes`. Autonomy × privacy is a footgun — god work requires explicit interactive entry, never sprint dispatch.
-
-```text
-tickets/god/
-vault/.god/
-prompts/god_consciousness.txt
-data/god_memory.db
-agent/god.py                              (archived in T-082; path stays forbidden)
-docs/_archive/_private/agent_god_v1.py    (the archived god.py)
-```
-
-`scripts/sprint.py` enforces this via `GOD_FORBIDDEN_PATHS` + `_ticket_touches_god_paths()`. A god ticket dropped into `tickets/open/` is silently excluded from `list_open_tickets()`. A `tickets/open/god/` directory triggers a fail-fast refusal at startup (`return 3`). Tests in [testing/test_sprint_isolation.py](testing/test_sprint_isolation.py) guard the invariant.
 
 ---
 
@@ -250,44 +244,31 @@ docs/_archive/_private/agent_god_v1.py    (the archived god.py)
 
 ---
 
-## §12 Phases beyond 6 (the roadmap)
+## §12 Roadmap — honest status per phase
 
-### Phase 7 — Autonomy (in progress, week of 2026-05-05)
-**Goal:** Pi runs the engineering loop on its own. Ash sets the goal, Pi ships the tickets.
+### Phase 7 — Autonomy (built, unproven in production)
 
-**Deliverables:**
-- `scripts/refresh_pi.py` — regenerator for auto-sections of this file (T-042)
-- `scripts/sprint.py` — picks next ticket, plans, edits, tests, commits to branch (T-043)
-- `scripts/plan_sprint.py` — Monday weekly planning ritual (T-044)
-- `scripts/retro.py` — Friday weekly retrospective (T-045)
-- VS Code Foam graph for vault knowledge (T-046)
+All four scripts exist and are tested: `sprint.py`, `plan_sprint.py`, `retro.py`, `refresh_pi.py`. The runner has **never closed a ticket in production** — T-256 tracks the first real close, blocked on a genuine candidate ticket existing (not on code). Done when a real ticket closes itself on a `sprint/T-NNN` branch that Ash reviews.
 
-**Done when:** Ash can say "run the sprint" once a day and tickets close themselves on a branch he reviews.
+### Phase 8 — Voice (code-complete, blocked on hardware)
 
-### Phase 8 — Voice
-**Goal:** voice-first interface. Speech-to-text input, wake word, full conversational loop.
+`speak` works live. `listen`/wake-word/barge-in are implemented but the full loop has never run end-to-end — this box has no working audio input. Exact blockers: `docs/VOICE_LOOP_STATUS.md`. Do not claim voice works until that doc says so.
 
-**Tickets to file at start:**
-- whisper.cpp (or openai-whisper) integration for STT
-- wake-word detection (porcupine or local KWS)
-- audio I/O glue
-- voice-mode toggle ("voice on") in pi_agent
+### Phases 8.5–8.8 — Hardening + Caretaker (complete)
 
-### Phase 9 — Distributed
-**Goal:** Pi reachable from anywhere — Telegram is a peer (not just notifications), Discord bot, simple web UI.
+ModeConfig unification, ToolSpec registry, router tiers + TPD budget, resumable exit, 3-segment prompt cache (R1–R10); bubble collector, memory caretaker, provider fallback chains (T-121→T-129). Durable record: ADRs 001–008.
 
-**Tickets:**
-- Telegram conversation memory shared with desktop session
-- Discord bot for read+respond on a private server
-- minimal web UI (FastAPI + plain HTML) for browser access
+### Phase 9 — Distributed (complete)
 
-### Phase 10 — Multi-agent
-**Goal:** internal multi-agent debate before Pi answers. Researcher fetches, coder drafts, reviewer critiques, then Pi responds.
+Brain server, web chat UI, Chrome MV3 extension, Telegram peer, multi-conversation persistence + episodic recall, watchers v2. Extended 2026-07: Gmail inbound watcher → Telegram triage buttons → Gmail-draft/calendar HITL flow (T-257/T-258). Discord was considered and rejected (no new demo narrative for the cost).
 
-**Tickets:**
-- agent role abstractions on top of existing modes
-- routing layer to pick which sub-agent answers
-- shared scratchpad for inter-agent state
+### Phase 10 — Multi-agent (partially real)
+
+Research mode already is a 3-agent debate, and `deep_debate` (T-262) exposes it as a root-mode tool. Full role abstractions (researcher/coder/reviewer with shared scratchpad) remain future work — file tickets when it starts.
+
+### Phases 11–12 — Research OS / Life OS (queued)
+
+The brainstorm registry lives in `docs/FEATURE_LIST.md` (paper tracker, experiment tracker, prayer times, morning briefing, …). Nothing is committed until it has a ticket.
 
 ---
 
@@ -299,13 +280,13 @@ docs/_archive/_private/agent_god_v1.py    (the archived god.py)
 | `pi_agent.py` won't import | Syntax error or missing dep — check `python -c "import pi_agent"` traceback |
 | Memory tool errors | `tools/tools_memory.py` Supabase chain — check `.env` keys present |
 | Mode switch not working | `agent/modes.py::detect_mode_switch` — loose-match regexes |
-| Tool not firing | `agent/tools.py::execute_tool` dispatch table — make sure `elif tool_name == ...` exists |
-| God mode unavailable | `agent/god.py` not imported (gitignored) or no Groq key |
+| Tool not firing | ToolSpec registry (ADR-002): is the tool in its module's `TOOLS = [...]` list, and is that module registered in `agent/tools.py`? There is no central dispatch ladder |
 | Telegram silent | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` in `.env` |
+| Watcher fired but no Telegram alert | `pi_agent.py` wires `WatcherManager(telegram_send_fn=...)` from `TelegramTools.send` — the attribute is `send`, not `send_message` (T-274 was exactly this) |
 | Long-running command hung | Background it with `run_in_background=True`, then poll with Read |
 
 When stuck for >10 min: file a ticket via `create_ticket` describing what failed, and surface to Ash.
 
 ---
 
-*Last hand-edit: 2026-05-05 · auto sections refreshed by* `python scripts/refresh_pi.py`
+*Last hand-edit: 2026-07-06 · auto sections refreshed by* `python scripts/refresh_pi.py`

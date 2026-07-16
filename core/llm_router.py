@@ -54,6 +54,8 @@ PROVIDER_DAILY_TOKEN_BUDGET: Dict[str, "int | None"] = {
     "cerebras":   _budget("cerebras", 1_000_000),
     "gemini":     _budget("gemini",   1_000_000),
     "openrouter": _budget("openrouter",  50_000),
+    "z_ai":       None,                              # free tier; no daily cap
+    "qwen":       _budget("qwen",        50_000),    # hackathon credits are finite; conservative cap
     "anthropic":  _budget("anthropic",       None),  # paid; no daily cap
     "ollama":     None,                              # local; no cap
 }
@@ -93,11 +95,15 @@ class LLMRouter:
         gemini_key: str = "",
         cerebras_key: str = "",
         openrouter_key: str = "",
+        z_ai_key: str = "",
+        qwen_key: str = "",
         claude_model: str = "claude-sonnet-4-6",
         groq_model: str = "llama-3.3-70b-versatile",
-        gemini_model: str = "gemini-2.0-flash",
-        cerebras_model: str = "llama-3.3-70b",
+        gemini_model: str = "gemini-2.5-flash",  # T-212: 2.0-flash free tier retired; GEMINI_MODEL env overrides
+        cerebras_model: str = "gpt-oss-120b",  # updated 2026-06; CEREBRAS_MODEL env overrides
         openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free",
+        z_ai_model: str = "glm-4.7-flash",
+        qwen_model: str = "qwen-max",
         ollama_host: str = "http://localhost:11434",
         ollama_model: str = "dolphin-mistral",
         enable_ollama: bool = True,
@@ -109,6 +115,7 @@ class LLMRouter:
         from core.providers.gemini import GeminiProvider
         from core.providers.cerebras import CerebrasProvider
         from core.providers.openrouter import OpenRouterProvider
+        from core.providers.z_ai import ZAIProvider
 
         self._providers = []
         if anthropic_key:
@@ -121,9 +128,14 @@ class LLMRouter:
             self._providers.append(CerebrasProvider(cerebras_key, cerebras_model))
         if openrouter_key:
             self._providers.append(OpenRouterProvider(openrouter_key, openrouter_model))
-        # T-082 step 5: Ollama provider for tier='private' (god mode).
-        # Constructor is cheap (no connection) — the call itself raises if the
-        # daemon is unreachable, which is caught by chat()'s brownout path.
+        if z_ai_key:
+            self._providers.append(ZAIProvider(z_ai_key, z_ai_model))
+        if qwen_key:
+            from core.providers.qwen import QwenProvider
+            self._providers.append(QwenProvider(qwen_key, qwen_model))
+        # Ollama: local last-resort provider. Constructor is cheap (no
+        # connection) — the call itself raises if the daemon is unreachable,
+        # which is caught by chat()'s brownout path.
         if enable_ollama:
             try:
                 from core.providers.ollama import OllamaProvider
@@ -199,11 +211,10 @@ class LLMRouter:
     # not pass tier= keep working; remove the alias in a followup ticket once
     # every site declares its tier explicitly.
     _TIER_ORDERS: Dict[str, tuple] = {
-        "private":  ("groq", "ollama"),                                       # god mode (ADR-001)
-        "premium":  ("anthropic", "gemini"),                                  # paid quality; code edits / complex planning
-        "balanced": ("anthropic", "groq", "gemini", "cerebras", "openrouter"),# current default
-        "cheap":    ("cerebras", "groq", "gemini", "openrouter"),             # free tiers first, Claude excluded
-        "fast":     ("cerebras", "groq"),                                     # low-latency hot path
+        "premium":  ("qwen", "anthropic", "gemini"),                                       # qwen first when key present (hackathon); local dev has no key → unchanged
+        "balanced": ("qwen", "anthropic", "groq", "gemini", "cerebras", "z_ai", "openrouter"),  # current default
+        "cheap":    ("qwen", "cerebras", "groq", "z_ai", "gemini", "openrouter"),          # free tiers first, Claude excluded
+        "fast":     ("cerebras", "groq", "z_ai"),                                         # low-latency hot path
     }
 
     def _providers_for_tier(self, tier: str) -> List:
@@ -232,14 +243,14 @@ class LLMRouter:
         tools: Optional[List[Dict]] = None,
         max_tokens: int = 2048,
         tier: str = "default",
+        on_delta=None,
     ) -> LLMResponse:
         """Call the first available provider; fall back on failure.
 
         Cost is recorded to data/llm_cost.db after every successful call.
         Responses without tool_calls are optionally served from cache when
         enable_cache=True was set at construction time. The `tier` kwarg
-        restricts the provider rotation (T-082): 'private' keeps god-mode
-        traffic on Groq → Ollama only.
+        restricts the provider rotation (T-082).
         """
         if system is None:
             system = ""
@@ -267,7 +278,11 @@ class LLMRouter:
             try:
                 # Only Anthropic understands the (static, dynamic) tuple — flatten for others
                 provider_system = system if provider.name == "anthropic" else system_for_cache
-                resp = provider.chat(messages, provider_system, tools_list, max_tokens)
+                # T-178: forward on_delta only to providers that support streaming
+                if on_delta is not None and getattr(provider, "supports_streaming", False):
+                    resp = provider.chat(messages, provider_system, tools_list, max_tokens, on_delta=on_delta)
+                else:
+                    resp = provider.chat(messages, provider_system, tools_list, max_tokens)
                 # Record cost
                 if _cost:
                     cost = _cost.record(

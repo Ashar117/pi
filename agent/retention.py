@@ -265,12 +265,17 @@ def _handle_sqlite_vacuum(policy: Policy, dry_run: bool, state_entry: Dict[str, 
 def _handle_l3_decay_archive(policy: Policy, dry_run: bool) -> Dict[str, Any]:
     """Archive L3 rows whose effective_importance dropped below 1.0.
 
-    Gated by PI_DECAY_ARCHIVE=on. Pinned rows and already-invalid rows are
-    skipped. 'Archive' means setting active_until=now, which filters the row
-    out of normal queries while keeping it recoverable via --include-archived.
+    T-300: default-ON (opt-OUT via PI_DECAY_ARCHIVE=off) — this is Pi's
+    "use it or lose it" forgetting: unpinned rows nobody has touched decay
+    per-category (memory/salience.py) and archive once effective_importance
+    (importance * exp(-decay_rate * days_since_access)) drops below 1.0.
+    Conservative by construction: an importance-5 row at the default 0.01/day
+    rate needs ~160 untouched days to cross the threshold. Pinned rows and
+    already-invalid rows are skipped. 'Archive' means setting active_until=now
+    — soft, recoverable via --include-archived, never a hard delete.
     """
-    if os.environ.get("PI_DECAY_ARCHIVE", "").lower() not in ("1", "on", "true", "yes"):
-        return {"applied": False, "reason": "PI_DECAY_ARCHIVE not enabled", "stats": {"archived": 0}}
+    if os.environ.get("PI_DECAY_ARCHIVE", "").lower() in ("0", "off", "false", "no"):
+        return {"applied": False, "reason": "PI_DECAY_ARCHIVE=off", "stats": {"archived": 0}}
 
     src = policy.resolved_path()
     stats: Dict[str, Any] = {"archived": 0, "scanned": 0}
@@ -470,12 +475,12 @@ DEFAULT_POLICIES: List[Policy] = [
         kind="sqlite_vacuum",
         schedule="weekly",
     ),
-    # #6 — T-135: decay-archive L3 rows whose effective importance < 1.0
-    #      Requires PI_DECAY_ARCHIVE=on; handler no-ops otherwise.
+    # #6 — T-135/T-300: decay-archive L3 rows whose effective importance < 1.0
+    #      Default-on (opt-out via PI_DECAY_ARCHIVE=off). Daily — "timely" forgetting.
     Policy(
         name="l3_decay_archive",
         path="data/pi.db",
         kind="l3_decay_archive",
-        schedule="weekly",
+        schedule="daily",
     ),
 ]

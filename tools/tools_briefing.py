@@ -30,7 +30,9 @@ class BriefingTools:
     ) -> str:
         """Generate and return the full daily briefing as a markdown string."""
         now   = datetime.now(timezone.utc)
-        today = now.strftime("%A, %B %-d, %Y")  # e.g. "Monday, May 4, 2026"
+        # T-159: %-d is Linux-only and raises ValueError on Windows. Build the
+        # no-leading-zero day portably instead.
+        today = f"{now.strftime('%A, %B')} {now.day}, {now.year}"  # "Monday, May 4, 2026"
 
         sections: list[str] = [f"# Daily Briefing — {today}\n"]
 
@@ -91,6 +93,15 @@ class BriefingTools:
                 arrow  = "▲" if change >= 0 else "▼"
                 lines.append(f"- **{sym}** ${price:.2f} {arrow}{abs(change):.2f}%")
             sections.append(f"\n## Markets\n" + "\n".join(lines))
+
+        # --- Business / Markets news (CNBC-led, T-160) ---
+        biz = self.awareness.get_news(category="business", count=4, force=True)
+        if biz.get("success") and biz.get("items"):
+            items_md = "\n".join(
+                f"- [{it['title']}]({it['url']})" if it.get("url") else f"- {it['title']}"
+                for it in biz["items"][:4]
+            )
+            sections.append(f"\n## Business\n{items_md}")
 
         # --- Research (HN + ArXiv) ---
         tech_upd = self.awareness.get_tech_updates(count=4, force=True)

@@ -187,7 +187,7 @@ def test_deep_mode_calls_haiku_per_category(tmp_path):
             category="travel", created_at="2026-03-01T00:00:00+00:00")
 
     calls = []
-    def fake_review(category, facts):
+    def fake_review(category, facts, client=None):
         calls.append((category, len(facts)))
         return f"reviewed {category}"
 

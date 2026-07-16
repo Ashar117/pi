@@ -1,0 +1,24 @@
+{
+  "id": "T-225",
+  "batch": "profile-system",
+  "source": "Ash feature request 2026-06-21 \u00e2\u20ac\u201d before any guest execution, permission is taken from Ash.",
+  "title": "Profiles: execution approval workflow (human-in-the-loop)",
+  "component": "agent/profile.py (or agent/approvals.py new), tools/tools_telegram.py, agent/tools.py",
+  "current_state": "No approval mechanism exists. T-224 routes guest execution tools to a 'pending approval' stub; this ticket implements the actual request/approve/deny lifecycle.",
+  "target_state": "When a guest action needs execution, a pending-approval record is created with an unguessable token (secrets.token_urlsafe), the requesting profile, the tool + args summary, and a TTL (e.g. 30 min). Ash is notified on his Telegram with the summary and the token. Ash approves via '/approve <token>' or denies via '/deny <token>' \u00e2\u20ac\u201d accepted ONLY from Ash's auth (chat_id==TELEGRAM_CHAT_ID). On approval the queued tool runs in the guest's own namespace and the result is delivered back to the guest's chat; on deny or expiry it is dropped and the guest is told. Pending requests are listable by Ash ('/approvals').",
+  "severity": "P2",
+  "depends_on": [
+    "T-224"
+  ],
+  "status": "closed",
+  "created": "2026-06-21T00:00:00+00:00",
+  "migration_plan": [
+    "1. Approvals store: 'approvals' table (token, profile_name, tool, args_json, status[pending|approved|denied|expired], created_at, expires_at) in the default pi.db (Ash-owned control plane).",
+    "2. request_execution_approval(profile, tool, args) -> creates a record + token, sends Ash a Telegram message via send_message (summary + token), returns a user-facing 'waiting for Ash's approval' string.",
+    "3. /approve <token> & /deny <token> & /approvals handlers in tools_telegram, ash-only (reuse the resolve-profile==ash check). On approve: load record, re-dispatch the tool in the guest's namespace (profile_switch), deliver result to the guest's chat_id; mark approved. Expiry checked lazily on access + skipped if past expires_at.",
+    "4. Safety: token is single-use; re-approving an already-resolved token is a no-op with a clear message. Args are summarized/truncated in the Ash notification (no secret leakage).",
+    "5. Tests: testing/test_execution_approval.py \u00e2\u20ac\u201d guest exec creates a pending record + notifies ash (mock send); /approve by ash runs the tool in the guest namespace and returns result; /approve by a guest is refused; expired token cannot be approved; denied token never executes; token is single-use."
+  ],
+  "risk_notes": "Control-plane tables (profiles, approvals) live in Ash's pi.db, never in a guest DB \u00e2\u20ac\u201d a guest must not be able to read or mutate them. Keep the notification args summarized. This ticket is the trust hinge; test the negative paths (guest approving, expired, double-approve) as hard as the happy path.",
+  "closed": "2026-06-26T23:06:40.050509+00:00"
+}

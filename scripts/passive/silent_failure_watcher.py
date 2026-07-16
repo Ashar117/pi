@@ -20,6 +20,7 @@ CLI:
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import sys
@@ -41,6 +42,67 @@ from scripts.passive.common import (
 
 REPORT_FILE = "silent_failure_watcher.md"
 _DB_PATH = _DEFAULT_ROOT / "data" / "silent_failures.db"
+
+# T-265: runtime error alerting — categories worth waking Ash up for, even
+# outside the 24h WARN/FAIL trend view above. Matched by exact name or suffix
+# since router-derived categories are "<router_name>.all_exhausted".
+_P1_EXACT = {"agent.process_input"}
+_P1_SUFFIXES = (".all_exhausted", ".session_exit_error")
+_ALERT_STATE_PATH = _DEFAULT_ROOT / "data" / "silent_failure_alerts_sent.json"
+
+
+def _is_p1_category(category: str) -> bool:
+    return category in _P1_EXACT or category.endswith(_P1_SUFFIXES)
+
+
+def _load_alert_state(path: Path) -> Dict[str, str]:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_alert_state(path: Path, state: Dict[str, str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state), encoding="utf-8")
+
+
+def send_p1_alerts(
+    counts: Dict[str, int],
+    state_path: Path = _ALERT_STATE_PATH,
+) -> List[str]:
+    """T-265: send one throttled Telegram alert per P1 category per day.
+
+    Returns the list of categories actually alerted on this call (for
+    reporting/testing) — empty if nothing new, Telegram unavailable, or
+    no P1 categories present. Never raises.
+    """
+    p1_hits = {cat: cnt for cat, cnt in counts.items() if _is_p1_category(cat) and cnt > 0}
+    if not p1_hits:
+        return []
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    state = _load_alert_state(state_path)
+    alerted: List[str] = []
+
+    try:
+        from tools.tools_telegram import send_message
+    except ImportError:
+        return []
+
+    for cat, cnt in p1_hits.items():
+        if state.get(cat) == today:
+            continue  # already alerted this category today
+        result = send_message(f"[Pi runtime alert] {cat} failed {cnt}x in the last 24h.")
+        if result.get("success"):
+            state[cat] = today
+            alerted.append(cat)
+
+    if alerted:
+        _save_alert_state(state_path, state)
+    return alerted
 
 # Env-configurable thresholds
 _WARN_PER_CAT_DEFAULT = 50
@@ -151,6 +213,13 @@ def run_check(
     status, lines = check_silent_failures(db_path, warn_per_cat, fail_total)
     if strict and status == Status.WARN:
         status = Status.FAIL
+
+    # T-265: throttled Telegram alert for P1-class categories, independent
+    # of the WARN/FAIL trend thresholds above — a single provider-exhausted
+    # event matters even if the 24h total never crosses the trend threshold.
+    alerted = send_p1_alerts(_read_24h_counts(db_path), state_path=root / "data" / "silent_failure_alerts_sent.json")
+    if alerted:
+        lines.append(f"\nAlerted via Telegram: {', '.join(alerted)}")
 
     verdict = (
         "No silent failure trends detected."

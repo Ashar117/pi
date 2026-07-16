@@ -1,0 +1,24 @@
+{
+  "id": "T-277",
+  "title": "watcher tool: analyze flag unreachable from tool surface; list/status mislabeled as failures; price watcher re-alerts every sweep",
+  "component": "agent/watchers.py",
+  "severity": "P3",
+  "source": "Claude Fable extensive fresh-eyes review 2026-07-07",
+  "current_state": "Three correctness gaps in one file, all verified by reading agent/watchers.py cold. (1) WatcherManager.watcher_add() accepts analyze: bool (line ~456) and the whole T-206 analyzed-fire pipeline exists (_analyzed_fire, rate limit), but the tool path can never reach it: _handle_watcher_add (lines ~562-571) does not pass analyze, and the ToolSpec input_schema (lines ~631-646) does not declare an analyze property - so Pi cannot register an analyzed watcher via its own tool; the ABOUT.md 'Watchers v2' claim is only true via direct Python calls and tests. (2) The ToolSpec success_predicate is lambda r: r.get('success', False) (line ~649), but watcher_list returns {'watchers': [...]} and watcher_status returns a stats dict - neither carries a success key, so every list/status call is logged as a FAILED tool call, which poisons evolution telemetry and makes the tool_usage_audit passive skill flag 'watcher' as high-failure. (3) _check_price (lines ~253-278) returns triggered=True whenever the threshold condition holds and never updates state - no edge trigger - so a price watcher above its threshold fires a Telegram alert every 60-second sweep, forever (pre-existing T-206-era behavior, surfaced by this review).",
+  "target_state": "(1) analyze declared in the input_schema (boolean, default false) and threaded through _handle_watcher_add to wm.watcher_add. (2) success_predicate treats list/status shapes as success (e.g. r.get('success', 'watchers' in r or 'total_watchers' in r)) OR list/status responses gain success: True - either way a passing list call logs as success. (3) _check_price stores was_triggered in state and fires only on the False->True crossing, mirroring _check_url's keyword_found edge pattern. Tests in testing/test_watchers_v2.py cover all three.",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-07-07T00:00:00+00:00",
+  "root_cause_confidence": "verified",
+  "migration_plan": [
+    "1. Tests first in testing/test_watchers_v2.py: (a) drive _handle_watcher_add with analyze=True and assert the DB row has analyze=1; (b) assert the ToolSpec success_predicate returns True for a watcher_list-shaped and watcher_status-shaped result; (c) call _check_price twice with a fake yfinance above threshold and assert it fires exactly once (monkeypatch the yfinance import).",
+    "2. Add 'analyze' to the ToolSpec input_schema and pass tool_input.get('analyze', False) through _handle_watcher_add.",
+    "3. Fix success_predicate per target_state.",
+    "4. Add edge-trigger state to _check_price (state['was_triggered']), following the _check_url keyword_found pattern.",
+    "5. python scripts/verify.py must print PASS (never pipe, T-214); SOLUTIONS.jsonl; close; refresh_pi.py."
+  ],
+  "risk_notes": "agent/ is NOT in sprint.py's SAFE_COMPONENTS - this is a hand/Sonnet ticket, not sprint fodder. Keep the price-watcher fix edge-triggered only; do not add re-arm timers or hysteresis config nobody asked for (ponytail). The success_predicate change must not break the existing add/remove paths, which do return success keys.",
+  "resolution": "implemented",
+  "solution_id": "S-212",
+  "closed": "2026-07-07T00:00:00+00:00"
+}

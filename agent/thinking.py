@@ -33,7 +33,6 @@ _BYPASS_COMMANDS = {
     "help", "/help",
     "clear", "/clear",
     "root mode", "root", "normie mode", "normie",
-    "god mode", "god",
     "research mode", "research",
     "voice", "voice ptt", "voice vad", "voice wake",
     "briefing", "analyze performance",
@@ -71,26 +70,49 @@ def should_bypass(text: str) -> bool:
     return False
 
 
+# T-129 (full): prompt now also merges recall hits → referenced_memories (cite
+# ids) and generates an explicit clarifier question. The two extra fields are
+# optional in the parser, so a lite-shaped response (3 core fields) still works
+# (backward compat / fallback).
 _PROMPT = """You are an intent classifier preprocessing input for an AI assistant named Pi.
 
 Recent history (last 3 turns):
 {history}
 
+Relevant memories that may be referenced (id: content):
+{recall_hits}
+
 User just said: {text}
 
-Classify the intent and normalise the query. Output JSON ONLY:
+Classify the intent, normalise the query, and identify referenced memories. Output JSON ONLY:
 {{
   "intent": "greeting" | "complaint" | "info" | "action" | "clarification" | "other",
   "normalised_query": "what the user is actually asking — typo-corrected, references resolved into full nouns. Keep concise.",
-  "confidence": 0.0..1.0
+  "confidence": 0.0..1.0,
+  "referenced_memories": ["<id from the list above that the user is actually referring to>"],
+  "ask_clarifier": "ONE concrete clarifying question, or null"
 }}
 
-If the user input is ambiguous (e.g. just 'wdym', 'huh'), confidence should be < 0.6."""
+referenced_memories: cite ONLY ids from the list above that the user's message refers to; [] if none.
+ask_clarifier: if the input is ambiguous (e.g. 'wdym', 'huh') set confidence < 0.6 and generate ONE specific question (never 'can you clarify'); otherwise null."""
 
 
-def _build_prompt(text: str, history: Optional[List[str]] = None) -> str:
+def _format_recall_hits(recall_hits: Optional[List[Dict[str, Any]]]) -> str:
+    if not recall_hits:
+        return "(no recall hits)"
+    lines = []
+    for h in recall_hits[:8]:
+        hid = str(h.get("id", ""))[:12]
+        content = (h.get("content") or "")[:80]
+        lines.append(f"{hid}: {content}")
+    return "\n".join(lines) or "(no recall hits)"
+
+
+def _build_prompt(text: str, history: Optional[List[str]] = None,
+                  recall_hits: Optional[List[Dict[str, Any]]] = None) -> str:
     hist_str = "\n".join((history or [])[-3:]) or "(no prior turns)"
-    return _PROMPT.format(history=hist_str, text=text)
+    return _PROMPT.format(history=hist_str, text=text,
+                          recall_hits=_format_recall_hits(recall_hits))
 
 
 def _try_groq(prompt: str, max_tokens: int = 200) -> Optional[str]:
@@ -158,24 +180,41 @@ def _parse_response(raw: str) -> Optional[Dict[str, Any]]:
         confidence_f = float(confidence)
     except (TypeError, ValueError):
         return None
+
+    # T-129: optional extended fields. Absent → lite-shaped defaults (backward compat).
+    referenced = data.get("referenced_memories", [])
+    if not isinstance(referenced, list):
+        referenced = []
+    referenced = [str(x) for x in referenced if x not in (None, "")][:10]
+
+    clarifier = data.get("ask_clarifier")
+    if clarifier in (None, "", "null", "None"):
+        clarifier = None
+    else:
+        clarifier = str(clarifier)
+
     return {
         "intent": str(intent),
         "normalised_query": str(normalised),
         "confidence": max(0.0, min(1.0, confidence_f)),
+        "referenced_memories": referenced,
+        "ask_clarifier": clarifier,
     }
 
 
-def normalise(text: str, history: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+def normalise(text: str, history: Optional[List[str]] = None,
+              recall_hits: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
     """Run the thinking layer on a non-command bubble's text.
 
-    Returns {intent, normalised_query, confidence} on success.
-    Returns None if both providers fail OR if the input should bypass.
-    Never raises.
+    Returns {intent, normalised_query, confidence, referenced_memories,
+    ask_clarifier} on success (T-129). When recall_hits are supplied, the model
+    may cite their ids in referenced_memories. Returns None if both providers
+    fail OR if the input should bypass. Never raises.
     """
     if should_bypass(text):
         return None
 
-    prompt = _build_prompt(text, history)
+    prompt = _build_prompt(text, history, recall_hits)
 
     summary = _try_groq(prompt)
     if summary is None:
@@ -206,6 +245,13 @@ def format_thinking_block(result: Dict[str, Any]) -> str:
         f"normalised: {nq}",
         f"confidence: {conf:.2f}",
     ]
-    if conf < 0.6:
+    # T-129: surface referenced memory ids + an explicit clarifier when present.
+    refs = result.get("referenced_memories") or []
+    if refs:
+        lines.append(f"referenced_memories: {', '.join(refs)}")
+    clarifier = result.get("ask_clarifier")
+    if clarifier:
+        lines.append(f"clarifier: {clarifier}")
+    elif conf < 0.6:
         lines.append("note: confidence low — consider asking a clarifying question")
     return "\n".join(lines)

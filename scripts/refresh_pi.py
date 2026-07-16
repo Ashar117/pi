@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 PI_MD = ROOT / "PI.md"
+ABOUT_MD = ROOT / "ABOUT.md"
 CAPABILITIES_MD = ROOT / "prompts" / "capabilities.md"
 TICKETS_OPEN = ROOT / "tickets" / "open"
 TICKETS_CLOSED = ROOT / "tickets" / "closed"
@@ -372,9 +373,41 @@ def main() -> int:
         return 0
 
     PI_MD.write_text(updated, encoding="utf-8")
+
+    about_changed = _refresh_about_md()
+
     caps_note = " + capabilities.md" if caps_changed else ""
-    print(f"[refresh_pi] PI.md{caps_note} regenerated.")
+    about_note = " + ABOUT.md" if about_changed else ""
+    print(f"[refresh_pi] PI.md{caps_note}{about_note} regenerated.")
     return 0
+
+
+def _refresh_about_md() -> bool:
+    """Update AUTO-tagged counts in ABOUT.md. Returns True if file changed."""
+    if not ABOUT_MD.exists():
+        return False
+    text = ABOUT_MD.read_text(encoding="utf-8")
+    closed = _count_files(TICKETS_CLOSED)
+    sols = _solution_count()
+    updated = re.sub(
+        r"<!-- AUTO:closed_tickets -->\d+<!-- /AUTO:closed_tickets -->",
+        f"<!-- AUTO:closed_tickets -->{closed}<!-- /AUTO:closed_tickets -->",
+        text,
+    )
+    updated = re.sub(
+        r"<!-- AUTO:solutions -->\d+<!-- /AUTO:solutions -->",
+        f"<!-- AUTO:solutions -->{sols}<!-- /AUTO:solutions -->",
+        updated,
+    )
+    updated = re.sub(
+        r"\d+ tickets closed\. \d+ solutions on record\.",
+        f"{closed} tickets closed. {sols} solutions on record.",
+        updated,
+    )
+    if updated == text:
+        return False
+    ABOUT_MD.write_text(updated, encoding="utf-8")
+    return True
 
 
 if __name__ == "__main__":

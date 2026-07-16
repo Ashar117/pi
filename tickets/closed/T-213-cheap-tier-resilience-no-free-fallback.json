@@ -1,0 +1,21 @@
+{
+  "id": "T-213",
+  "source": "Provider audit during T-210 diagnosis (June 2026).",
+  "title": "Cheap/free tier has no working secondary fallback (Cerebras/OpenRouter keys unset)",
+  "component": "core/llm_router.py tiers, app/config.py keys, .env",
+  "current_state": "RESOLVED 2026-06-21: CEREBRAS_API_KEY and OPENROUTER_API_KEY both set in .env. Cheap tier now has 4 configured providers: cerebras (first, free/generous) → groq → gemini → openrouter (:free model). normie survives Groq exhaustion via Cerebras fallback.",
+  "target_state": "At least one always-available free provider in the cheap tier. Recommend Cerebras (free, fast, generous TPD).",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-06-20T20:14:35.453922+00:00",
+  "closed": "2026-06-21T00:00:00+00:00",
+  "linked_solution": "S-153",
+  "depends_on": [],
+  "migration_plan": [
+    "1. DONE: CEREBRAS_API_KEY set in .env.",
+    "2. DONE: OPENROUTER_API_KEY set in .env (free model: meta-llama/llama-3.3-70b-instruct:free).",
+    "3. Router picks up both automatically on next Pi start.",
+    "4. Optional: short retry/backoff on 429 before _mark_brownout — deferred."
+  ],
+  "risk_notes": "Config-only change. No payment method registered on OpenRouter; Pi uses :free model only."
+}

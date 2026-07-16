@@ -181,5 +181,59 @@ class TestProcessInputWrapper:
             assert entry["error"] == "kaboom"
 
 
+# ── T-259: turns.jsonl rotation ───────────────────────────────────────────────
+
+class TestRotateTurnsLog:
+    def test_below_threshold_is_a_noop(self, tmp_path):
+        from agent import turn_log
+        log = tmp_path / "turns.jsonl"
+        log.write_text('{"turn_id": "1"}\n', encoding="utf-8")
+        with patch.object(turn_log, "_LOG_PATH", log), \
+             patch.object(turn_log, "_ARCHIVE_DIR", tmp_path / "archive"):
+            result = turn_log.rotate_turns_log(threshold_bytes=1_000_000)
+        assert result is None
+        assert log.read_text(encoding="utf-8") == '{"turn_id": "1"}\n'
+
+    def test_missing_file_is_a_noop(self, tmp_path):
+        from agent import turn_log
+        with patch.object(turn_log, "_LOG_PATH", tmp_path / "turns.jsonl"), \
+             patch.object(turn_log, "_ARCHIVE_DIR", tmp_path / "archive"):
+            assert turn_log.rotate_turns_log() is None
+
+    def test_above_threshold_archives_and_truncates(self, tmp_path):
+        from agent import turn_log
+        log = tmp_path / "turns.jsonl"
+        archive_dir = tmp_path / "archive"
+        content = '{"turn_id": "1", "user_input": "hi"}\n{"turn_id": "2", "user_input": "there"}\n'
+        log.write_text(content, encoding="utf-8")
+
+        with patch.object(turn_log, "_LOG_PATH", log), \
+             patch.object(turn_log, "_ARCHIVE_DIR", archive_dir):
+            result = turn_log.rotate_turns_log(threshold_bytes=1)
+
+        assert result is not None
+        assert result.name.startswith("turns_jsonl-") and result.name.endswith(".jsonl.gz")
+        assert log.read_text(encoding="utf-8") == ""  # truncated, not deleted
+
+        # The reader recent_turns() already relies on must be able to parse it back.
+        records = turn_log._read_gz_jsonl(result)
+        assert [r["turn_id"] for r in records] == ["1", "2"]
+
+    def test_recent_turns_finds_archived_records(self, tmp_path):
+        """Integration: rotate, then confirm recent_turns() walks the archive."""
+        from agent import turn_log
+        log = tmp_path / "turns.jsonl"
+        archive_dir = tmp_path / "archive"
+        log.write_text('{"turn_id": "1", "session_id": "s1", "ts": "2026-01-01T00:00:00Z"}\n',
+                       encoding="utf-8")
+
+        with patch.object(turn_log, "_LOG_PATH", log), \
+             patch.object(turn_log, "_ARCHIVE_DIR", archive_dir):
+            turn_log.rotate_turns_log(threshold_bytes=1)
+            results = turn_log.recent_turns(limit=5)
+
+        assert any(r.get("turn_id") == "1" for r in results)
+
+
 def teardown_module(module):
     builtins.input = _real_input

@@ -1,0 +1,23 @@
+{
+  "id": "T-275",
+  "title": "test_modes.py crashes on Windows with UnicodeDecodeError: open(PI_AGENT_PATH, 'r') missing encoding='utf-8'",
+  "component": "testing/test_modes.py",
+  "severity": "P2",
+  "source": "Claude Fable audit 2026-07-06 (discovered while re-verifying the full suite after this session's changes)",
+  "root_cause_confidence": "verified",
+  "current_state": "testing/test_modes.py:71 and :98 call 'open(PI_AGENT_PATH, \\'r\\')' with no explicit encoding. On Windows, open() without encoding= defaults to the process locale codepage (cp1252 here), not UTF-8. pi_agent.py contains legitimate UTF-8 characters (em-dashes in comments/docstrings, consistent with the rest of the codebase's style). Once pi_agent.py grew (or was edited) enough to place a multi-byte UTF-8 sequence at a position cp1252 can't decode, both tests crash with UnicodeDecodeError: 'charmap' codec can't decode byte 0x90 in position 35183. Line 47 in the SAME file already does this correctly: 'open(p, \\'r\\', encoding=\\'utf-8\\')' - the bug is isolated to two call sites that never got the same treatment.",
+  "target_state": "Both open() calls (lines 71, 98) pass encoding='utf-8', matching line 47's existing correct pattern. Tests pass regardless of which locale codepage the CI/dev machine defaults to.",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-07-06T00:00:00+00:00",
+  "migration_plan": [
+    "1. testing/test_modes.py:71: 'open(PI_AGENT_PATH, \\'r\\')' -> 'open(PI_AGENT_PATH, \\'r\\', encoding=\\'utf-8\\')'.",
+    "2. testing/test_modes.py:98: same fix.",
+    "3. Rerun: python -m pytest testing/test_modes.py -q - both previously-failing tests must pass.",
+    "4. python scripts/verify.py PASS; append solutions/SOLUTIONS.jsonl; close ticket."
+  ],
+  "risk_notes": "Purely additive (encoding= keyword), zero behavior change on any platform where the default locale already happens to be UTF-8 (e.g. most Linux CI runners) - this is why the bug was Windows-only and easy to miss.",
+  "resolution": "implemented",
+  "solution_id": "S-209",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

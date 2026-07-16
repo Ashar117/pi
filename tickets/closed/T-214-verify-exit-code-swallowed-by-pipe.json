@@ -1,0 +1,22 @@
+{
+  "id": "T-214",
+  "source": "Process failure observed this session — repeated 'verify PASS' reported while verify actually FAILed.",
+  "title": "verify.py true exit code lost when output is piped (| tail) → false PASS",
+  "component": "developer workflow / scripts/verify.py (advisory)",
+  "what_failed": "Running 'python scripts/verify.py | tail -8' reports tail's exit code (always 0), masking verify's exit 1. Multiple 'PASS' claims this session were actually FAIL until the real exit code was read with '; echo $?'.",
+  "where_failed": "Any piped invocation of verify.py in a shell.",
+  "why_likely": "Shell pipelines return the last command's status unless pipefail is set; Git Bash default has no pipefail.",
+  "severity": "P3",
+  "status": "closed",
+  "created": "2026-06-20T20:14:35.453922+00:00",
+  "closed": "2026-06-21T00:00:00+00:00",
+  "linked_solution": "S-151",
+  "depends_on": [],
+  "migration_plan": [
+    "1. Document: never read verify.py through a pipe; use '; echo EXIT=$?' or redirect to a file.",
+    "2. Optional: a thin wrapper script verify that prints a bold PASS/FAIL banner and 'exit $code', and/or a note in CLAUDE.md.",
+    "3. Optional: have verify.py write a machine-readable status sentinel (already writes docs/STATUS.md Overall: FAIL)."
+  ],
+  "analysis": "Cheap to mitigate; the real cost was trusting a piped PASS. STATUS.md already records the truthful overall result — read that, not the piped stdout.",
+  "resolution": "Added T-214 warning block to CLAUDE.md Commands section: 'NEVER pipe verify.py; use python scripts/verify.py --quiet; echo EXIT=$?'. docs/STATUS.md is the authoritative result file."
+}

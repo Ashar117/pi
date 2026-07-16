@@ -40,7 +40,6 @@ def full_router():
 def test_tier_matrix_orderings(full_router):
     """Each tier returns providers in the documented order."""
     cases = {
-        "private":  ["groq", "ollama"],
         "premium":  ["anthropic", "gemini"],
         "balanced": ["anthropic", "groq", "gemini", "cerebras", "openrouter"],
         "cheap":    ["cerebras", "groq", "gemini", "openrouter"],

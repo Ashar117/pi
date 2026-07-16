@@ -1,0 +1,27 @@
+{
+  "id": "T-257",
+  "title": "Inbound Gmail triage watcher: new 'email' watcher kind polling unread mail into the analyze pipeline",
+  "component": "agent/watchers.py, tools/tools_gmail.py (reuse only)",
+  "severity": "P1",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "root_cause_confidence": "verified",
+  "current_state": "Gmail tools (tools/tools_gmail.py: gmail_inbox, gmail_search, gmail_read, gmail_send) are pull-only - they fire only when the user asks. There is no inbound triage: an important unread email sits unnoticed unless Ash checks manually. agent/watchers.py WatcherManager (class ~line 251) already supports file/url/schedule/keyword/price watcher kinds on a 60s poll loop with SQLite state (data/watchers.db), Telegram alert delivery, and an _analyzed_fire path (T-206) that routes events through a dedicated 'watchers' conversation with Groq analysis at a 6/hour cap.",
+  "target_state": "A new watcher kind 'email': _check_email polls gmail_search('is:unread newer_than:1d'), diffs message ids against a seen-set persisted in the existing watcher state, and fires each new message through _analyzed_fire so Pi summarizes it (Groq - free tier per cost policy) and alerts via Telegram. Registered via 'watcher add email ...' like every other kind. Pure wiring: no new dependencies, no new modules.",
+  "depends_on": [
+    "T-272"
+  ],
+  "status": "closed",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. Add _check_email to agent/watchers.py beside _check_keyword (~line 184); ~60 lines: call the existing GmailTools client, gmail_search('is:unread newer_than:1d'), collect message ids.",
+    "2. Persist seen ids in the watcher's existing state row (same pattern the url/keyword watchers use for their last-seen state).",
+    "3. Route new messages through _analyzed_fire with sender/subject/snippet so the 6/hour analyze cap and Telegram delivery apply unchanged.",
+    "4. Register 'email' in the watcher add/list/remove dispatch so 'watcher add email inbox' works.",
+    "5. Test: testing/test_watcher_email.py with a fake gmail client - first poll returns 2 unread ids (expect 2 fires), second poll returns the same ids (expect 0 fires). No real Gmail calls: stays in verify's non-costly set.",
+    "6. python scripts/verify.py PASS. Manual e2e (with T-258): self-email -> Telegram alert."
+  ],
+  "risk_notes": "Gmail OAuth token refresh is the demo-day risk - exercise the flow early, not the night before. Poll rate is the watcher loop's 60s tick with the 6/hr analyze cap, far under Gmail API quota. Keep the query string a constant, not a config knob, until someone actually needs a different one.",
+  "resolution": "implemented",
+  "solution_id": "S-197",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

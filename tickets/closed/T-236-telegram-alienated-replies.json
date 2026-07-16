@@ -1,0 +1,21 @@
+{
+  "id": "T-236",
+  "batch": "telegram-native",
+  "source": "Live Telegram 2026-06-21: rapid msgs ('Hey'/'Salam', then 'Any reminders for me?') got disjointed, out-of-order replies where Pi quote-replied each message separately and echoed terse fragments ('hey', 'salam, ash') — feels alienated/robotic, not a conversation.",
+  "title": "Telegram replies feel alienated: per-message quote-threading + out-of-order, fragmented answers",
+  "component": "tools/tools_telegram.py, agent/bubble.py",
+  "current_state": "Every Pi reply uses reply_to (quote-threads the user's own message back), and rapid consecutive messages are sometimes dispatched/answered separately and out of order, so Pi quotes 'Ashar Ali: Hey' then says 'hey' as an isolated bubble — disjointed and impersonal. The bubble collector (idle 6s) should merge rapid messages into one turn, but the observed behavior shows separate quoted replies, suggesting either the bubble didn't group them or each reply is force-quoted regardless of flow.",
+  "target_state": "Telegram conversation feels natural: (1) rapid consecutive user messages merge into ONE coherent reply (bubble grouping working as designed); (2) Pi does NOT quote-reply every message — use a plain send for the normal flow and reserve reply_to for when the user explicitly replied to an older Pi message or context is ambiguous; (3) replies arrive in order, one coherent response per user 'thought', not fragmented echoes.",
+  "severity": "P2",
+  "depends_on": [],
+  "status": "open",
+  "created": "2026-06-21T00:00:00+00:00",
+  "migration_plan": [
+    "1. Verify bubble grouping: confirm rapid messages within PI_BUBBLE_IDLE_MS actually merge into one dispatch; if a typing/heartbeat or send happens per-message, fix so only the closed bubble triggers one reply.",
+    "2. Reply-threading policy: in _dispatch_bubble / handle_text, use plain send_message for normal turns; only bot.reply_to when message.reply_to_message points at a Pi message (genuine threading), so Pi stops quoting the user's own latest line back at them.",
+    "3. Ordering: ensure the single consumer thread dispatches bubbles FIFO and a reply for bubble N is sent before bubble N+1 is processed (no interleaving).",
+    "4. Keep this consistent with T-217 (typing heartbeat) and T-218 (channel awareness 'you are in a chat, be natural').",
+    "5. Tests: testing/test_telegram_reply_style.py (mock bot) — two rapid messages produce ONE merged reply; normal reply uses plain send (not reply_to); reply_to is used only when the user replied to a Pi message; dispatch order is preserved."
+  ],
+  "risk_notes": "Don't remove reply_to entirely — it's correct when the user genuinely replies to an older Pi message (and the recall pipeline keys off reply_to_text). The fix is making quoting the exception, not the default. Re-check the bubble idle window feels snappy but still groups bursts (6s may be slightly long — consider 3-4s)."
+}

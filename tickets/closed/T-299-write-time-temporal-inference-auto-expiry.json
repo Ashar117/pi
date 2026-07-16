@@ -1,0 +1,25 @@
+{
+  "id": "T-299",
+  "title": "Write-time temporal inference: ephemeral phrasing auto-sets active_until (timely forgetting without manual ISO datetimes)",
+  "component": "tools/tools_memory.py",
+  "severity": "P1",
+  "source": "forgetting audit 2026-07-13 (hackathon Track 1 criterion: timely forgetting)",
+  "root_cause_confidence": "verified",
+  "current_state": "active_until is only set when the caller passes expiry - and the memory_write ToolSpec schema describes it as just 'ISO datetime' (tools_memory.py ~2710). In practice the LLM rarely computes ISO datetimes, so ephemeral facts ('the cafe wifi today is FISH123', 'im parked in deck B this week') are stored PERMANENT. The demo's forgetting beat (docs/DEMO_SCRIPT.md Beat 3) currently depends on the model volunteering an expiry - unreliable.",
+  "target_state": "memory_write's L3 path runs a small deterministic phrase parser over the content when expiry is None: ephemeral phrasing sets active_until automatically. Phrase table (stdlib only, ~10 regexes, all vs now UTC): 'just for today'/'for today'/'today only' -> end of today UTC; 'tonight' -> end of today; 'this week' -> +7d; 'tomorrow' (as in valid until) -> end of tomorrow; 'for the next N hours/days/weeks' -> +N; 'until monday..sunday' -> next such weekday end-of-day; 'this month' -> +31d. Match is conservative: first hit wins, no hit -> permanent (unchanged). The write result dict gains 'auto_expiry': iso-string when inferred so the agent can confirm to the user ('noted - I'll forget that after today'). Also: the ToolSpec expiry description upgraded to instruct the model ('SET for facts with a natural lifespan; ephemeral phrasing in content is auto-detected').",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-07-13T00:00:00+00:00",
+  "migration_plan": [
+    "1. Module-level _EPHEMERAL_PATTERNS list of (compiled regex, timedelta-or-callable) in tools_memory.py + _infer_expiry(content, now) -> Optional[datetime]. Pure function, trivially testable.",
+    "2. In memory_write L3 branch: if expiry is None: expiry = self._infer_expiry... (module fn); when inferred, include auto_expiry in the success dict.",
+    "3. Update the expiry field description in the memory_write ToolSpec input_schema.",
+    "4. Tests (one file, table-driven): each phrase maps to the expected window (freeze now via parameter, no clock mocking needed since _infer_expiry takes now); non-ephemeral content ('my sister lives in Boston') stays None; explicit expiry param always wins over inference.",
+    "5. Update docs/DEMO_SCRIPT.md Beat 3 to rely on auto-inference ('remember just for today: ...' - show the auto_expiry confirmation + the row's active_until).",
+    "6. python scripts/verify.py PASS."
+  ],
+  "risk_notes": "Deterministic regex table, NOT an NLP date parser and NOT a new dependency - false negatives are fine (fact stays permanent, exactly today's behavior); false positives are the real risk, so patterns must require the temporal idiom, not bare weekday names ('meeting on friday' must NOT expire the fact - only 'until friday' / 'for today' style validity phrasing). Keep the table under ~12 patterns. ponytail: first regex hit wins, no scoring.",
+  "resolution": "implemented + verify.py PASS (see S-223)",
+  "solution_id": "S-223",
+  "closed": "2026-07-16T20:07:39+00:00"
+}

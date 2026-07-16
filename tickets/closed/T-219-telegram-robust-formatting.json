@@ -1,0 +1,22 @@
+{
+  "id": "T-219",
+  "source": "Telegram UX review 2026-06-21 \u00e2\u20ac\u201d legacy parse_mode='Markdown' silently drops replies containing stray * _ [ chars; media handlers already band-aided to plain text (T-138).",
+  "title": "Robust Telegram formatting: HTML (or MarkdownV2) with proper escaping",
+  "component": "tools/tools_telegram.py",
+  "current_state": "_get_bot() sets parse_mode='Markdown' (the legacy mode). Any reply with unbalanced * _ [ ` raises a parse error and the message is silently dropped. T-138 worked around this for vision/STT output by forcing parse_mode=None (_send_plain_chunks), but ordinary text replies (_reply_chunks) still use fragile Markdown and can vanish.",
+  "target_state": "A single _format_for_telegram(text) path renders reliably for ALL replies. Recommended: switch to HTML parse mode (only &, <, > need escaping \u00e2\u20ac\u201d far more robust than MarkdownV2's 18 special chars), converting Pi's common markdown (bold, italics, inline code, code blocks, links) to safe HTML and escaping the rest. Replies never silently drop; the _send_plain_chunks band-aid can be retired (or kept as a final fallback).",
+  "severity": "P2",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-06-21T00:00:00+00:00",
+  "migration_plan": [
+    "1. Add _format_for_telegram(text)->str: escape &,<,> then convert a safe subset of markdown (**bold**, _italic_, `code`, ```blocks```, [text](url)) to Telegram HTML tags. Leave everything else as escaped plain text.",
+    "2. Switch _get_bot() to parse_mode='HTML' (or pass per-message). Route _reply_chunks through _format_for_telegram.",
+    "3. Make send_message() apply the same formatting so the telegram_send TOOL benefits too.",
+    "4. Chunking must not split inside an HTML tag \u00e2\u20ac\u201d chunk on safe boundaries (or close/reopen tags across chunk edges).",
+    "5. Keep a final fallback: if a formatted send still raises, retry once with parse_mode=None so a reply is NEVER lost.",
+    "6. Tests: new testing/test_telegram_formatting.py \u00e2\u20ac\u201d text with stray * _ [ < & survives; bold/code/link render to correct HTML; chunk boundary never splits a tag; fallback path triggers on malformed input."
+  ],
+  "risk_notes": "Self-contained formatting layer. HTML chosen over MarkdownV2 for a smaller escape surface (3 chars vs 18). Verify the existing media/voice handlers still read correctly once routed through the unified formatter; keep parse_mode=None fallback so nothing is ever silently dropped.",
+  "closed_at": "2026-06-21T16:51:11.560958+00:00"
+}

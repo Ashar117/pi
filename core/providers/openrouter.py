@@ -36,6 +36,7 @@ class OpenRouterProvider:
             api_key=api_key,
             base_url=_BASE_URL,
             default_headers={"X-Title": "Pi-Agent"},
+            timeout=30.0,  # T-237: hard timeout; openrouter free tier can be slow
         )
         self.model = model
 

@@ -1,0 +1,24 @@
+{
+  "id": "T-279",
+  "title": "sprint.py planner and coder prompts read the dead ticket schema - plans are generated from title-only evidence",
+  "component": "scripts/sprint.py",
+  "severity": "P1",
+  "source": "Claude Fable fresh-eyes review 2026-07-07 - caught live by the first-ever sprint dry-run rehearsal (T-276, logs/sprint/20260706-215017-T-276)",
+  "current_state": "generate_plan (scripts/sprint.py:307-316) builds the planner prompt from ticket fields what_failed / where_failed / why_likely / suggested_fix - the pre-2026-05 ticket schema that no ticket in tickets/open/ uses. Every current ticket carries current_state / target_state / migration_plan / risk_notes instead, so the planner prompt renders those four lines EMPTY and the model plans from title+severity+component alone. Proof: the T-276 dry-run plan says 'The ticket does not name the 6 files explicitly' and hallucinates six nonexistent filenames (test_logging.py, test_reports.py, ...) even though T-276's current_state lists every site with line numbers. auto_implement is worse (lines 479-482): the coder's first user message contains only id + title + the plan - the ticket body never reaches the implementing model at all. This is write/read divergence (the project's #1 recurring bug class) inside the autonomy runner itself, and a root cause of why sprint.py's production-close claim has been unprovable: even with a perfect candidate ticket, the evidence chain is severed at both stages. Same fossil schema was documented in docs/CONTRIBUTING.md until 2026-07-07.",
+  "target_state": "generate_plan's user prompt carries current_state, target_state, migration_plan, and risk_notes; auto_implement's first user message carries current_state, target_state, and risk_notes alongside the plan. Legacy what_failed/... fields are dropped (no open ticket has them; closed tickets are never re-planned). A test proves the planner prompt contains the ticket's current_state text by capturing the messages.create call with a fake client. Re-running scripts/sprint.py --dry-run --ticket T-276 produces a plan that names the six real files from the ticket instead of asking which files they are.",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-07-07T00:00:00+00:00",
+  "root_cause_confidence": "verified",
+  "migration_plan": [
+    "1. Test first (new testing/test_sprint_prompt_fields.py): fake client whose messages.create captures kwargs and returns a stub response (content=[block with .text], usage tokens); call generate_plan with a ticket carrying a distinctive current_state string; assert that string appears in the captured user message. Same capture trick for auto_implement's first message if the loop can be stubbed cheaply - otherwise the planner test is the gate and the coder change is review-verified.",
+    "2. Swap the four dead field lines in generate_plan for current_state / target_state / migration_plan / risk_notes.",
+    "3. Add current_state / target_state / risk_notes to auto_implement's user_first.",
+    "4. Rehearse: python scripts/sprint.py --dry-run --ticket T-276 - the new plan must name the six real files.",
+    "5. python scripts/verify.py must print PASS (never pipe, T-214); SOLUTIONS.jsonl; close; refresh_pi.py."
+  ],
+  "risk_notes": "MUST be hand-fixed, not sprint-fixed: the runner cannot be trusted to repair its own planner through the broken planner (circular). Gates T-256/T-263 - do not attempt the production close before this lands. Do not add schema-migration compatibility shims for the legacy fields (YAGNI - nothing uses them). scripts/ is a SAFE component but the circularity note wins.",
+  "resolution": "implemented",
+  "solution_id": "S-213",
+  "closed": "2026-07-07T00:00:00+00:00"
+}

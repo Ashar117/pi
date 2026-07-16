@@ -1,0 +1,25 @@
+{
+  "id": "T-186",
+  "source": "Claude gap analysis 2026-06-11 (Track C — one brain, many faces)",
+  "title": "Multi-conversation persistence: conversations survive restarts and resume by id",
+  "component": "agent/conversation.py, tools/tools_memory.py (SQLite), pi_agent.py",
+  "current_state": "T-142 gave conversations an id, but they live only in process memory — exit kills the thread. /newchat starts fresh; nothing resumes. The daemon (pi_daemon.py) keeps ONE agent warm with ONE message list.",
+  "target_state": "SQLite tables conversations(id, title, mode, created_at, last_active_at) + conversation_turns(conversation_id, idx, role, content_json, ts). self.messages loads from / persists to the active conversation. New REPL commands: 'chats' lists recent 10 with titles (title = Groq one-liner of first exchange), 'resume <id>' restores messages within budget, '/newchat' unchanged. This is the storage foundation every channel (T-187..T-190) routes through.",
+  "severity": "P1",
+  "depends_on": [
+    "T-161",
+    "T-162"
+  ],
+  "status": "closed",
+  "created": "2026-06-11T15:00:00+00:00",
+  "migration_plan": [
+    "1. Schema migration in _init_sqlite (additive, IF NOT EXISTS).",
+    "2. Persist each turn's canonical Turn dicts (post-T-161 shape) as JSON at the same point L1 logging fires — one write boundary, not two.",
+    "3. Load path: resume <id> → deserialize within ctx budget → self.messages; stamp self.conversation_id.",
+    "4. Title generation lazy via router tier='cheap' on second turn.",
+    "5. Tests: write→restart(simulated new agent)→resume → golden-conversation coherence check passes across the boundary; /newchat creates a new row; tool_use turns round-trip exactly (the divergence class)."
+  ],
+  "risk_notes": "The serialization boundary MUST be the T-161 canonical one — do not invent a second shape. Gate test extension required. memory/ + pi_agent.py are RISK_FLAGGED → interactive.",
+  "closed": "2026-06-13T00:00:00+00:00",
+  "linked_solution": "S-138"
+}

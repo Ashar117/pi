@@ -130,3 +130,49 @@ def test_daily_digest_includes_silent_failure_skill():
     assert "silent_failure_watcher" in names
     labels = [m[1] for m in SKILL_MODULES]
     assert any("Silent Failure" in lbl for lbl in labels)
+
+
+# ── T-265: runtime error alerting ─────────────────────────────────────────────
+
+def test_is_p1_category_matches_known_patterns():
+    from scripts.passive.silent_failure_watcher import _is_p1_category
+    assert _is_p1_category("agent.process_input") is True
+    assert _is_p1_category("vision.all_exhausted") is True
+    assert _is_p1_category("retention.session_exit_error") is True
+    assert _is_p1_category("telegram.store_media_to_memory") is False
+
+
+def test_send_p1_alerts_sends_once_per_category(tmp_path):
+    from scripts.passive.silent_failure_watcher import send_p1_alerts
+    state_path = tmp_path / "alerts_sent.json"
+    counts = {"agent.process_input": 3, "telegram.store_media_to_memory": 99}
+
+    with patch("tools.tools_telegram.send_message", return_value={"success": True}) as mock_send:
+        alerted = send_p1_alerts(counts, state_path=state_path)
+
+    assert alerted == ["agent.process_input"]  # non-P1 category never alerted
+    mock_send.assert_called_once()
+    assert "agent.process_input" in mock_send.call_args[0][0]
+
+
+def test_send_p1_alerts_throttles_same_day(tmp_path):
+    from scripts.passive.silent_failure_watcher import send_p1_alerts
+    state_path = tmp_path / "alerts_sent.json"
+    counts = {"agent.process_input": 3}
+
+    with patch("tools.tools_telegram.send_message", return_value={"success": True}) as mock_send:
+        first = send_p1_alerts(counts, state_path=state_path)
+        second = send_p1_alerts(counts, state_path=state_path)
+
+    assert first == ["agent.process_input"]
+    assert second == []  # already alerted today
+    mock_send.assert_called_once()
+
+
+def test_send_p1_alerts_no_p1_categories_is_noop(tmp_path):
+    from scripts.passive.silent_failure_watcher import send_p1_alerts
+    state_path = tmp_path / "alerts_sent.json"
+    with patch("tools.tools_telegram.send_message") as mock_send:
+        alerted = send_p1_alerts({"telegram.store_media_to_memory": 5}, state_path=state_path)
+    assert alerted == []
+    mock_send.assert_not_called()

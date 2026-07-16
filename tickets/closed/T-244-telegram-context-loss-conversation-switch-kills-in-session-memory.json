@@ -1,0 +1,22 @@
+{
+  "id": "T-244",
+  "title": "Telegram context loss: conversation_switch save/restore wipes in-session memory every turn",
+  "component": "tools/tools_telegram.py, agent/conversation.py",
+  "severity": "P0",
+  "source": "Ash live report 2026-06-22 \u00e2\u20ac\u201d Pi has no memory of what was said 3 messages ago mid-conversation. Confirmed root cause.",
+  "current_state": "_process_as_telegram_peer wraps every turn in conversation_switch(agent, 'telegram:{chat_id}'). conversation_switch saves agent.messages, loads from SQLite, processes the turn, then RESTORES the old agent.messages on exit. Persistence between turns relies on async SQLite writes via _async_log(mem.persist_turn, ...) completing before the next turn reloads from SQLite. Two failure modes: (1) messages arrive faster than the async queue flushes \u00e2\u2020\u2019 SQLite doesn't have the latest turns \u00e2\u2020\u2019 next turn starts with stale/partial history. (2) After /clear: agent.conversation_id stays 'telegram:{chat_id}' so conversation_switch sees target==current and skips the SQLite reload entirely \u00e2\u20ac\u201d saved_messages=[] is restored every turn, making context permanently zero after /clear.",
+  "target_state": "TelegramTools maintains a per-conv_id in-memory message cache (self._conv_cache: Dict[str, List]). _process_as_telegram_peer loads from SQLite exactly once on first contact per conv_id, then reads/writes the in-memory cache directly. After process_input, the updated agent.messages is saved back to the cache before restoring REPL state. The async SQLite writes (persist_turn) continue unchanged as crash-recovery insurance. /clear resets self._conv_cache[conv_id] = [] so the next turn starts fresh without reloading old SQLite turns. Photos, text, and button callbacks all go through _process_as_telegram_peer and thus share the same in-memory cache.",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-06-22T00:00:00+00:00",
+  "migration_plan": [
+    "1. TelegramTools.__init__: add self._conv_cache: Dict[str, List] = {} (keyed by conv_id string, e.g. 'telegram:123456').",
+    "2. Replace _process_as_telegram_peer entirely \u00e2\u20ac\u201d remove conversation_switch import. New logic: (a) look up conv_id in _conv_cache; if missing, load from memory.load_conversation_turns(conv_id, max_turns=40) with [] fallback; (b) save/restore agent.conversation_id and agent.messages around the turn; (c) set agent.messages = _conv_cache[conv_id]; (d) call process_input; (e) _conv_cache[conv_id] = list(agent.messages) BEFORE restoring REPL state.",
+    "3. handle_clear (in _register_handlers): after clearing agent.messages, also do self._conv_cache[f'telegram:{chat_id}'] = [] so the cache is reset and next message starts fresh (no SQLite reload of old turns).",
+    "4. Tests: test_telegram_context_persistence.py \u00e2\u20ac\u201d (a) two sequential calls to _process_as_telegram_peer use the same in-memory history (second call sees first turn); (b) /clear empties the cache; (c) first message after clear starts with empty context even if SQLite has old turns; (d) restart simulation (new TelegramTools instance) reloads from SQLite on first message."
+  ],
+  "risk_notes": "conversation_switch was designed for autonomous background turns that need to temporarily borrow the agent and restore it cleanly. Removing it from the PRIMARY Telegram path is correct \u00e2\u20ac\u201d it was never the right pattern for a persistent session. The save/restore of REPL state still happens (so root-mode REPL context isn't corrupted by Telegram turns), just without the SQLite-load-on-every-turn behavior.",
+  "resolution": "implemented",
+  "solution_id": "S-178",
+  "closed": "2026-06-21T22:02:22+00:00"
+}

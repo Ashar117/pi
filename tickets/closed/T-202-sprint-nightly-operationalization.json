@@ -1,0 +1,22 @@
+{
+  "id": "T-202",
+  "source": "Claude further-plan 2026-06-12 (Horizon 1 \u2014 autonomy)",
+  "title": "Operationalize the sprint runner: scheduled nightly runs on the safe lane",
+  "component": "scripts/sprint.py, tools/tools_scheduler.py or Windows Task Scheduler, logs/sprint/",
+  "current_state": "sprint.py is complete (guardrails, god-path isolation, cost caps, branch-only commits) but has never run unattended on a schedule. T-169 covers proving ONE honest end-to-end run; nothing schedules it afterward.",
+  "target_state": "After T-169 proves a real closure: a nightly scheduled run (--auto-implement, --max-tickets 1, --max-cost 0.50) against safe-component tickets only; morning Telegram summary (ticket picked, branch, verify result, or 'nothing safe in queue'). Ash reviews branches over coffee. Kill switch: a sprint.disabled flag file stops all runs.",
+  "severity": "P1",
+  "depends_on": [
+    "T-169"
+  ],
+  "status": "closed",
+  "created": "2026-06-12T10:05:00+00:00",
+  "migration_plan": [
+    "1. Wrapper scripts/sprint_nightly.py: checks sprint.disabled, runs sprint.py with the conservative flags, captures exit + log dir, sends the Telegram summary.",
+    "2. Schedule via Windows Task Scheduler (documented schtasks one-liner Ash runs himself) \u2014 NOT inside the agent process; the runner must work with Pi offline.",
+    "3. Failure budget: 3 consecutive escalations/failures \u2192 auto-create sprint.disabled + loud Telegram alert (runaway protection).",
+    "4. Tests: wrapper unit tests with mocked subprocess (disabled-flag respected, failure budget trips, summary format)."
+  ],
+  "risk_notes": "Unattended autonomy \u2014 every guardrail already in sprint.py stays load-bearing (god-path scanner, RISK_FLAGGED escalation, branch-only). The disabled-flag + failure budget are the new safety. Never let it touch main.",
+  "closed_at": "2026-06-13T05:01:45.517231+00:00"
+}

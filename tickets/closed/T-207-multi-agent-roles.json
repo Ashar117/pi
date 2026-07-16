@@ -1,0 +1,24 @@
+{
+  "id": "T-207",
+  "source": "Claude further-plan 2026-06-12 (Horizon 3) + PI.md Phase 10",
+  "title": "Multi-agent roles: planner/implementer/reviewer generalized from research_mode",
+  "component": "core/research_mode.py, agent/modes.py, new core/roles.py",
+  "current_state": "research_mode is a working 3-model debate but hardcoded to its one shape (question \u2192 2 rounds \u2192 synthesis). Phase 10 wants role-based internal collaboration (researcher fetches, coder drafts, reviewer critiques) and there is no abstraction for it.",
+  "target_state": "core/roles.py: a Role = (name, router_tier, system_framing, allowed_tools) \u2014 deliberately ModeConfig-shaped. A RolePipeline runs roles in sequence over a shared scratchpad dict (plan \u2192 draft \u2192 critique \u2192 final). First concrete pipeline: 'careful answer' (cheap-planner \u2192 default-drafter \u2192 cheap-critic) invoked by an explicit 'deliberate:' prefix or by T-191's escalation heuristic. research_mode reimplemented as a RolePipeline (proof the abstraction holds), old entry point kept.",
+  "severity": "P2",
+  "depends_on": [
+    "T-183",
+    "T-191"
+  ],
+  "status": "closed",
+  "created": "2026-06-12T10:05:00+00:00",
+  "migration_plan": [
+    "1. core/roles.py with Role + RolePipeline (sequential first \u2014 parallel debate later; YAGNI).",
+    "2. Scratchpad = plain dict passed role-to-role, capped size, dumped to logs/roles/ per run for inspection.",
+    "3. Port research_mode onto RolePipeline behind its existing interface (tests must pass unchanged).",
+    "4. 'deliberate:' prefix in _process_input_inner routes through the careful-answer pipeline.",
+    "5. Tests: pipeline ordering, scratchpad flow, research_mode parity, cost attribution per role in evolution log."
+  ],
+  "risk_notes": "Scope trap: do NOT build agent-to-agent chat protocols. Sequential pipeline over a dict is enough to ship value; revisit parallelism only with evidence.",
+  "closed_at": "2026-06-13T05:39:38.891213+00:00"
+}

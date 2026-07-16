@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Pi Behavioral Eval Scenario",
+  "description": "Schema for scripted multi-turn evaluation scenarios (T-209)",
+  "type": "object",
+  "required": ["id", "title", "source_bug", "turns", "checks"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique scenario ID, e.g. 'EVAL-001'"
+    },
+    "title": {
+      "type": "string"
+    },
+    "source_bug": {
+      "type": "string",
+      "description": "Ticket or log entry this scenario was derived from"
+    },
+    "seed_memory": {
+      "type": "array",
+      "description": "L3/L2 facts to pre-seed into the test memory",
+      "items": {
+        "type": "object",
+        "required": ["content", "category"],
+        "properties": {
+          "content": {"type": "string"},
+          "category": {"type": "string"},
+          "importance": {"type": "integer", "default": 5}
+        }
+      }
+    },
+    "turns": {
+      "type": "array",
+      "description": "Scripted conversation turns",
+      "items": {
+        "type": "object",
+        "required": ["role", "content"],
+        "properties": {
+          "role": {"type": "string", "enum": ["user", "assistant_fixture"]},
+          "content": {"type": "string"},
+          "provider_fixture": {
+            "type": "string",
+            "description": "If set, fake the LLM response with this text (deterministic)"
+          }
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "description": "Deterministic assertions on the final assistant response",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["must_contain", "must_not_contain", "must_call_tool", "must_not_call_tool"]
+          },
+          "value": {
+            "type": "string",
+            "description": "Substring or tool name to check"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable failure message"
+          }
+        }
+      }
+    }
+  }
+}

@@ -68,7 +68,7 @@ def test_003_normie_has_session_context():
     T-089 R8 Stage C: _respond_normie collapsed into _respond_via_config.
     Verify the unified path still carries session context for normie.
     """
-    with open(PI_AGENT_PATH, 'r') as f:
+    with open(PI_AGENT_PATH, 'r', encoding='utf-8') as f:
         source = f.read()
 
     # R8 Stage C: single unified method replaces _respond_normie
@@ -95,7 +95,7 @@ def test_003_messages_list_persists():
     Ticket #003 Test: self.messages persists across mode switches
     Expected: self.messages is a persistent list (not rebuilt each call)
     """
-    with open(PI_AGENT_PATH, 'r') as f:
+    with open(PI_AGENT_PATH, 'r', encoding='utf-8') as f:
         source = f.read()
 
     has_self_messages = "self.messages = []" in source

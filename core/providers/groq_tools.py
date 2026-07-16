@@ -20,7 +20,7 @@ class GroqProvider:
 
     def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile"):
         from groq import Groq
-        self._client = Groq(api_key=api_key)
+        self._client = Groq(api_key=api_key, timeout=25.0)  # T-237: hard timeout so hung call doesn't block
         self.model = model
 
     def chat(

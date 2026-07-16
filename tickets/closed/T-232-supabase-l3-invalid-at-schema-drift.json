@@ -1,0 +1,21 @@
+{
+  "id": "T-232",
+  "batch": "provider-resilience",
+  "source": "Live session 2026-06-21: '[Memory] Supabase soft-delete error: Could not find the invalid_at column of l3_active_memory in the schema cache (PGRST204)' when saving a corrected fact.",
+  "title": "Supabase l3_active_memory soft-delete fails — invalid_at sent as a column, not metadata",
+  "component": "tools/tools_memory.py",
+  "current_state": "On L3 conflict/soft-delete, the SQLite path correctly sets the invalid_at COLUMN (tools_memory.py:1641). The Supabase mirror is supposed to store invalid_at inside the metadata JSONB (per the comment at :1651 'no schema migration needed'), but a soft-delete update path is sending invalid_at as a TOP-LEVEL column to l3_active_memory, which has no such column -> PGRST204. The SQLite invalidation still succeeds, so memory stays correct locally, but the Supabase mirror diverges and logs an error every conflict.",
+  "target_state": "L3 soft-delete/invalidation mirrors to Supabase WITHOUT referencing a non-existent column: either (a) write invalid_at into the metadata JSONB as the code comment intends, or (b) add the invalid_at column to the l3_active_memory table via migration and use it consistently. Pick one and make SQLite + Supabase agree. No PGRST204 on fact correction; replication-log divergence (T-174) stays clean.",
+  "severity": "P2",
+  "depends_on": [],
+  "status": "open",
+  "created": "2026-06-21T00:00:00+00:00",
+  "migration_plan": [
+    "1. Find the Supabase update that passes invalid_at as a column (around tools_memory.py:1431 / :1543 / :1621) and reconcile it with the metadata-JSONB intent at :1651.",
+    "2. Decide the contract: simplest is (a) keep invalid_at in metadata JSONB (no migration) and update the read filters to match; alternatively (b) add the column in Supabase. Prefer (a) to avoid a remote migration unless reads depend on a real column.",
+    "3. Ensure the SQLite column and the Supabase representation are written + read consistently so a corrected fact is invalidated in BOTH stores.",
+    "4. Tests: testing/test_l3_soft_delete_supabase.py (mock supabase client) — invalidation does NOT pass invalid_at as a top-level column; the mirror call shape matches the table schema; SQLite invalidation still sets the column; no exception on conflict.",
+    "5. Manually verify against the live Supabase project that a fact correction no longer logs PGRST204."
+  ],
+  "risk_notes": "Local memory is already correct (SQLite is source of truth), so this is a mirror-consistency bug, not data loss — but it spams errors on every fact correction and drifts the Supabase copy. Keep the fix to the smallest reconciliation; don't run a remote migration unless a column is genuinely needed by a read path."
+}

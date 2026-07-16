@@ -1,6 +1,6 @@
 # Pi — Comprehensive Feature List & Capability Registry
 
-**Last updated:** 2026-05-08  
+**Last updated:** 2026-07-07  
 **Owner:** Ash  
 **Purpose:** Single source of truth for every feature — built, in-flight, queued, and brainstormed. Prevents drift. When something gets ticketed, update Status here. When something ships, mark ✅.
 
@@ -31,15 +31,14 @@
 |----|---------|--------|----------|-------|
 | C-001 | Root mode (Claude Sonnet 4.6, full tool loop) | ✅ | — | `pi_agent.py:454-482` |
 | C-002 | Normie mode (Groq llama-3.3-70b, snappy chat) | ✅ | — | Free tier |
-| C-003 | God mode (Groq + private memory, gitignored) | ✅ | — | Privacy-by-design |
 | C-004 | Research mode (3-agent debate: Claude/Groq/Gemini) | ✅ | — | `pi_agent.py:373-397` |
 | C-005 | Natural-language mode switching | ✅ | — | T-009, T-015 closed |
 | C-006 | Cost awareness + daily budget gate | ✅ | — | $0.50 default; auto-downgrades to normie |
 | C-007 | Session ID correlation across logs | ✅ | — | |
 | C-008 | 3-line compact startup banner | ✅ | — | T-041 closed |
-| C-009 | Autonomous sprint runner (`scripts/sprint.py`) | ✅ | — | T-043 closed; Claude-driven |
+| C-009 | Autonomous sprint runner (`scripts/sprint.py`) | 🟡 | — | Built + fully gated, but **zero production closes** — first real close is T-256, waiting on a genuine candidate ticket |
 | C-010 | **High-thinking mode** | 💡 | P1 | Dedicated mode using Claude extended thinking (budget_tokens configurable). For architecture decisions, hard debugging, thesis analysis. Costs more — gate behind explicit trigger ("think hard", "deep mode"). |
-| C-011 | **Workflow builder** | 💡 | P1 | Pi constructs multi-step task workflows as structured DAGs (JSON). User describes goal → Pi generates step list, assigns tools to each step, estimates cost, executes or exports. E.g. "research a topic and write a report" → scrape → summarize → outline → draft. |
+| C-011 | **Workflow builder** | 💡 | P3 | Rejected at the 2026-07 hackathon audit: Pi already demos multi-system workflows without a planner; a generic DAG orchestrator is speculative infra. Stays brainstormed — revisit only with a concrete workflow that can't be done otherwise. |
 | C-012 | **Partner mode (no yes-man)** | 💡 | P1 | Dedicated behavioral flag in `consciousness.txt`. Pi has an opinion. If Ash's plan has a flaw, Pi says so with evidence, not agreement. Proposes alternatives. Will disagree and explain why. Only backs down when Ash presents counter-evidence, not just insistence. Distinct from research-mode — this is Pi's default stance, not a separate model call. |
 
 ---
@@ -57,10 +56,19 @@
 | M-007 | Structured profile (L3 profile_structured category) | ✅ | — | T-026c closed |
 | M-008 | Vault sync (one-way mirror to Obsidian on exit) | ✅ | — | T-033 closed |
 | M-009 | Inferred-vs-stated fact tagging | ✅ | — | T-031 closed |
-| M-010 | **Episodic memory search** | 💡 | P1 | Semantic search over `logs/turns.jsonl`. "What did we discuss on May 3?" → relevant turns. Needs embedding index (sqlite-vec or pgvector). Makes 124+ logged turns actually queryable instead of just archived. |
+| M-010 | **Episodic recall** | ✅ | P1 | `close_conversation(digest)` stores a session summary; `recall_episode(query)` keyword-searches all conversation digests. Prefetch triggers inject past context automatically. (T-205) |
+| M-014 | **Multi-conversation persistence** | ✅ | P1 | `conversations` + `conversation_turns` SQLite tables; REPL `resume`/`chats` commands; idempotent INSERT OR IGNORE. (T-186) |
+| M-015 | **StorageBackend seam** | ✅ | P2 | `SQLiteStorageBackend` + `InMemoryStorageBackend` decouple tier logic from transport; injected in `MemoryTools.__init__`. (T-165) |
 | M-011 | **Memory health auditor** | 💡 | P2 | Weekly job: duplicate rate, staleness score, conflict density, category imbalance. Outputs health report + pruning candidates. Ash approves, Pi deletes. Surfaces in weekly retro. |
 | M-012 | **Auto-promotion throttle** | 💡 | P2 | Only promote L2→L3 on importance ≥ 7 OR referenced ≥ 2 times in session. Prevents L3 pollution. Extends T-029 fix. |
 | M-013 | **Memory source lineage** | 💡 | P3 | Every L2/L3 entry carries: source (stated/inferred_confirmed), session_id it came from, number of times accessed. Full provenance — lets Pi explain why it believes something. |
+| M-016 | **Hybrid dense + lexical retrieval** | ✅ | — | `MemoryTools.retrieve()` fuses cosine (Qwen/Gemini embeddings) with BM25 across L3+L2; replaces single-keyword `_prefetch_memory`. Proven on a paraphrase case lexical-only search misses entirely. (T-292/T-293) |
+| M-017 | **L3 embeddings + backfill** | ✅ | — | `embedding` column on `l3_cache`; filled at session exit (`backfill_l3_embeddings`), not inline on write, to keep the interactive write path fast. (T-291/T-297) |
+| M-018 | **Auto-inferred expiry** | ✅ | — | Ephemeral phrasing ("just for today", "until friday") auto-sets `active_until` via a deterministic phrase table — no ISO datetime required from the model. (T-299) |
+| M-019 | **Decay-archive default-on** | ✅ | — | Ebbinghaus neglect decay (T-135) now runs daily, opt-out via `PI_DECAY_ARCHIVE=off`, instead of opt-in/weekly. Soft-archive, pinned-immune. (T-300) |
+| M-020 | **Semantic forget** | ✅ | — | `memory_delete` / `memory_cli forget` route non-ID targets through `retrieve()`, unioned with the existing lexical match set — finds related memories with zero shared words, all existing safety guards preserved. (T-302) |
+| M-021 | **Forgetting ledger** | ✅ | — | `memory_cli forgotten [--days N]` — one command shows what was forgotten, when, and why (EXPIRED/CONTRADICTED/MERGED), with deterministic precedence. (T-301) |
+| M-022 | **LLM-adjudicated contradiction curation** | ✅ | — | `scan_semantic_contradictions` cosine-prefilters + Qwen (tier='cheap') adjudicates implication-level conflicts the lexical topic-key scan can't see; capped, event-driven (session exit / daily cron), never a background daemon. (T-303) |
 
 ---
 
@@ -70,7 +78,8 @@
 |----|---------|--------|----------|-------|
 | I-001 | Multi-agent debate (research mode) | ✅ | — | 3 models debate a single question |
 | I-002 | Self-introspection tool (`system_introspect`) | ✅ | — | T-028 closed |
-| I-003 | SOLUTIONS.jsonl pattern matching (self-healing) | 🟡 | P1 | `SelfModifier` class exists but not invoked at runtime |
+| I-003 | SOLUTIONS.jsonl pattern matching (self-healing) | 💡 | P2 | Original `SelfModifier` was archived (T-088/R7) — this needs a re-scope from scratch, likely as a sprint.py pre-escalation search over SOLUTIONS.jsonl |
+| I-009 | `deep_debate` — research debate as a root tool | ✅ | — | 3-agent debate callable mid-conversation without mode switch (T-262) |
 | I-004 | **Anti-hallucination protocol** | 💡 | P0 | Pi must cite its source for every factual claim: memory tier (L1/L2/L3 + entry id), tool result, or explicit "I don't have a stored fact for this — this is my best guess." Confidence score (high/medium/low) required on uncertain claims. If Pi can't ground a claim, it says so rather than generating plausible-sounding content. Implemented as a hard rule in `consciousness.txt` + a `cite_fact` helper that wraps memory reads. |
 | I-005 | **Complexity estimator for tickets** | 💡 | P2 | Before filing a ticket, Pi scores it S/M/L/XL by comparing to closed tickets (TF-IDF similarity over SOLUTIONS.jsonl). Improves sprint planning. Surfaces in `plan_sprint.py`. |
 | I-006 | **Disagreement engine (partner logic)** | 💡 | P1 | Separate from C-012 (the persona). The mechanism: Pi maintains a list of active "assertions" Ash has made this session. On each new message, Pi checks if the request contradicts a prior assertion or a stored fact. If yes, flags it before executing. "You said X earlier — you're now asking for Y which conflicts. Which should I follow?" |
@@ -86,7 +95,7 @@
 | K-001 | execute_python / execute_bash tools | ✅ | — | With 30s timeout, sandbox |
 | K-002 | read_file / modify_file / create_file tools | ✅ | — | |
 | K-003 | search_codebase tool | ✅ | — | |
-| K-004 | image_gen tool | ✅ | — | Already wired; 1 tool |
+| K-004 | image_gen tool | ✅ | — | Three backends: pollinations (default, free) · HF FLUX-schnell · Gemini Imagen (T-268) |
 | K-005 | **Code generation mode** | 💡 | P1 | Dedicated prompt block for code tasks: Pi thinks step-by-step before writing code, writes tests alongside implementation, runs the code in sandbox before returning it, reports actual output not assumed output. "write me X" → plan → code → test → verify → return. Never returns untested code. |
 | K-006 | **Image generation — enhanced** | 💡 | P2 | Current `image_gen` is a single call. Expand to: style presets (realistic, diagram, diagram-dark, sketch), aspect ratio selection, batch generation with variation seeds, auto-save to `data/generated/` with metadata logged to evolution.jsonl. |
 | K-007 | **Code-to-paper bridge** | 💡 | P2 | Given a Python experiment file + results, Pi generates a LaTeX/markdown paper section: method, pseudocode, results table. Useful for GNN research writeups. |
@@ -120,12 +129,16 @@
 |----|---------|--------|----------|-------|
 | O-001 | telegram_send (one-way notifications) | ✅ | — | |
 | O-002 | speak (TTS output) | ✅ | — | |
-| O-003 | gmail_inbox / gmail_search / gmail_read / gmail_send | ✅ | — | |
+| O-003 | gmail_inbox / gmail_search / gmail_read / gmail_send | ✅ | — | `gmail_send` is **draft-only by construction** — it cannot send (T-271) |
+| O-013 | **Email triage HITL flow** | ✅ | P1 | Gmail unread watcher → Telegram buttons (Draft reply / Add to calendar / Ignore) → Gmail draft or Calendar event (T-257/T-258) |
 | O-004 | calendar_today / upcoming / search / create / delete | ✅ | — | |
-| O-005 | **Telegram ↔ Pi bidirectional conversation** | 💡 | P1 | Full conversation mode via Telegram, not just notifications. Ash gives Pi tasks from phone. Session state shared with desktop session. This is Phase 9 groundwork but can be scoped smaller: just forward Telegram messages into Pi's input queue. |
+| O-005 | **Telegram ↔ Pi bidirectional conversation** | ✅ | P1 | Full conversation mode via Telegram. Each chat_id gets its own isolated conversation via `conversation_switch`. Ash sends tasks from phone; Pi processes and replies with full tool access. (T-188) |
+| O-010 | **Brain server (HTTP + SSE)** | ✅ | P1 | FastAPI on 127.0.0.1:7712. Bearer token auth (`PI_HTTP_TOKEN`). `POST /chat` + `GET /chat/stream` (SSE). `GET /conversations`. FIFO `asyncio.Lock`. (T-187) |
+| O-011 | **Web chat UI** | ✅ | P2 | Dark single-page app served at `GET /`. Conversation sidebar, SSE token streaming, mode badge. Token in localStorage. Shared `web/chat.js` reused by extension. (T-189) |
+| O-012 | **Chrome MV3 browser extension** | ✅ | P2 | Side panel hosts the chat UI. Context-menu "Ask Pi about this page" captures selection/URL/title and prefixes the message. No content scripts beyond selection capture. (T-190) |
 | O-006 | **Weekly digest email** | 💡 | P2 | Every Sunday: research progress, tickets closed, memory highlights, upcoming week priorities. Auto-generated by `retro.py` extension + `gmail_send`. |
 | O-007 | **Professor email drafter** | 💡 | P2 | Given a goal (research ask, recommendation letter request, advisor reply), Pi drafts email in Ash's voice (learned from session history). Direct but professional tone. One `gmail_send` away from delivery. |
-| O-008 | **Discord server bot** | 📋 | P2 | Phase 9 deliverable. Pi monitors a private Discord server, summarizes threads, responds to @mentions. |
+| O-008 | **Discord server bot** | 💡 | P3 | Rejected at the 2026-07 hackathon audit — Telegram already proves the channel story with depth; Discord adds days of work for no new narrative. Recipe if ever needed: clone the `telegram:<chat_id>` conversation-id pattern. |
 | O-009 | **Voice memo → note** | 💡 | P2 | Send voice memo via Telegram → Groq Whisper transcription → structured Obsidian note. Bridges Phase 8 voice work into something usable now via existing Telegram integration. |
 
 ---
@@ -160,7 +173,9 @@
 | ID | Feature | Status | Priority | Notes |
 |----|---------|--------|----------|-------|
 | E-001 | Engineering loop (ticket → test → fix → verify → close → refresh) | ✅ | — | Core discipline |
-| E-002 | `scripts/verify.py` CI gate | ✅ | — | 29 tests, PASS required |
+| E-002 | `scripts/verify.py` CI gate | ✅ | — | Syntax check + bare-`except:` lint + full non-costly suite; also runs on GitHub Actions on every push (T-260, T-273) |
+| E-013 | **Runtime P1 error alerting via Telegram** | ✅ | P2 | P1-class rows in `silent_failures.db` push one throttled, deduped Telegram alert/day (T-265) |
+| E-014 | **Silent-failure telemetry** | ✅ | — | `track_silent()` → `data/silent_failures.db`; watched by a passive skill; feeds the data-driven round-2 cleanup (T-264, open) |
 | E-003 | `scripts/refresh_pi.py` auto-regenerates PI.md §4/§7/§8/§9 | ✅ | — | T-042 closed |
 | E-004 | `scripts/sprint.py` autonomous ticket runner | ✅ | — | T-043 closed |
 | E-005 | `scripts/plan_sprint.py` weekly planning ritual | ✅ | — | T-044 closed |
@@ -193,8 +208,8 @@ These are the committed future phases from PI.md §12. Features above map to the
 
 | Phase | Theme | Key Deliverables | Features |
 |-------|-------|-----------------|---------|
-| **8** | Voice | Whisper STT, wake word (porcupine/KWS), audio I/O, voice-mode toggle | D-005, O-009 |
-| **9** | Distributed | Telegram peer (bidirectional), Discord bot, minimal web UI (FastAPI) | O-005, O-008 |
+| **8 ◐** | Voice | Code-complete (STT, wake word, audio I/O) but never run live — no working audio input on the dev box; see docs/VOICE_LOOP_STATUS.md (T-267) | D-005, O-009 |
+| **9 ✅** | Distributed | Brain server (FastAPI/SSE), web chat UI, Chrome MV3 extension, Telegram peer, multi-conv persistence, episodic recall, watchers v2, StorageBackend seam, AwarenessCache | O-005, O-010, O-011, O-012, M-010, M-014, M-015 |
 | **10** | Multi-agent | Agent role abstractions, routing layer, shared scratchpad | C-004 extended |
 | **11** | Research OS | GNN mode, paper tracker, experiment tracker, PDF annotator | R-003, R-004, R-005, R-006 |
 | **12** | Life OS | Prayer times, halal radar, flight deals, academic opportunities, morning briefing | A-006 through A-011 |

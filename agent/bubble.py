@@ -29,6 +29,7 @@ import os
 import queue
 import threading
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -101,7 +102,7 @@ class BubbleCollector:
 
         # Per-chat_id state
         self._bubbles: Dict[str, Bubble] = {}
-        self._locks: Dict[str, threading.Lock] = {}
+        self._locks: defaultdict = defaultdict(threading.Lock)
         self._timers: Dict[str, threading.Timer] = {}
 
         # Consumer queue + thread
@@ -152,20 +153,16 @@ class BubbleCollector:
     def stop(self) -> None:
         """Stop consumer thread (test cleanup; not used in production)."""
         self._stop_event.set()
-        # cancel any pending timers
         for chat_id in list(self._timers.keys()):
             t = self._timers.pop(chat_id, None)
             if t is not None:
                 t.cancel()
+        if self._consumer_thread is not None:
+            self._consumer_thread.join(timeout=2)
 
     # ── internals ──────────────────────────────────────────────────────────────
 
     def _lock_for(self, chat_id: str) -> threading.Lock:
-        # Outer-lock-free fast path: dict lookups are atomic in CPython.
-        # The first .setdefault() per chat_id is the only write that races;
-        # subsequent calls share the same lock instance.
-        if chat_id not in self._locks:
-            self._locks.setdefault(chat_id, threading.Lock())
         return self._locks[chat_id]
 
     def _reschedule_idle_timer_locked(self, chat_id: str) -> None:

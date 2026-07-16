@@ -120,14 +120,25 @@ def generate_video(prompt: str, save_path: Optional[str] = None) -> dict:
 
     Provider chain: Replicate → HuggingFace → error.
     Returns {"success": True, "path": "<path>.mp4"} or {"success": False, "error": "..."}.
+
+    T-255: on full exhaustion, the error names every backend actually tried
+    and why — previously only the last backend's message survived, so a
+    Replicate failure followed by an HF failure silently hid the Replicate
+    reason from the user.
     """
+    attempted = []
     if os.environ.get("REPLICATE_API_TOKEN"):
         result = _generate_replicate(prompt, save_path)
         if result.get("success"):
             return result
+        attempted.append(f"Replicate ({result.get('error', 'unknown error')})")
 
     result = _generate_huggingface(prompt, save_path)
-    return result
+    if result.get("success"):
+        return result
+    attempted.append(f"HuggingFace ({result.get('error', 'unknown error')})")
+
+    return {"success": False, "error": "Video generation unavailable — tried " + "; ".join(attempted)}
 
 
 # ── T-083 R2.1: tool registry export ─────────────────────────────────────────

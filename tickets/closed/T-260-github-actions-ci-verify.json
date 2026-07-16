@@ -1,0 +1,26 @@
+{
+  "id": "T-260",
+  "title": "GitHub Actions CI: run verify.py on every push",
+  "component": ".github/workflows/verify.yml, scripts/verify.py",
+  "severity": "P2",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "root_cause_confidence": "verified",
+  "current_state": "No .github/workflows/ directory exists. scripts/verify.py is the only gate and depends entirely on being run locally before commits - a forgotten run ships regressions. Costly tests (real Claude/Groq/Supabase calls) are already excluded from verify via the COSTLY_TESTS set, so CI can run keyless with no secrets.",
+  "target_state": "A ~25-line .github/workflows/verify.yml: on push and pull_request, checkout, setup Python (match local version), pip install -r requirements.txt, run python scripts/verify.py --quiet, fail the job on non-zero exit. Private repo still benefits: catches 'forgot to run verify' pushes.",
+  "depends_on": [
+    "T-272"
+  ],
+  "status": "closed",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. Write .github/workflows/verify.yml: actions/checkout, actions/setup-python, pip install -r requirements.txt (with pip cache), python scripts/verify.py --quiet.",
+    "2. Check requirements.txt for install-time landmines in CI (playwright browsers, audio libs like pyaudio/pyttsx3, win32-only packages). If any fail on ubuntu-latest, either mark them optional/skipped in the workflow install or run the workflow on windows-latest to mirror the dev box - pick whichever is fewer lines.",
+    "3. Confirm verify.py needs no .env to reach PASS (costly tests excluded; anything else that reads env must degrade gracefully - if it does not, that is a bug worth its own ticket).",
+    "4. Push on a branch, watch the Actions run go green (Ash gates the push).",
+    "5. python scripts/verify.py PASS locally as always."
+  ],
+  "risk_notes": "The dependency install is the only real risk - requirements.txt serves a desktop agent (audio, browser automation, OCR). Fallback if install fights back: first stage runs syntax-check-only (verify's ast pass) which needs almost nothing installed; full test stage can come later. Do not add lint/type-check/coverage jobs - verify.py is the gate, CI just runs it.",
+  "resolution": "implemented",
+  "solution_id": "S-199",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

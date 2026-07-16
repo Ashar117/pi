@@ -3,13 +3,11 @@
 Ollama exposes an OpenAI-compatible /api/chat endpoint, but the open-weights
 models it hosts generally do not emit OpenAI-style tool_call blocks. They
 follow the system prompt's instruction to emit a `````tool\\n{...}\\n````` JSON
-fence — the format god.py has used since the mode shipped. This provider
-parses that fence and returns a unified LLMResponse so the rest of the
-agent stays format-agnostic.
+fence. This provider parses that fence and returns a unified LLMResponse so
+the rest of the agent stays format-agnostic.
 
-The system prompt is responsible for teaching the model the fence format
-(prompts/god_consciousness.txt). This provider is just a translator +
-HTTP client.
+The system prompt is responsible for teaching the model the fence format.
+This provider is just a translator + HTTP client.
 """
 from __future__ import annotations
 

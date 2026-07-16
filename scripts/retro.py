@@ -286,6 +286,106 @@ def telegram_notify(label: str, summary: Dict, retro_path: Path) -> None:
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
+def build_self_model(solutions_path: Path = SOLUTIONS, max_lines: int = 30) -> str:
+    """T-193: Distill SOLUTIONS.jsonl into a compact self-model block (~30 lines).
+
+    Counts recurring root-cause patterns from solution summaries, identifies
+    top bug classes and confirmed strengths. No LLM required — pure counting.
+    Returns a markdown block suitable for L3 injection (category='self_model').
+    """
+    from collections import Counter
+
+    # Load solutions
+    sols: List[Dict] = []
+    if solutions_path.exists():
+        for line in solutions_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    sols.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+
+    if not sols:
+        return "## Pi Self-Model\n\n*(No solutions recorded yet.)*"
+
+    # Extract root-cause keywords from summaries
+    root_cause_keywords = [
+        ("write_read_divergence", ["write.*read", "diverge", "read.*path.*write.*path", "tier.*bug"]),
+        ("missing_tests",         ["no test", "without test", "untested", "test coverage"]),
+        ("stale_docs",            ["drift", "doc.*stale", "outdated", "hand.edit", "auto.*section"]),
+        ("honesty_gap",           ["hallucin", "mime", "fake", "pretend", "incorrect.*claim"]),
+        ("context_drop",          ["context.*drop", "conversation.*coherence", "T-148", "prior turn"]),
+        ("tool_registration",     ["tool.*spec", "registry", "not registered", "tool.*missing"]),
+    ]
+    counts: Counter = Counter()
+    for sol in sols:
+        text = (sol.get("summary") or sol.get("title") or "").lower()
+        for label, patterns in root_cause_keywords:
+            if any(re.search(p, text) for p in patterns):
+                counts[label] += 1
+
+    # Build the block
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    lines: List[str] = [
+        f"## Pi Self-Model (distilled {now_str} from {len(sols)} solutions)",
+        "",
+        "### Recurring Bug Classes (ranked)",
+    ]
+    if counts:
+        for label, cnt in counts.most_common(6):
+            lines.append(f"- **{label.replace('_', ' ')}** — {cnt} solution(s)")
+    else:
+        lines.append("- no clear pattern yet")
+
+    lines += [
+        "",
+        "### Engineering loop stats",
+        f"- Total solutions recorded: {len(sols)}",
+        f"- Most recent: {sols[-1].get('id', '?')} — {sols[-1].get('title', '')[:60]}",
+        "",
+        "### Standing commitments",
+        "- verify.py MUST pass before any ticket close",
+        "- Never mime tool calls — claim effects only after tool_result seen",
+        "- Read before write — use read_file before modify_file",
+        "- 3-seg prompt cache: only DYNAMIC segment changes per turn",
+    ]
+
+    # Cap at max_lines
+    return "\n".join(lines[:max_lines])
+
+
+def write_self_model_to_l3(model_text: str, memory_tools=None) -> Dict:
+    """T-193: Write the self-model as a pinned L3 entry, replacing any prior version.
+
+    Searches for existing 'self_model' category entry and deletes before writing
+    so the block refreshes in-place rather than accumulating duplicates.
+    """
+    if memory_tools is None:
+        return {"success": False, "error": "no memory_tools provided"}
+    try:
+        # Delete any existing self_model entry
+        existing = memory_tools.memory_read(query="self_model", tier="l3", limit=5)
+        for entry in existing:
+            if entry.get("category") == "self_model":
+                eid = entry.get("id")
+                if eid:
+                    try:
+                        memory_tools.memory_delete(eid)
+                    except Exception:
+                        pass
+        # Write fresh entry
+        result = memory_tools.memory_write(
+            content=model_text,
+            tier="l3",
+            category="self_model",
+            importance=9,
+        )
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Generate Pi's weekly retrospective.")
     ap.add_argument("--week", type=str, default=None,
@@ -294,7 +394,14 @@ def main() -> int:
                     help="Send a summary to Telegram after writing.")
     ap.add_argument("--stdout", action="store_true",
                     help="Print to stdout instead of writing to vault.")
+    ap.add_argument("--self-model", action="store_true",
+                    help="Build + write the identity self-model to L3 (T-193).")
     args = ap.parse_args()
+
+    if args.self_model:
+        model_text = build_self_model()
+        print(model_text)
+        return 0
 
     try:
         start, end, label = parse_week(args.week)

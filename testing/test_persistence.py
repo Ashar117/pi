@@ -101,7 +101,7 @@ def test_002_session_summary_method_exists():
     combined_source = ""
     for p in search_paths:
         if os.path.exists(p):
-            with open(p, 'r') as f:
+            with open(p, 'r', encoding='utf-8') as f:
                 combined_source += f.read()
 
     has_method = "_generate_session_summary" in combined_source

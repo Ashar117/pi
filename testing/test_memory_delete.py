@@ -253,3 +253,95 @@ def test_fast_path_does_not_return_nonmatching_rows(tmp_path):
         results = mt._l3_fast_path("zzz_never_in_content_xyzzy_abc", 10)
 
     assert results == [], "fast-path must return empty list when query matches nothing"
+
+
+# ── T-302: semantic forget ────────────────────────────────────────────────────
+# Uses the real constructor (not the bare _make_tools fixture) so _init_sqlite
+# creates the full schema (embedding column included) — matches the pattern in
+# test_hybrid_retriever.py / test_l3_embeddings.py.
+
+def _offline_mt(tmp_path):
+    from tools.tools_memory import MemoryTools
+    return MemoryTools(supabase_url="", supabase_key="",
+                        sqlite_path=str(tmp_path / "pi.db"))
+
+
+def test_semantic_forget_finds_paraphrase_lexical_alone_misses(tmp_path):
+    """The proof: 'my old internship' has zero lexical overlap with the stored
+    fact, but semantic (dense cosine) forget finds and invalidates it."""
+    mt = _offline_mt(tmp_path)
+    mt.memory_write(content="started the summer role at Meta in June",
+                     tier="l3", category="note", importance=7)
+
+    with patch("memory.semantic_dedup.compute_embedding_for_write", return_value=[1.0, 0.0]):
+        mt.backfill_l3_embeddings(limit=10)
+
+    # Ground the gap: plain lexical lookup finds nothing.
+    lexical_only = mt.memory_read("my old internship", tier="l3")
+    assert lexical_only == [], "test setup invalid: query must not lexically match"
+
+    with patch("memory.semantic_dedup.get_embedding", return_value=[1.0, 0.0]):
+        result = mt.memory_delete("my old internship")
+
+    assert result["deleted"] == 1, f"semantic forget should find the paraphrased fact: {result}"
+    conn = sqlite3.connect(mt.sqlite_path)
+    row = conn.execute(
+        "SELECT invalid_at FROM l3_cache WHERE content LIKE '%Meta%'"
+    ).fetchone()
+    conn.close()
+    assert row[0] is not None, "matched row must be soft-invalidated, not left active"
+
+
+def test_semantic_forget_still_soft_by_default(tmp_path):
+    mt = _offline_mt(tmp_path)
+    mt.memory_write(content="started the summer role at Meta in June",
+                     tier="l3", category="note", importance=7)
+    with patch("memory.semantic_dedup.compute_embedding_for_write", return_value=[1.0, 0.0]):
+        mt.backfill_l3_embeddings(limit=10)
+
+    with patch("memory.semantic_dedup.get_embedding", return_value=[1.0, 0.0]):
+        mt.memory_delete("my old internship")  # soft=True default
+
+    conn = sqlite3.connect(mt.sqlite_path)
+    row = conn.execute("SELECT id, invalid_at FROM l3_cache WHERE content LIKE '%Meta%'").fetchone()
+    conn.close()
+    assert row is not None, "row must still exist — semantic forget must not hard-delete by default"
+    assert row[1] is not None
+
+
+def test_semantic_forget_generic_query_does_not_sweep_everything(tmp_path):
+    """Risk-note guard: a generic query ('stuff') must not match unrelated memories."""
+    mt = _offline_mt(tmp_path)
+    mt.memory_write(content="the lab uses zebrafish as the model organism",
+                     tier="l3", category="note", importance=8)
+    mt.memory_write(content="my sister lives in Boston",
+                     tier="l3", category="note", importance=8)
+    with patch("memory.semantic_dedup.compute_embedding_for_write", return_value=[1.0, 0.0]):
+        mt.backfill_l3_embeddings(limit=10)
+
+    with patch("memory.semantic_dedup.get_embedding", return_value=[0.0, 1.0]):  # orthogonal
+        result = mt.memory_delete("stuff")
+
+    assert result["deleted"] == 0, f"generic query must not sweep unrelated memories: {result}"
+
+
+def test_semantic_forget_bulk_guard_still_fires(tmp_path):
+    """>3 semantic matches must still require force=True."""
+    mt = _offline_mt(tmp_path)
+    facts = [
+        "the zebrafish tank filter needs a clean",
+        "ordered new food pellets for the aquarium",
+        "the water pH in the tank reads 7.2 today",
+        "scheduled a vet check for the fish enclosure",
+        "the aquarium heater was replaced last week",
+    ]
+    for f in facts:
+        mt.memory_write(content=f, tier="l3", category="note", importance=5)
+    with patch("memory.semantic_dedup.compute_embedding_for_write", return_value=[1.0, 0.0]):
+        mt.backfill_l3_embeddings(limit=10)
+
+    with patch("memory.semantic_dedup.get_embedding", return_value=[1.0, 0.0]):
+        result = mt.memory_delete("aquatic experiment maintenance")
+
+    assert "error" in result, f"bulk guard should fire for >3 semantic matches: {result}"
+    assert result["would_delete"] >= 4

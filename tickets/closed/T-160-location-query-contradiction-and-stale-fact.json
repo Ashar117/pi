@@ -1,0 +1,21 @@
+{
+  "id": "T-160",
+  "source": "Ash live report (2026-05-31) — real conversation transcript",
+  "title": "Location queries answer from stale L3 fact then contradict; live geo-IP never used",
+  "component": "agent/awareness_shortcut.py, tools/tools_awareness.py (_format_snapshot)",
+  "what_failed": "Transcript: 'what's my exact location?' -> 'your location is atlanta, for cs and gnn research at gsu' (a stale L3 fact, not live location). Then 'where am i right now?' -> 'i don't have your current location.' Two near-identical questions, contradictory answers, and the live geo-IP location was never surfaced.",
+  "where_failed": "awareness_shortcut handled weather/markets/news but NOT location, so self-location queries fell through to the LLM. The live location existed only buried in the snapshot 'Time:' line (with a 'never output verbatim' warning), so the LLM answered inconsistently — once from an L3 fact, once refusing.",
+  "why_likely": "No deterministic path for 'where am I'. L3 holds a fact like 'Ash is in Atlanta for GNN research' which the LLM grabbed first; the live geo-IP city wasn't a first-class snapshot field.",
+  "severity": "P2",
+  "status": "closed",
+  "closed": "2026-05-31T00:00:00+00:00",
+  "linked_solution": "S-105b",
+  "created": "2026-05-31T00:00:00+00:00",
+  "fix": [
+    "_format_snapshot: added a dedicated 'Location: <city, region, country> (approximate, from network)' line.",
+    "awareness_shortcut: added a 'location' topic (self-location phrases: where am i / my location / exact location / whereabouts) that returns the live Location line deterministically — consistent across phrasings, in both root and normie. Checked before weather so 'where am i right now' doesn't mis-route on 'now'.",
+    "'where is the nearest X' does NOT match (self-location phrases only).",
+    "Tests: testing/test_awareness_shortcut.py (5 new: where-am-i, exact-location, consistency, unavailable-fallthrough, nearby-place-not-self)."
+  ],
+  "analysis": "PERSPECTIVE: This is the T-141 contradiction class in the wild — the agent must not answer confidently then refuse the same question. The root issue was relying on the LLM + stale L3 for a fact the system already knows live. Deterministic shortcuts for known live facts (weather/markets/news/now location) are the right pattern: consistent, correct, no LLM coin-flip. NOTE: geo-IP is city-level, not street 'exact' — the answer says 'approximate, from network' to be honest about precision."
+}

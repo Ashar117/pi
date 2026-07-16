@@ -91,7 +91,7 @@ def _ask_gemini_research(prompt: str) -> str:
                         contents=AGENT_PERSONAS["gemini"] + "\n\n" + prompt
                     )
                     return response.text
-                except:
+                except Exception:
                     # Failed retry, try next model
                     continue
             
@@ -129,8 +129,13 @@ def _estimate_cost(rounds: int) -> str:
     est = rounds * 0.02
     return f"~${est:.2f}"
 
-def run_research_mode(question: str, rounds: int = 2, context: str = "") -> str:
-    """Returns synthesis text for caller to optionally save to memory"""
+def run_research_mode(question: str, rounds: int = 2, context: str = "", interactive: bool = True) -> str:
+    """Returns synthesis text for caller to optionally save to memory.
+
+    interactive=False (T-262 deep_debate tool) skips the blocking Enter
+    prompt — required when this runs mid-turn, since no one is at a
+    console to press Enter. REPL "research mode" keeps the prompt by default.
+    """
     print(f"\n{'='*60}")
     print(f"  PI RESEARCH MODE — {rounds} rounds")
     print(f"  Agents: Claude + Gemini + Groq/Llama")
@@ -138,7 +143,8 @@ def run_research_mode(question: str, rounds: int = 2, context: str = "") -> str:
     print(f"{'='*60}")
     print(f"\nQuestion: {question}\n")
 
-    input("Press Enter to begin research session...")
+    if interactive:
+        input("Press Enter to begin research session...")
 
     # Round 1 — independent answers
     print("\n[Pi] Sending to all agents simultaneously...")

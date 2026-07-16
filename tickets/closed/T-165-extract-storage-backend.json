@@ -1,0 +1,26 @@
+{
+  "id": "T-165",
+  "source": "Remediation sequence C1-C6 (fresh-eyes audit 2026-06-06); filed for later manual implementation. See docs/PROJECT_MAP.md and the approved plan.",
+  "title": "Extract a StorageBackend seam (transport vs tier logic) (C1/C6)",
+  "component": "tools/tools_memory.py (new StorageBackend)",
+  "what_failed": "Tier logic interleaves with raw transport (sqlite3.connect, self.supabase.table) inside the 2,265-line memory god-object, so storage and tier bugs are entangled and hard to test in isolation.",
+  "where_failed": "tools/tools_memory.py - sqlite3 + supabase calls scattered through tier methods.",
+  "why_likely": "Organic growth; no transport/tier seam.",
+  "severity": "P2",
+  "status": "closed",
+  "created": "2026-06-07T00:00:00+00:00",
+  "closed": "2026-06-14T07:29:58.415688+00:00",
+  "linked_solution": "S-145",
+  "depends_on": [
+    "T-163",
+    "T-164"
+  ],
+  "migration_plan": [
+    "1. Define a StorageBackend with insert/select/update per store (SQLite l3_cache, Supabase tables).",
+    "2. The read/write cores (T-163/164) call the backend instead of touching sqlite3/supabase directly.",
+    "3. Inject a fake backend in tests to exercise tier logic with no DB at all.",
+    "4. verify.py green; memory layer now unit-testable without a real store."
+  ],
+  "implementation_notes": "Smart and simple: a thin transport seam, not an ORM. This IS the C6 memory-god-object split - do it here, once.",
+  "analysis": "Separating transport from tier logic makes the memory layer testable in isolation and shrinks the god-object as a side effect."
+}

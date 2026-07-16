@@ -1,0 +1,21 @@
+{
+  "id": "T-235",
+  "batch": "bugfix",
+  "source": "Live Telegram 2026-06-21: 'Any reminders for me?' -> 'Pi Error: NoneType object is not iterable'. Reproducible on a common natural-language query.",
+  "title": "Reminders query crashes: 'NoneType' object is not iterable",
+  "component": "tools/tools_scheduler.py or tools/tools_memory.py (reminder-listing path), pi_agent.py tool dispatch",
+  "current_state": "Asking Pi 'Any reminders for me?' raises 'NoneType object is not iterable'. The startup-banner path is safe (uses `reminders or []`, startup_banner.py:131/154), so the crash is in the TOOL path the LLM invokes to list reminders/jobs — some function returns None (no rows / empty fetch / failed query) and the caller does `for r in <None>` or unpacks it without a guard. The whole turn errors out instead of replying 'no reminders'.",
+  "target_state": "The reminders/jobs listing path never returns None and never iterates a None: empty results yield [] and Pi answers 'No reminders' cleanly. A missing/empty reminder store is a normal empty case, not an exception.",
+  "severity": "P1",
+  "depends_on": [],
+  "status": "open",
+  "created": "2026-06-21T00:00:00+00:00",
+  "migration_plan": [
+    "1. Reproduce: call the tool the LLM maps 'reminders' to (likely scheduler list_jobs / a memory_read on category timed_reminder). Capture the traceback to get the exact file:line of the None iteration.",
+    "2. Fix at the source: make the listing function return [] (never None) on empty/error, AND guard the consumer with `for r in (result or [])`.",
+    "3. Audit sibling list-returning tools for the same `return None` -> iterate pattern (scheduler, memory queries) and apply the same `or []` defensiveness.",
+    "4. Pairs with the resourcefulness directive (T-233): on an empty result Pi should say 'no reminders right now' — never surface a raw Python error to the user.",
+    "5. Tests: testing/test_reminders_query.py — listing with zero reminders returns [] and produces a clean 'no reminders' answer; the tool path does not raise on an empty/missing store; a None from the backend is normalized to []."
+  ],
+  "risk_notes": "Small, high-value bug — a raw 'NoneType' error to the user erodes trust on a trivial question. Fix at the source (return []), not just at the call site, so other callers benefit. Confirm the exact path via the traceback before patching to avoid guarding the wrong function."
+}

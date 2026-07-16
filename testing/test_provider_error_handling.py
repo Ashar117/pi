@@ -102,6 +102,13 @@ def normie_agent():
         from pi_agent import PiAgent
         agent = PiAgent()
         agent.mode = "normie"
+    # T-175: hermetic — no live network inside a unit test. Pre-seed the
+    # awareness cache (skips the synchronous first-load fetch) and stub
+    # semantic prefetch (would hit Gemini embeddings + Supabase).
+    from datetime import datetime, timezone
+    agent._awareness_snapshot_cache = ""
+    agent._awareness_last_refresh = datetime.now(timezone.utc)
+    patch.object(agent.memory, "memory_search_semantic", return_value=[]).start()
     return agent
 
 
@@ -176,3 +183,30 @@ def test_500_does_not_leak_raw_error(normie_agent):
     assert leaked is None, (
         f"Raw server error leaked to user (matched {leaked!r}):\n{response!r}"
     )
+
+
+# ── awareness outage (T-175) ──────────────────────────────────────────────────
+
+def test_awareness_outage_does_not_crash_turn(normie_agent):
+    """T-175: a dead awareness API on first load must degrade to an empty
+    snapshot, not surface as '[Pi] Error: HTTPSConnectionPool...'."""
+    # T-173: awareness state lives in AwarenessCache; force the first-load path.
+    normie_agent._awareness_cache._cache = None
+    normie_agent._awareness_cache._last_refresh = None
+    with patch.object(normie_agent.awareness, "get_awareness_snapshot",
+                      side_effect=ConnectionError("DNS down")), \
+         patch.object(normie_agent.router, "chat",
+                      side_effect=_router_runtime_error("groq: 429 rate limit reached")):
+        response = normie_agent.process_input("what time is it")
+
+    assert not response.startswith("[Pi] Error:"), (
+        f"Awareness outage escaped the property guard:\n{response!r}"
+    )
+    assert not response.startswith("[Pi] Internal error:"), (
+        f"Awareness outage crashed the turn:\n{response!r}"
+    )
+    assert _is_friendly(response), (
+        f"Turn during awareness outage was not user-friendly:\n{response!r}"
+    )
+    # The guard must cache "" so later turns don't re-block on a dead API
+    assert normie_agent._awareness_cache._cache == ""

@@ -1,0 +1,73 @@
+{
+  "id": "T-136",
+  "phase": "9.0-brain",
+  "title": "Idle replay \u2014 sleep-consolidation analogue; pick random past episodes during user idle, look for cross-session patterns",
+  "type": "feature",
+  "component": "agent/idle_replay.py (new) + pi_agent.py + memory/pipeline.py",
+  "severity": "P3",
+  "effort_estimate": "3d",
+  "depends_on": [
+    "T-134 (uses salience to rank candidate episodes)",
+    "T-072 (mid-session distill is the closest existing analogue \u2014 pattern reuse)",
+    "T-084 (router with TPD-budget brownout to skip replay when budget low)"
+  ],
+  "blocks": [],
+  "adr_required": null,
+  "current_state": "Pi consolidates only at session-end (on_exit step session_summary + retention_tick) and every 10 turns mid-session (_maybe_mid_session_distill). A fact mentioned twice across distinct sessions never gets connected because each session distills in isolation. Pi has no notion of replay, rehearsal, or background pattern detection.",
+  "structural_problem": "Hippocampal replay during slow-wave sleep is what humans use to build cross-session abstractions. Pi has all the raw episodes (L1 raw_wiki) but consolidates them only into single-session L2 facts. Patterns spanning sessions are invisible.",
+  "target_state": "agent/idle_replay.py exports IdleReplayManager class running a daemon thread. After 5 minutes of no user input, picks 3 random L1 episodes from the last 7 days, re-runs distill_session on each, dedups against existing L2. If 3+ episodes share an entity, spawns a meta-fact (category='pattern_observation', e.g. 'Ash mentions GNN 14 times across April-May'). Hard caps: 1 replay/hour, 10/day. Halts within 5s of user input. Skips when router TPD budget < 20%.",
+  "files_affected": [
+    "agent/idle_replay.py (NEW) \u2014 IdleReplayManager + daemon loop",
+    "pi_agent.py \u2014 instantiate manager in __init__; notify_activity() in process_input wrapper",
+    "memory/pipeline.py \u2014 distill_session already accepts rows= for subset; extend with mode='replay' to tag writes",
+    "testing/test_idle_replay.py (NEW)",
+    "scripts/passive/silent_failure_watcher.py \u2014 surface idle_replay category if it spikes"
+  ],
+  "design_notes": [
+    "Daemon thread polls every 5s checking (now - last_user_input) > 300s",
+    "Pick 3 random L1 episodes \u2014 weighted by salience (T-134 composite); high-salience episodes replayed more often",
+    "Distillation in replay mode uses tier='cheap' on the router (same as existing mid-session)",
+    "Cross-session pattern detection: SELECT entity, COUNT(*) FROM raw_wiki JOIN entity_extraction WHERE timestamp > now-7d GROUP BY entity HAVING count >= 3",
+    "Meta-fact format: 'Pattern detected: <entity> appears in <N> sessions over <date range>'",
+    "Replay writes tagged source='replay' in metadata; weekly_memory_audit can filter these out for quality review",
+    "Hard caps: PI_REPLAY_PER_HOUR=1, PI_REPLAY_PER_DAY=10 (env-tunable)",
+    "Privacy (Inv. 4): in god mode, IdleReplayManager reads from god_memory.db ONLY; never cross-streams",
+    "TPD-budget guard: before each replay, call router.tpd_budget_remaining(); skip if < 20%",
+    "Pause flag (notify_activity): replay thread checks every loop iteration; user input sets flag, replay halts within 5s"
+  ],
+  "success_criteria": [
+    "5 min idle \u2192 first replay fires (in test with mocked clock)",
+    "User input mid-replay \u2192 halts within 5s",
+    "11th replay attempt in 24h \u2192 skipped (cap enforced)",
+    "Pattern: entity in 4 distinct sessions over 7d \u2192 meta-fact written to L2 with category='pattern_observation', source='replay'",
+    "Replay never writes to public L2 from god mode (namespace isolation)",
+    "TPD budget < 20% \u2192 replay skipped, logged via track_silent",
+    "verify.py PASS"
+  ],
+  "risk_notes": "Highest cost-risk ticket in Tier 4. Mitigation: hard caps + TPD guard + env flag PI_IDLE_REPLAY=on (default OFF). Privacy risk: replay reading from raw_wiki across modes \u2014 Inv. 4 namespace check is mandatory. Quality risk: replay produces low-value meta-facts that pollute L2. Mitigation: source='replay' tag enables filtering + weekly_memory_audit review.",
+  "migration_plan": [
+    "1. Write agent/idle_replay.py with IdleReplayManager class \u2014 pure Python, no agent dependency.",
+    "2. Unit-test IdleReplayManager in isolation with mocked clock + mocked memory.",
+    "3. Integrate: pi_agent.py.__init__ instantiates manager (gated by PI_IDLE_REPLAY env flag).",
+    "4. Wire notify_activity into process_input wrapper (cheap, ~0.1ms).",
+    "5. Add pattern detection query \u2014 needs entity extraction (already cheap via _extract_entities).",
+    "6. Soak test: run with PI_IDLE_REPLAY=on for 1 week, monitor data/silent_failures.db + L2 growth rate.",
+    "7. After soak: flip default to on if pattern_observation writes look useful in weekly audit.",
+    "8. verify.py PASS at each step."
+  ],
+  "test_plan": [
+    "test_idle_threshold_triggers_replay",
+    "test_user_input_halts_replay_within_5s",
+    "test_per_hour_cap_enforced",
+    "test_per_day_cap_enforced",
+    "test_pattern_detection_writes_meta_fact",
+    "test_god_namespace_isolation_in_replay",
+    "test_tpd_budget_low_skips_replay",
+    "test_env_flag_off_disables_daemon",
+    "test_replay_writes_tagged_source_replay"
+  ],
+  "status": "closed",
+  "created": "2026-05-26T00:00:00+00:00",
+  "closed": "2026-05-30T09:40:11.136604+00:00",
+  "linked_solution": "S-099"
+}

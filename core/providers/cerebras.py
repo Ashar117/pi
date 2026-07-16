@@ -3,7 +3,7 @@
 Cerebras runs Llama models at ~2000 tokens/sec — faster than Groq.
 Free tier available at cloud.cerebras.ai.
 
-Models: llama-3.3-70b, llama3.1-8b, llama3.1-70b
+Models: llama3.3-70b, llama3.1-8b, llama3.1-70b
 """
 from __future__ import annotations
 
@@ -22,9 +22,9 @@ _BASE_URL = "https://api.cerebras.ai/v1"
 class CerebrasProvider:
     name = "cerebras"
 
-    def __init__(self, api_key: str, model: str = "llama-3.3-70b"):
+    def __init__(self, api_key: str, model: str = "llama3.3-70b"):  # T-231: correct model id
         from openai import OpenAI
-        self._client = OpenAI(api_key=api_key, base_url=_BASE_URL)
+        self._client = OpenAI(api_key=api_key, base_url=_BASE_URL, timeout=25.0)  # T-237: hard timeout
         self.model = model
 
     def chat(

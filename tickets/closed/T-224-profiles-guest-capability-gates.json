@@ -1,0 +1,24 @@
+{
+  "id": "T-224",
+  "batch": "profile-system",
+  "source": "Ash feature request 2026-06-21 \u00e2\u20ac\u201d guests get full tools EXCEPT file edits, and execution needs Ash approval; gates must be unbypassable.",
+  "title": "Profiles: code-enforced guest capability gates (no file edits, exec needs approval, no god)",
+  "component": "agent/tools.py (execute_tool), agent/profile.py, prompts/consciousness_guest.txt (new), agent/modes.py",
+  "current_state": "agent/tools.py::execute_tool dispatches any registered tool with no per-caller capability check. Tool access is gated only by ModeConfig.tool_allowlist (used by god mode). Nothing distinguishes a guest caller; god mode is enterable by anyone who types the trigger.",
+  "target_state": "Capability enforcement lives in the dispatch layer, keyed off agent.current_profile.is_guest \u00e2\u20ac\u201d NOT in the prompt (prompts are advisory and bypassable). For a guest: (a) file-write tools (modify_file, create_file, and any fs-mutating tool) are DENIED with a clear message; (b) execution tools (execute_python, execute_bash, and the like) do NOT run \u00e2\u20ac\u201d they return a 'queued for Ash approval' result handed to the T-225 workflow; (c) god mode entry is refused outright. Everything else (chat, web/scholar search, weather/news/stocks, image gen, the full 3-tier memory + recall) works normally in the guest's own namespace. A neutral, warm guest consciousness prompt (prompts/consciousness_guest.txt) replaces the Ash-specific one.",
+  "severity": "P1",
+  "depends_on": [
+    "T-221"
+  ],
+  "status": "closed",
+  "created": "2026-06-21T00:00:00+00:00",
+  "migration_plan": [
+    "1. Define capability sets in agent/profile.py: GUEST_DENIED_TOOLS (file writes), GUEST_APPROVAL_TOOLS (execution). Keep these as explicit named frozensets next to the Profile class for auditability.",
+    "2. execute_tool: before running, if agent.current_profile and current_profile.is_guest: if tool in GUEST_DENIED_TOOLS -> return structured denial; if tool in GUEST_APPROVAL_TOOLS -> hand off to request_execution_approval (T-225) and return a 'pending approval' result. Default-deny posture: a tool that mutates the filesystem and isn't explicitly classified is treated as denied (fail closed).",
+    "3. God gate: refuse god-mode entry / god namespace whenever current_profile != ash. Put this check at the mode-switch site AND assert it in profile_to_memory so a guest can never resolve the god db.",
+    "4. New prompts/consciousness_guest.txt: friendly, respectful, generic assistant persona (NO Ash-loyalty, NO competition framing). Selected by T-223 for guest profiles.",
+    "5. Tests: testing/test_guest_gates.py \u00e2\u20ac\u201d guest modify_file/create_file denied; guest execute_python/bash returns pending-approval (does NOT execute); guest cannot enter god mode or resolve god/pi memory; guest CAN use memory_read/write, web_search, get_weather, image gen; an unclassified fs-mutating tool fails closed."
+  ],
+  "risk_notes": "This is the security core: enforce in code, fail closed, and unit-test the denials directly. The guest prompt is cosmetic defense-in-depth, never the gate. Double-check there is no alternate execution path (e.g. a tool that shells out internally) that sidesteps GUEST_APPROVAL_TOOLS \u00e2\u20ac\u201d classify by capability, not just by tool name where feasible.",
+  "closed": "2026-06-26T23:06:39.648162+00:00"
+}

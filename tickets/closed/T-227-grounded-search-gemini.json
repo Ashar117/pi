@@ -1,0 +1,22 @@
+{
+  "id": "T-227",
+  "batch": "research-quality",
+  "source": "Ash feature request 2026-06-21 \u00e2\u20ac\u201d normie+root should return Google-AI search results with live citations.",
+  "title": "Research: grounded_search tool (Gemini Google-Search grounding + citations)",
+  "component": "core/providers/gemini.py, tools/tools_web.py (or tools_research.py new), agent/modes.py",
+  "current_state": "Gemini is used only as a plain text/tool provider; GoogleSearchRetrieval/google_search grounding is never instantiated. web_search returns raw snippets with no AI synthesis and no citations. There is no 'grounded answer with sources' path.",
+  "target_state": "A grounded_search(query) tool returns a Gemini-synthesized answer grounded in LIVE Google Search, plus the grounding citations (source titles + URLs) from the response grounding metadata. Available to BOTH normie and root (add to normie tool_allowlist; root already has all). If Gemini is unavailable/exhausted (recall T-212 brownout), it falls back gracefully to web_search so the tool never hard-fails.",
+  "severity": "P1",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-06-21T00:00:00+00:00",
+  "migration_plan": [
+    "1. core/providers/gemini.py: add a grounded generate path that attaches the google_search grounding tool (types.Tool(google_search=...) per the installed google-genai version) and extracts grounding_metadata (grounding_chunks/citations: title+uri) from the response. Keep the existing plain chat() untouched.",
+    "2. New tool grounded_search in tools_web.py (or a new tools_research.py): calls the grounded path, returns {answer, citations:[{title,url}], provider:'gemini-grounded'}. On any Gemini error, fall back to web_search and mark provider:'web_fallback'.",
+    "3. Register the ToolSpec; add 'grounded_search' to normie's tool_allowlist in agent/modes.py.",
+    "4. Cache + cost: reuse web_cache.db patterns where sensible; record tokens via the existing Gemini token accounting (T-212).",
+    "5. Tests: testing/test_grounded_search.py (offline \u00e2\u20ac\u201d stub the genai client): returns answer + citations from mocked grounding metadata; falls back to web_search when the client raises; tool is present in normie's allowlist; citations are well-formed."
+  ],
+  "risk_notes": "Grounding availability/quotas depend on the Gemini tier (we just fixed 2.0-flash brownout in T-212) \u00e2\u20ac\u201d the web_search fallback is mandatory so a Gemini outage degrades gracefully instead of breaking research. Pin the grounding-tool construction to the actually-installed google-genai API shape (verify before relying on field names).",
+  "closed": "2026-06-26T23:06:40.807554+00:00"
+}

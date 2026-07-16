@@ -1,0 +1,24 @@
+{
+  "id": "T-251",
+  "title": "Planning cadence stale: PI.md section 3 still shows sprint week 2026-05-05; sprint-readiness passive FAILs",
+  "component": "PI.md, scripts/refresh_pi.py, scripts/plan_sprint.py",
+  "severity": "P0",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "root_cause_confidence": "verified",
+  "current_state": "PI.md section 3 shows 'Week of: 2026-05-05 -> 2026-05-11' (today is week of 2026-06-29). scripts/passive/sprint_readiness_checker.py FAILs on the stale cadence. PI.md section 4 auto-block was last refreshed 2026-05-29 and claims 0 open tickets, which is now false (T-249..T-269 batch filed). plan_sprint.py (Monday ritual) and retro.py (Friday ritual) have not run since May.",
+  "target_state": "PI.md section 3 shows the current week with the hackathon-prep goal (work the T-249..T-269 queue in priority order); sections 4/7/8/9 refreshed; sprint_readiness_checker exits 0. The Monday plan_sprint / Friday retro manual cadence is noted where it will be seen (PI.md section 3 or 11). No automation added - manual cadence first; automate only if it gets forgotten twice.",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. Run: python scripts/refresh_pi.py - regenerates sections 4/7/8/9 (picks up the newly filed open tickets).",
+    "2. Run: python scripts/plan_sprint.py with the week goal (hackathon prep, T-249..T-269 queue) so section 3 is regenerated/updated through the sanctioned path; if plan_sprint.py requires interactive input, hand-edit section 3 (it is a hand-curated section) instead.",
+    "3. Add one line to PI.md noting the manual cadence: plan_sprint.py Mondays, retro.py --stdout Fridays.",
+    "4. Confirm: python scripts/passive/sprint_readiness_checker.py exits 0.",
+    "5. python scripts/verify.py PASS (docs-only change, but the loop is the loop)."
+  ],
+  "risk_notes": "Section 3 is hand-curated - do not touch the BEGIN/END AUTO markers of sections 4/7/8/9 by hand. Cheapest ticket in the batch; also a good rehearsal candidate for T-256 since it touches only PI.md and runs scripts.",
+  "resolution": "implemented",
+  "solution_id": "S-192",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

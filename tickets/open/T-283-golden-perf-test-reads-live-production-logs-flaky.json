@@ -1,0 +1,20 @@
+{
+  "id": "T-283",
+  "title": "test_analyze_performance_command reads live production logs/evolution.jsonl - flaky whenever the daemon is chatting",
+  "component": "testing/test_agent_golden.py",
+  "severity": "P3",
+  "source": "Claude Fable 2026-07-07 - verify run failed this test while Ash was live-chatting with the daemon on Telegram; 15/15 pass on direct re-run minutes later",
+  "current_state": "testing/test_agent_golden.py:97 test_analyze_performance_command builds a real agent and runs 'analyze performance', whose 7-day report reads the REAL logs/evolution.jsonl. The live daemon appends to that same file on every Telegram turn, so the report races concurrent writes (mid-line reads / shifting counts) and the assertions (len > 50, canonical section names) fail intermittently. Observed 2026-07-07: FAIL inside a full verify.py run at the exact time Ash was chatting with Pi at 3am; PASS 15/15 when re-run directly after. Same hygiene class as T-280 (tests touching live production state), inbound instead of outbound.",
+  "target_state": "The test is hermetic: it points the evolution tracker at a temp log seeded with a handful of synthetic interaction lines (or monkeypatches the log path) so the report is deterministic regardless of daemon activity. Assertions unchanged. Test passes repeatedly while the daemon is actively writing.",
+  "depends_on": [],
+  "status": "open",
+  "created": "2026-07-07T00:00:00+00:00",
+  "root_cause_confidence": "verified",
+  "migration_plan": [
+    "1. Read how _fresh_agent wires EvolutionTracker and where the log path comes from (evolution.py - likely a constructor arg or module constant).",
+    "2. In the test, point the tracker at tmp_path/'evolution.jsonl' seeded with ~5 synthetic JSONL interaction rows (timestamp within 7 days, mode, success, cost, tools_used) so the report has real content.",
+    "3. Run the test 3x in a row with the daemon running - all green.",
+    "4. python scripts/verify.py must print PASS (never pipe, T-214); SOLUTIONS.jsonl; close; refresh_pi.py."
+  ],
+  "risk_notes": "testing/-only, verified root cause, reproducing conditions documented - a genuine SAFE-component candidate for sprint.py (T-263 needs a second production close; this is a natural fit after T-276). Do not 'fix' by loosening the assertions - the test's value is asserting the report renders its canonical sections."
+}

@@ -1,0 +1,26 @@
+{
+  "id": "T-183",
+  "source": "Claude gap analysis 2026-06-11 (Track B)",
+  "title": "Plan-then-execute: multi-step requests get an explicit plan the loop tracks",
+  "component": "agent/ (new planner module), pi_agent.py (_respond_via_config), prompts/consciousness.txt",
+  "current_state": "Every request, however large, goes straight into the tool loop. Multi-step work has no visible plan, no progress tracking, and the model loses the thread on long chains (the truncation window eats early intent).",
+  "target_state": "When a root-mode request is plan-shaped (heuristic: asks for multiple deliverables / contains 'then', numbered asks, or the model itself emits a plan_steps tool call), a lightweight plan \u2014 list of steps with status \u2014 lives OUTSIDE the truncation window in the dynamic system prompt segment and updates as steps complete. The model sees its remaining steps every round even after compaction. Implemented as one set_plan/update_plan ToolSpec pair writing to agent-session state, injected like the prefetch block.",
+  "severity": "P2",
+  "depends_on": [
+    "T-161",
+    "T-162"
+  ],
+  "status": "closed",
+  "created": "2026-06-11T15:00:00+00:00",
+  "migration_plan": [
+    "1. agent/plan_state.py: PlanState (steps: [{text, status}], render() \u2192 compact block, ~150 token cap).",
+    "2. ToolSpecs set_plan/update_plan in tools_project.py mutating agent.plan_state.",
+    "3. _respond_via_config: if agent.plan_state non-empty, append render() to dynamic_p (after prefetch).",
+    "4. Plan clears on /newchat and at session exit.",
+    "5. Consciousness: one rule \u2014 for 3+ step tasks, set_plan first, update as you go.",
+    "6. Tests: plan survives message truncation (the point of the feature); render cap; clear-on-newchat."
+  ],
+  "risk_notes": "Do AFTER T-161/T-162 so plan state rides the canonical conversation object, not a third parallel state. RISK_FLAGGED files \u2192 interactive.",
+  "closed": "2026-06-13T04:10:10.809458+00:00",
+  "linked_solution": "S-128"
+}

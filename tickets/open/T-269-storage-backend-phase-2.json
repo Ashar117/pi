@@ -1,0 +1,20 @@
+{
+  "id": "T-269",
+  "title": "StorageBackend Phase 2: migrate L3 core read/write behind the seam (piggyback-only, do not schedule standalone)",
+  "component": "agent/storage.py, tools/tools_memory.py",
+  "severity": "P3",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "current_state": "agent/storage.py (T-165) defines the StorageBackend seam (SQLiteStorageBackend + InMemoryStorageBackend). Per its own docstring the migration is deliberately multi-phase: Phase 1 (DONE) - the T-186/T-205 conversation methods use the backend; Phase 2 (NOT done) - L3 core read/write methods in tools/tools_memory.py migrate one by one; Phase 3 (NOT done) - Supabase transport extracted behind a SupabaseBackend. This is intentional debt, filed so it is tracked instead of forgotten.",
+  "target_state": "L3 core read/write paths go through the StorageBackend seam, executed opportunistically: whenever a ticket already touches an L3 method in tools/tools_memory.py, that method migrates in the same change. No standalone migration sprint - zero-behavior-change refactors of a working 2643-line module are churn. Phase 3 stays unscheduled until a second backend is actually needed.",
+  "depends_on": ["T-272"],
+  "status": "open",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. Standing rule, not a sprint: when any ticket touches an L3 read/write method in tools/tools_memory.py, move that method onto the backend seam in the same diff.",
+    "2. Each migrated method keeps its existing tests green and gains nothing else - no signature changes, no new parameters.",
+    "3. Track progress in this ticket's notes (methods done / remaining) as piggybacks accumulate.",
+    "4. Close when the L3 core set is through the seam; if a year passes with no ticket touching L3, close as wont-do with that finding - the seam earning no traffic is itself an answer.",
+    "5. python scripts/verify.py PASS on every piggyback; memory roundtrip contract tests stay green."
+  ],
+  "risk_notes": "The trap here is scheduling this as dedicated work - a big-bang migration of a correct, tested module is negative-value churn (audit verdict: complexity is load-bearing). Piggyback or close, nothing in between. L3 is on the recurring write/read-divergence bug path: every migrated method needs its roundtrip test run, not just verify's syntax pass."
+}

@@ -4,20 +4,22 @@ T-061: Prompt caching support. When system is a (static, dynamic) tuple:
   - static block gets cache_control: ephemeral → served from cache on subsequent turns
   - last tool schema also gets cache_control: ephemeral
   This cuts TTFT dramatically on cache hits and reduces cost ~90% on cached tokens.
+T-178: Streaming support via on_delta callback.
 """
 from __future__ import annotations
 
-from typing import Dict, List, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from core.llm_router import LLMResponse, ToolCall
 
 
 class AnthropicProvider:
     name = "anthropic"
+    supports_streaming = True
 
     def __init__(self, api_key: str, model: str = "claude-sonnet-4-6"):
         import anthropic
-        self._client = anthropic.Anthropic(api_key=api_key)
+        self._client = anthropic.Anthropic(api_key=api_key, timeout=120.0)  # T-237: root can stream long; 2-min hard cap
         self.model = model
 
     def chat(
@@ -26,6 +28,7 @@ class AnthropicProvider:
         system: Union[str, Tuple] = "",
         tools: List[Dict] = None,
         max_tokens: int = 2048,
+        on_delta: Optional[Callable[[str], None]] = None,
     ) -> LLMResponse:
         # Build system blocks — tuple triggers prompt caching.
         # 2-tuple: (static, dynamic)  — one cache point (T-061)
@@ -70,7 +73,17 @@ class AnthropicProvider:
             tools_cached[-1] = last
             kwargs["tools"] = tools_cached
 
-        resp = self._client.messages.create(**kwargs)
+        if on_delta is not None:
+            # T-178: streaming mode — text deltas delivered live via on_delta.
+            # text_stream skips tool_use blocks, so on_delta is never called for
+            # tool-only rounds. The final message carries usage + tool_calls.
+            with self._client.messages.stream(**kwargs) as stream:
+                for text_chunk in stream.text_stream:
+                    on_delta(text_chunk)
+                final_msg = stream.get_final_message()
+            resp = final_msg
+        else:
+            resp = self._client.messages.create(**kwargs)
 
         text = "".join(
             (b.text if hasattr(b, "text") else b.get("text", ""))

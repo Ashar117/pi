@@ -260,6 +260,126 @@ def check_archived_refs(root: Path) -> Tuple[Status, List[str]]:
     ]
 
 
+# ── T-153: capability-vs-open-ticket drift ────────────────────────────────────
+
+# Words too generic to be a reliable capability↔ticket join key.
+_CAP_STOPWORDS = {
+    "with", "from", "mode", "modes", "full", "loop", "tools", "more", "into",
+    "root", "state", "based", "using", "fallback", "chain", "across",
+}
+
+
+def _load_open_tickets(root: Path) -> List[Dict]:
+    """Load open tickets (cp1252-tolerant). Returns list of dicts."""
+    import json
+    out: List[Dict] = []
+    tdir = root / "tickets" / "open"
+    if not tdir.exists():
+        return out
+    for p in tdir.glob("*.json"):
+        try:
+            raw = p.read_bytes()
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                text = raw.decode("cp1252")
+            out.append(json.loads(text))
+        except Exception:
+            continue
+    return out
+
+
+def check_vault_brief_freshness(root: Path) -> Tuple[Status, List[str]]:
+    """T-285: WARN if vault/notes/per-ticket/ briefs lag tickets/closed/.
+
+    The vault mirror only synced at session exit until T-285 added a daily
+    scheduler job; before that it silently froze for months while
+    tickets/closed/ kept growing — PI.md §2 tells every session to read
+    these briefs, so a stale mirror is a real drift, not cosmetic.
+    """
+    closed_dir = root / "tickets" / "closed"
+    briefs_dir = root / "vault" / "notes" / "per-ticket"
+
+    if not closed_dir.exists():
+        return Status.WARN, ["[warn] tickets/closed/ not found — cannot check vault freshness"]
+
+    def _ticket_num(name: str) -> int:
+        m = re.match(r"T-(\d+)", name)
+        return int(m.group(1)) if m else -1
+
+    closed_nums = [_ticket_num(p.stem) for p in closed_dir.glob("*.json")]
+    closed_nums = [n for n in closed_nums if n >= 0]
+    if not closed_nums:
+        return Status.PASS, ["[ok] no closed tickets to check"]
+    max_closed = max(closed_nums)
+
+    if not briefs_dir.exists():
+        return Status.WARN, [
+            f"[warn] vault/notes/per-ticket/ missing entirely — highest closed ticket is T-{max_closed}, "
+            f"0 briefs exist  *(sync_vault() has likely never run)*"
+        ]
+
+    brief_nums = [_ticket_num(p.stem) for p in briefs_dir.glob("T-*.md")]
+    brief_nums = [n for n in brief_nums if n >= 0]
+    max_brief = max(brief_nums) if brief_nums else -1
+
+    gap = max_closed - max_brief
+    if gap > 0:
+        return Status.WARN, [
+            f"[warn] vault briefs stop at T-{max_brief} but highest closed ticket is T-{max_closed} "
+            f"({gap} ticket(s) behind)  *(run sync_vault or wait for the daily 03:45 job, T-285)*"
+        ]
+    return Status.PASS, [f"[ok] vault briefs current through T-{max_brief}"]
+
+
+def check_capability_drift(root: Path) -> Tuple[Status, List[str]]:
+    """WARN when ABOUT.md marks a capability 'Working' but an open P1/P2 ticket
+    names it (T-153). Honest docs should track the ticket queue, not drift toward
+    optimism. Heuristic join on capability keywords ≥5 chars in ticket text.
+    """
+    text = _read_safe(root / "ABOUT.md")
+    if text is None:
+        return Status.PASS, ["[ok] ABOUT.md not present — capability drift not checked"]
+
+    rows = re.findall(r"^\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*$", text, re.MULTILINE)
+    working = [
+        cap for cap, status, _ in rows
+        if "working" in status.lower()
+        and "partial" not in status.lower()
+        and "known" not in status.lower()
+        and cap.lower() not in ("capability",)  # skip header
+    ]
+    if not working:
+        return Status.PASS, ["[ok] No 'Working' capability rows to cross-check"]
+
+    open_p12 = [
+        t for t in _load_open_tickets(root)
+        if str(t.get("severity", "")).upper() in ("P1", "P2")
+    ]
+    if not open_p12:
+        return Status.PASS, [f"[ok] {len(working)} 'Working' rows, no open P1/P2 to contradict"]
+
+    findings: List[str] = []
+    for cap in working:
+        keywords = {w for w in re.findall(r"[a-z]{5,}", cap.lower())
+                    if w not in _CAP_STOPWORDS}
+        if not keywords:
+            continue
+        for t in open_p12:
+            blob = f"{t.get('title','')} {t.get('component','')}".lower()
+            hit = next((k for k in keywords if k in blob), None)
+            if hit:
+                findings.append(
+                    f"[warn] '{cap}' marked Working, but open {t.get('severity')} "
+                    f"{t.get('id')} mentions '{hit}'  *(verify the claim or mark Partial)*"
+                )
+                break
+
+    if not findings:
+        return Status.PASS, ["[ok] No 'Working' capability contradicted by an open P1/P2 ticket"]
+    return Status.WARN, findings
+
+
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
 def run_check(
@@ -274,6 +394,8 @@ def run_check(
         ("## 3. Solution Count",       lambda: check_solution_count(root)),
         ("## 4. Verify Status",        lambda: check_verify_status(root)),
         ("## 5. Archived Doc Refs",    lambda: check_archived_refs(root)),
+        ("## 6. Capability vs Open Tickets", lambda: check_capability_drift(root)),
+        ("## 7. Vault Brief Freshness", lambda: check_vault_brief_freshness(root)),
     ]
 
     section_texts: List[str] = []

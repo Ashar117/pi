@@ -1,0 +1,22 @@
+{
+  "id": "T-174",
+  "source": "Remediation sequence C1-C6 (fresh-eyes audit 2026-06-06); filed for later manual implementation. See docs/PROJECT_MAP.md and the approved plan.",
+  "title": "Surface store-divergence via the replication log (debugging)",
+  "component": "tools/tools_memory.py (_replication_log_append), scripts/passive/ or scripts/verify.py",
+  "what_failed": "memory_write already records per-write Supabase vs SQLite status (_replication_log_append), but nothing flags when the two stores disagree - a silent C1 divergence at the storage layer goes unnoticed.",
+  "where_failed": "tools/tools_memory.py:842 _replication_log_append; no consumer checks for status mismatches.",
+  "why_likely": "The log was added for forensics but never wired to an alert/report.",
+  "severity": "P3",
+  "status": "closed",
+  "created": "2026-06-07T00:00:00+00:00",
+  "closed": "2026-06-12T18:44:46.032838+00:00",
+  "linked_solution": null,
+  "depends_on": [],
+  "migration_plan": [
+    "1. A small read-only check (passive skill or verify step) scanning the replication log for insert rows where supabase_status != sqlite_status.",
+    "2. Report divergent writes (count + ids); exit non-zero in --strict.",
+    "3. Reuse the existing log - add no new storage."
+  ],
+  "implementation_notes": "Smart and simple: consume an asset that already exists. Read-only, no new infra. Runtime debugging counterpart to the test-time round-trip contract.",
+  "analysis": "Debugging aid: when a write half-lands (one store ok, one fails), this turns a silent divergence into a visible report."
+}

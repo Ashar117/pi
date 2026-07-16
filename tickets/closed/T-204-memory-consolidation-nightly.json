@@ -1,0 +1,20 @@
+{
+  "id": "T-204",
+  "source": "Claude further-plan 2026-06-12 (Horizon 2 \u2014 memory v2)",
+  "title": "Nightly memory consolidation: one pass unifying caretaker + retention + replay + promotion",
+  "component": "agent/caretaker.py, agent/retention.py, agent/idle_replay.py, memory/pipeline.py, scheduler",
+  "current_state": "The consolidation pieces exist but run ad-hoc and separately: caretaker (contradictions, derived facts), retention (decay/prune), idle_replay (default-off rehearsal), promote_l2_to_l3 (mid-session + exit). No single owner; ordering between them is undefined; nothing runs them when Pi is idle overnight.",
+  "target_state": "One idempotent scripts/consolidate.py running nightly (T-202 scheduler slot): 1) caretaker full (contradictions resolved, derived facts recomputed) \u2192 2) L2 semantic dedup sweep \u2192 3) promotion pass (L2\u2192L3 by importance) \u2192 4) retention decay/prune (L1 30d, stale L3) \u2192 5) pattern detection (the idle_replay detect_cross_session_patterns query) writing pattern_observation facts. Each step logged with counts to logs/consolidation.jsonl; Telegram one-liner ('consolidated: 3 contradictions, 12 promoted, 41 pruned').",
+  "severity": "P1",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-06-12T10:05:00+00:00",
+  "migration_plan": [
+    "1. scripts/consolidate.py orchestrating existing functions in the fixed order above \u2014 no new memory logic, just ownership + ordering.",
+    "2. Lock file so consolidation never overlaps a live session's mid-session distill (skip + log if agent active within 10 min).",
+    "3. Dry-run flag printing what WOULD change (trust-building period).",
+    "4. Tests: order enforced, lock respected, idempotent double-run (second run is all no-ops), counts logged."
+  ],
+  "risk_notes": "Memory is RISK_FLAGGED territory \u2014 ship with --dry-run as default for the first week; Ash flips to live after reviewing a few dry reports. The write/read-divergence class lives here; every step must reuse the EXISTING tested functions, never reimplement.",
+  "closed_at": "2026-06-13T05:01:45.517231+00:00"
+}

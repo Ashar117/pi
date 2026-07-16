@@ -1,0 +1,26 @@
+{
+  "id": "T-258",
+  "title": "Telegram approve/deny triage buttons on email alerts: Draft reply / Add to calendar / Ignore",
+  "component": "tools/tools_telegram.py, agent/watchers.py",
+  "severity": "P1",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "root_cause_confidence": "verified",
+  "current_state": "The T-220 callback handler in tools/tools_telegram.py (~line 1232) already routes inline-button taps through _process_text as a normal agent turn, and the telegram_buttons tool (~line 1517) already sends inline keyboards. But email alerts from the T-257 watcher would arrive as plain text with no action affordance - the human has to type out what to do next.",
+  "target_state": "Email triage alerts carry inline buttons ['Draft reply', 'Add to calendar', 'Ignore']. A tap routes through the existing callback into a normal turn where Pi acts: gmail_send's draft-only flow (which is itself the built-in human-approval gate) or calendar_create. Full flow: inbound email -> Groq analysis -> Telegram alert with buttons -> human tap -> cross-system action. This single flow is the hackathon straddle demo: Track 1 (agent living in Telegram + Gmail) and Track 2 (multi-system workflow with human-in-the-loop) at once.",
+  "depends_on": [
+    "T-257"
+  ],
+  "status": "closed",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. In the email-alert delivery path (T-257's _analyzed_fire output for email events), attach the inline keyboard via the existing telegram_buttons machinery instead of a plain send.",
+    "2. Craft callback payloads that _process_text can act on directly, e.g. 'draft a reply to email <message_id> (<subject>)' / 'add email <message_id> (<subject>) to my calendar' / 'ignore' - the existing T-220 handler turns the tap into a normal turn, so Pi's tool loop does the rest with gmail_send / calendar_create. No new dispatch code.",
+    "3. Test: extend testing/test_watcher_email.py or add testing/test_email_triage_buttons.py - fake bot asserts the alert message carries reply_markup with the 3 buttons, and simulating a callback produces the expected _process_text input string.",
+    "4. python scripts/verify.py PASS.",
+    "5. Manual e2e: self-email -> Telegram alert with buttons -> tap 'Draft reply' -> draft appears in Gmail; tap 'Add to calendar' -> event exists."
+  ],
+  "risk_notes": "Keep gmail_send in draft-only mode for this flow - the draft IS the approval gate; do not add auto-send. Guest/profile approvals (T-225) already cover non-Ash users. Button labels are constants; no per-alert configurability until a real need appears.",
+  "resolution": "implemented",
+  "solution_id": "S-197",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

@@ -1,0 +1,25 @@
+{
+  "id": "T-254",
+  "title": "Telegram silent-failure audit: instrument top 10 of 26 swallowed-exception sites",
+  "component": "tools/tools_telegram.py, agent/observability.py",
+  "severity": "P1",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "root_cause_confidence": "verified",
+  "current_state": "tools/tools_telegram.py (1589 lines) contains 26 swallowed-exception sites ('except Exception: pass' or equivalent). Telegram is a live user-facing channel: failures in message-send, media-analysis, callback routing, and watcher-alert delivery become silent no-ops - Ash sees nothing. The T-244..T-248 bug cluster all shipped to production partly because failures were invisible. Infrastructure already exists and must be REUSED, not rebuilt: agent/observability.py provides track_silent() (capped SQLite data/silent_failures.db, already watched by scripts/passive/silent_failure_watcher.py) and agent/redaction.py provides safe_error() for user-facing fallback text.",
+  "target_state": "The top 10 sites ranked by user impact are instrumented: each swallow becomes track_silent('telegram.<site>', e); sites on user-facing paths additionally send a one-line fallback via safe_error(audience='telegram') so the user learns something failed. Zero behavior change on the happy path. The remaining 16 sites are deliberately deferred to T-264 (data-driven round 2).",
+  "depends_on": [
+    "T-272"
+  ],
+  "status": "closed",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. Grep tools/tools_telegram.py for the 26 swallow sites; rank by user impact: message-send failures > callback-routing failures > media-analysis failures > alert-delivery failures > internal cleanup (cleanup stays untouched).",
+    "2. For each of the top 10: replace bare pass with track_silent('telegram.<descriptive_site>', e); on user-facing paths also send safe_error text to the chat (one line, no stack traces to users).",
+    "3. Test: testing/test_telegram_silent_failures.py - with a fake bot object that raises on send, drive one instrumented path; assert a row lands in the silent-failures store (point it at a temp/in-memory path) and no exception escapes.",
+    "4. python scripts/verify.py PASS; append solutions/SOLUTIONS.jsonl on close."
+  ],
+  "risk_notes": "Bounded on purpose: 10 sites, not 288 - a blind mega-audit is churn. Do NOT change control flow (the swallows exist so Telegram hiccups never kill a turn); this ticket adds visibility only. Manual smoke after: send text + photo + button tap in Telegram (checklist formalized in T-261).",
+  "resolution": "implemented",
+  "solution_id": "S-195",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

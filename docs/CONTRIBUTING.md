@@ -23,30 +23,30 @@ Open a ticket when:
 - A known limitation needs tracking
 - A new feature is planned (so it can be tested before it's built)
 
-### Schema
+### Schema (current — copy a recent file in `tickets/closed/` if in doubt)
 
 ```json
 {
   "id": "T-NNN",
   "title": "One-sentence description",
+  "component": "file or area it touches",
+  "severity": "P0 | P1 | P2 | P3",
+  "source": "who/what filed it and when",
+  "current_state": "what is true today, with file:line evidence",
+  "target_state": "what done looks like",
+  "depends_on": ["T-MMM"],
   "status": "open | closed",
-  "severity": "critical | high | medium | low | p3",
-  "opened": "YYYY-MM-DD",
-  "closed": "YYYY-MM-DD or null",
-  "phase_closed": null,
-  "root_cause": "What actually went wrong (not symptoms)",
-  "fix": {
-    "files": ["list of files changed"],
-    "description": "What was done"
-  },
-  "verification": {
-    "tests": ["list of tests that prove the fix"],
-    "notes": "any additional verification steps"
-  },
-  "solution_record": "S-NNN or null",
-  "lesson": "L-NNN or null"
+  "created": "ISO timestamp",
+  "migration_plan": ["concrete ordered steps a cold session can execute"],
+  "risk_notes": "failure modes + constraints",
+  "root_cause_confidence": "verified | hypothesis  (optional; sprint.py's auto-run gate reads it)",
+  "resolution": "implemented  (set on close)",
+  "solution_id": "S-NNN  (set on close)",
+  "closed": "ISO timestamp  (set on close)"
 }
 ```
+
+**Quality bar:** a ticket must be executable by a session with zero prior context — evidence in `current_state`, steps in `migration_plan`, the proving test named. This is what lets any model, cheap or expensive, run the loop.
 
 ### Where tickets live
 
@@ -108,7 +108,9 @@ Unit tests catch code regressions. Behavioural tests catch prompt regressions, L
 
 ### Costly vs free
 
-Mark tests that hit live APIs with `@pytest.mark.costly`. These run once per change, not in the per-commit suite. The free suite (everything not marked costly) runs automatically via `scripts/verify.py`.
+Tests that hit live APIs (real Claude/Groq/Supabase calls) are listed in the `COSTLY_TESTS` set inside [scripts/verify.py](../scripts/verify.py) and excluded from the gate — run them by hand when needed ([docs/LIVE_RETEST_CHECKLIST.md](LIVE_RETEST_CHECKLIST.md) tracks them). Everything else runs automatically via `scripts/verify.py`.
+
+Prefer behavioural tests that drive real handlers/closures over string-greps on source files — grep-tests pass forever and prove nothing (the Telegram T-244–T-248 bug cluster shipped straight through green grep-tests).
 
 ### Naming convention
 
@@ -129,20 +131,19 @@ Before writing the fix, write the test that proves the bug exists. Run it. Watch
 ```
 1. Open tickets/open/T-NNN-{feature}.json with the feature spec
 2. Write the tests first — they will fail, that's the point
-3. Build under {module}/ following docs/templates/MODULE_TEMPLATE.py
-4. Run python scripts/verify.py — everything still green
-5. Run the new feature's tests — they now pass
-6. Append to solutions/SOLUTIONS.jsonl
-7. Update docs/ARCHITECTURE.md module list
-8. Move ticket to tickets/closed/
+3. Build it (new tool = a ToolSpec entry in the owning tools/tools_*.py module's TOOLS list — ADR-002)
+4. Run python scripts/verify.py — must print PASS (never pipe it, T-214)
+5. Append to solutions/SOLUTIONS.jsonl
+6. Move ticket to tickets/closed/; run python scripts/refresh_pi.py
+7. If user-visible, update the ABOUT.md capability table honestly (✅ only if live-verified)
 ```
 
-### Module structure
+### Tool/module conventions
 
-New modules live under their own directory (e.g., `integrations/gmail/`). Follow the module template. Modules must:
-- Import from `app/config.py` for credentials
-- Return `{"success": bool, "error": str | None}` from every public method
-- Write significant operations to memory (`tier="l3"`, `category="<module_name>"`)
+- New tools live in the owning `tools/tools_*.py` module — do **not** create a new directory or touch a central dispatch table.
+- Credentials come from `app/config.py` / `.env` (never hard-coded; never edit those files without Ash's explicit go).
+- Every public method returns `{"success": bool, "error": str | None, ...}`.
+- Swallowed exceptions must call `track_silent(category, e)` ([agent/observability.py](../agent/observability.py)); a bare `except:` fails verify.py outright.
 
 ---
 

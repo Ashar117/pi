@@ -1,0 +1,26 @@
+{
+  "id": "T-291",
+  "title": "Store L3 embeddings on write so the hot tier can be searched semantically",
+  "component": "tools/tools_memory.py",
+  "severity": "P2",
+  "source": "Ash memory-retrieval review 2026-07-12 (hackathon Track 1)",
+  "root_cause_confidence": "verified",
+  "current_state": "memory_write computes+stores an embedding ONLY for L2 (compute_embedding_for_write -> metadata['embedding'], tools_memory.py ~1036-1046). L3 rows (l3_cache SQLite table) carry no embedding, so L3 — the tier injected into the prompt every turn — can only be matched by BM25 lexical search (_hybrid_search_l3). Paraphrased queries ('my model organism') never hit a lexically-different stored fact ('zebrafish') at the hot tier.",
+  "target_state": "L3 writes persist an embedding alongside the row: a new nullable column l3_cache.embedding (TEXT, JSON-encoded vector), created by an idempotent migration in _init_sqlite. On L3 write, store json.dumps(embedding) when an embedding provider is available; leave NULL otherwise. Fully best-effort — zero behavior change when embeddings are unavailable (offline/no key).",
+  "depends_on": [
+    "T-290"
+  ],
+  "status": "closed",
+  "created": "2026-07-12T00:00:00+00:00",
+  "migration_plan": [
+    "1. In _init_sqlite, add an idempotent 'ALTER TABLE l3_cache ADD COLUMN embedding TEXT' guarded by a PRAGMA table_info check (match the existing invalid_at/pinned migration pattern).",
+    "2. In the L3 write path, compute_embedding_for_write(content) and, when non-None, store json.dumps(vector) into the embedding column. Respect the existing deferral note at ~line 911 ('embedding pass deferred to avoid blocking writes') — do NOT add a blocking network call to the hot write path; reuse whatever async/deferred hook L2 already uses, or write NULL now and fill via the backfill in step 3.",
+    "3. Add a small backfill helper backfill_l3_embeddings(limit) that embeds rows where embedding IS NULL (idempotent, capped, best-effort) for existing caches.",
+    "4. Unit test: with the embedding engine mocked to return a fixed vector, write an L3 fact via memory_write(tier='l3') and assert the l3_cache row's embedding column is a non-null JSON vector.",
+    "5. python scripts/verify.py must PASS (including the L3 roundtrip contract test)."
+  ],
+  "risk_notes": "Write latency is the trap: embedding is a network call and L3 writes are on the interactive path. Do NOT block the turn on it. Preferred: store NULL at write time and let backfill/the L2 async path fill it, OR only embed when a provider is configured AND the deferral hook exists. The L3 roundtrip contract test (test_memory_roundtrip_contract.py) must stay green — the new column is additive/nullable, so it should. Keep the diff to: one migration + one store line + one backfill helper + one test.",
+  "resolution": "implemented + verify.py PASS (see S-215)",
+  "solution_id": "S-215",
+  "closed": "2026-07-11T22:54:09+00:00"
+}

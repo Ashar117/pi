@@ -1,0 +1,14 @@
+{
+  "id": "T-AUDIT-D96747",
+  "source": "tool_usage_audit.py",
+  "title": "[auto] Prune tool `get_tech_updates` \u2014 1 calls in 30d",
+  "severity": "P3",
+  "status": "closed",
+  "created": "2026-06-19T07:53:12.536867+00:00",
+  "tool": "get_tech_updates",
+  "calls_30d": 1,
+  "threshold": 3,
+  "suggested_fix": "Remove `get_tech_updates` from the tool registry or merge it (1 invocations / 30d \u2014 planner cost with no value).",
+  "closed": "2026-06-20T20:55:46.436327+00:00",
+  "resolution": "INVALID DATA: 0-call stats collected during June 2026 provider outage (494 error-turns, no LLM provider was reachable). Tool call counts are 0 across the board because Pi could not execute any tools, not because these tools are unused. Batch-closed 2026-06-21."
+}

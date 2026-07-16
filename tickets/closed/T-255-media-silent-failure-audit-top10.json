@@ -1,0 +1,26 @@
+{
+  "id": "T-255",
+  "title": "Media silent-failure audit: instrument top 10 of 24 swallowed-exception sites; surface video-gen chain exhaustion",
+  "component": "tools/tools_media.py, agent/observability.py",
+  "severity": "P1",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "root_cause_confidence": "verified",
+  "current_state": "tools/tools_media.py (1153 lines) contains 24 swallowed-exception sites across image gen, video gen, document read, and media analysis fallback chains. Known fragility: video generation's Replicate backend often 429s and the fallback chain (Replicate -> HuggingFace, T-121) can exhaust silently, returning {\"success\": false} with no explanation of what was tried. Same reusable infra as T-254: agent/observability.py track_silent() + data/silent_failures.db + silent_failure_watcher passive.",
+  "target_state": "Top 10 sites by user impact instrumented with track_silent('media.<site>', e). Video-gen chain exhaustion specifically returns a user-visible message naming what happened ('backend busy, tried Replicate + HF') instead of a bare success:false. Fallback chains still fall back - visibility only, no control-flow change.",
+  "depends_on": [
+    "T-272"
+  ],
+  "status": "closed",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. Grep tools/tools_media.py for the 24 swallow sites; rank: generation-request failures > fallback-chain exhaustion > document-parse failures > internal cleanup.",
+    "2. Instrument top 10 with track_silent('media.<descriptive_site>', e).",
+    "3. In the video-gen chain-exhaustion path, build the error string from the backends actually attempted (e.g. 'video generation unavailable: Replicate 429, HuggingFace timeout') and return it in the tool result.",
+    "4. Test: testing/test_media_silent_failures.py - monkeypatch both video backends to raise, call generate_video, assert result contains the names of both attempted backends and a row lands in the silent-failures store.",
+    "5. python scripts/verify.py PASS."
+  ],
+  "risk_notes": "Do not add retries or new fallback logic - that is the rejected offline-retry-queue scope. Visibility only. Costly-test discipline: the new test must use monkeypatched backends, never real Replicate/HF calls, so it stays in verify's non-costly set.",
+  "resolution": "implemented",
+  "solution_id": "S-196",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

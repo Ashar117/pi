@@ -1,7 +1,7 @@
 """Error redaction — single chokepoint for outward-facing exception strings.
 
 Four audience modes:
-  'public_log' — type name only (e.g. "ValueError"); strictest, for shared/god logs
+  'public_log' — type name only (e.g. "ValueError"); strictest, for shared logs
   'telegram'   — redacted single-line message, capped at 200 chars
   'user'       — redacted message, no length cap
   'dev'        — full message + traceback, no redaction; for internal debug paths only

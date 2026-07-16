@@ -1,0 +1,22 @@
+{
+  "id": "T-210",
+  "source": "Telegram outage screenshots (June 17-18 2026) — root mode returns 'Couldn't reach my language model' on every turn.",
+  "title": "All LLM providers exhausted simultaneously → Pi fully down (root + normie)",
+  "component": "core/llm_router.py, pi_agent.py error classifier",
+  "current_state": "RESOLVED 2026-06-21: Anthropic credits restored (live ping OK). CEREBRAS_API_KEY + OPENROUTER_API_KEY set (T-213). Error classifier patched to surface actionable cause (S-152). All providers operational.",
+  "target_state": "At least one working provider + error message that names the real cause so the user knows what to fix.",
+  "severity": "P0",
+  "status": "closed",
+  "created": "2026-06-20T20:14:35.453922+00:00",
+  "closed": "2026-06-21T00:00:00+00:00",
+  "linked_solution": "S-154",
+  "depends_on": ["T-213"],
+  "diagnosis": "Anthropic out of credits; Groq/Gemini free tiers exhausted; Cerebras/OpenRouter keys unset. Pi had zero working LLM paths.",
+  "migration_plan": [
+    "1. DONE (S-152): error classifier in pi_agent.py names real cause (credit_balance, resource_exhausted, etc.).",
+    "2. DONE (S-153/T-213): CEREBRAS_API_KEY + OPENROUTER_API_KEY set for cheap-tier resilience.",
+    "3. DONE: Anthropic credits restored — live ping confirmed OK 2026-06-21.",
+    "4. Root mode fully operational."
+  ],
+  "risk_notes": "Resolved. No code risk."
+}

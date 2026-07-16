@@ -1,0 +1,20 @@
+{
+  "id": "T-264",
+  "title": "Exception audit round 2, data-driven: fix top offenders by observed frequency in silent_failures.db",
+  "component": "tools/tools_memory.py, tools/tools_browse.py, scripts/retro.py, agent/observability.py",
+  "severity": "P3",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "current_state": "The repo has ~288 swallowed-exception sites in 64 files. Round 1 (T-254/T-255) instruments the top 20 in the two user-facing hotspots. The next biggest by static count: tools/tools_memory.py (16 - though several are intentional Supabase-offline guards), tools/tools_browse.py (12), scripts/retro.py (12 - partial data is acceptable there by design). Static counts cannot tell which sites actually fire in production; after round 1 lands, data/silent_failures.db (via agent/observability.py track_silent + the silent_failure_watcher passive) accumulates real frequencies.",
+  "target_state": "After 1-2 weeks of round-1 telemetry: the top offenders BY OBSERVED COUNT get either a real fix (if the failure is fixable) or instrumentation + user-visible fallback (if it is a legitimate degradation path). Sites that never fire are left alone - that is the whole point of doing this data-driven instead of a blind 288-site mega-audit.",
+  "depends_on": ["T-254", "T-255"],
+  "status": "open",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. Query data/silent_failures.db grouped by site, ordered by count, since round-1 landing date.",
+    "2. For each of the top ~10: read the site, classify - real bug (fix it), legitimate degradation (instrument + fallback message), intentional guard like Supabase-offline (leave, add a one-line comment naming the intent).",
+    "3. Fix/instrument accordingly; each real bug found here gets its own reproducing test.",
+    "4. python scripts/verify.py PASS.",
+    "5. If the db is near-empty after 2 weeks, close this ticket with that finding - silence in telemetry is a legitimate resolution."
+  ],
+  "risk_notes": "Do not start before telemetry exists - the ordering IS the deliverable. tools_memory.py guards need extra care: several swallows are deliberate offline-resilience (Supabase down must not kill a turn); classify before touching."
+}

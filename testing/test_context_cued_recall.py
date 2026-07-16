@@ -56,6 +56,27 @@ def test_null_mode_rows_no_boost_no_crash(tmp_path, monkeypatch):
     assert len(rows) >= 1  # no boost, no crash
 
 
+def test_same_conversation_boost(tmp_path, monkeypatch):
+    """T-142: a fact from the current conversation outranks an equally-relevant
+    one from another conversation."""
+    monkeypatch.setenv("PI_CONTEXT_CUED_RECALL", "on")
+    m = _mem(tmp_path, "conv.db")
+    m.memory_write(content="zephyr launched monday", tier="l3", conversation_id="convA")
+    m.memory_write(content="zephyr budget approved", tier="l3", conversation_id="convB")
+    top = m.memory_read(query="zephyr", tier="l3", current_conversation_id="convA")[0]
+    assert "launched" in top["content"], "same-conversation row not boosted"
+
+
+def test_same_scope_boost(tmp_path, monkeypatch):
+    """T-137: a fact in the current project scope outranks one from another scope."""
+    monkeypatch.setenv("PI_CONTEXT_CUED_RECALL", "on")
+    m = _mem(tmp_path, "scope.db")
+    m.memory_write(content="orion design spec", tier="l3", scope="proj-x")
+    m.memory_write(content="orion meeting recap", tier="l3", scope="proj-y")
+    top = m.memory_read(query="orion", tier="l3", current_scope="proj-x")[0]
+    assert "design" in top["content"], "same-scope row not boosted"
+
+
 def test_strong_relevance_still_beats_boost(tmp_path, monkeypatch):
     """A much-more-relevant off-mode row must still surface above a weak same-mode row."""
     monkeypatch.setenv("PI_CONTEXT_CUED_RECALL", "on")

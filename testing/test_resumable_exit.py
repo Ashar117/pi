@@ -109,7 +109,6 @@ def test_run_exit_steps_drives_state_to_completion():
         agent = MagicMock()
         agent.flush_logs.return_value = True
         agent.messages = []
-        agent.history = []
         agent.session_id = "sess"
 
         _run_exit_steps(agent, st)
@@ -135,7 +134,6 @@ def test_resume_picks_up_interrupted_in_progress_step():
         # Now resume — re-run from session_summary onward
         agent = MagicMock()
         agent.messages = []
-        agent.history = []
         agent.session_id = "crash_sess"
 
         loaded = _ExitState.load_pending(st.path)
@@ -178,7 +176,6 @@ def test_legacy_state_file_with_old_step_names_is_tolerated():
         agent = MagicMock()
         agent.flush_logs.return_value = True
         agent.messages = []
-        agent.history = []
         agent.session_id = "old"
 
         _run_exit_steps(agent, loaded)

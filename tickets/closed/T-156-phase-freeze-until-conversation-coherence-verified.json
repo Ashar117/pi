@@ -1,0 +1,23 @@
+{
+  "id": "T-156",
+  "source": "Claude session audit (2026-05-29)",
+  "title": "Phase freeze \u2014 no new tools or phases until conversation coherence is verified end-to-end",
+  "component": "PI.md (\u00a73 sprint goal, \u00a712 roadmap), strategic",
+  "what_failed": "The roadmap is planning Phase 9 (distributed: Discord, web UI) and Phase 10 (multi-agent debate) while Phase-0-level problems \u2014 coherent multi-turn conversation (T-143/T-148/T-149), session isolation (T-142), self-contradiction (T-141) \u2014 are open. 64 tools exist; the core conversational loop they all hang off of doesn't reliably work. Effort has gone to breadth (tools, modes, autonomy machinery, memory tiers) while the center \u2014 can Pi hold a coherent 20-turn conversation \u2014 was never made solid or even measured.",
+  "where_failed": "PI.md \u00a712 roadmap (Phase 9/10 planned), the gap between 64 tools and 3 open P2 conversation bugs",
+  "why_likely": "Breadth produces visible, ticket-shaped wins (a new tool, a new mode, a closed ticket). Depth on coherence is fuzzy, hard to measure, and unglamorous \u2014 so it kept losing to the next feature. Vanity metrics (tickets closed, tools added) rewarded motion over the one outcome that matters.",
+  "severity": "P1",
+  "status": "closed",
+  "created": "2026-05-29T08:24:09+00:00",
+  "closed": "2026-05-30T09:40:11.136604+00:00",
+  "linked_solution": "S-103",
+  "migration_plan": [
+    "1. Freeze: no new tools, no Phase 9/10 work, until the coherence bar is met.",
+    "2. Define the bar concretely: a scripted 20-turn conversation (T-152 harness) stays coherent in both root and normie \u2014 references hold, no self-contradiction, no dropped context. This is the only 'done' that counts.",
+    "3. Sequence the unfreeze work: T-148 (done) -> T-152 (coherence harness) -> T-149 (normie real history) -> T-141/T-142 -> re-measure.",
+    "4. Replace the \u00a73 sprint goal with the coherence bar until it's green.",
+    "5. Only after the bar is met, resume the roadmap."
+  ],
+  "implementation_notes": "This is a meta-ticket / master gate, like T-114. It does not get 'implemented' so much as 'honored'. Its closure condition is the coherence bar in step 2 going green and staying green.",
+  "analysis": "PERSPECTIVE: This is the ticket I'd pin above all the others. Everything else in this batch is a symptom; this is the disease. A 64-tool agent that can't reliably hold a conversation is a wide, shallow puddle. Narrow it. Freeze the breadth, fix the center, prove it with the harness, and only then build outward again. If you do one thing from this whole session, make it this \u2014 and measure 'done' by a coherent 20-turn conversation, never by a ticket count."
+}

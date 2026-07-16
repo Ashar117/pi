@@ -1,0 +1,26 @@
+{
+  "id": "T-222",
+  "batch": "profile-system",
+  "source": "Ash feature request 2026-06-21 \u00e2\u20ac\u201d secure login: Ash auto by chat_id, guests by hashed password.",
+  "title": "Profiles: auth + login (Telegram auto for Ash, password for guests)",
+  "component": "agent/profile.py, tools/tools_telegram.py, pi_agent.py (REPL)",
+  "current_state": "tools_telegram._auth() gates only on message.chat.id == TELEGRAM_CHAT_ID (single-user lock). No login, no password, no per-user identity, no profile management commands.",
+  "target_state": "Login flow with code-enforced security. Telegram: Ash's chat_id (TELEGRAM_CHAT_ID) auto-resolves to the ash profile with NO password. Ash pre-creates each guest profile + password ('/profile create <name> <password>', ash-only) \u00e2\u20ac\u201d NO self-signup. A guest types '/login <name> <password>' ONCE on a device; on success the chat_id->profile binding is stored PERMANENTLY (sticky, no TTL) so every later message from that chat_id auto-resolves with no re-entry. '/logout' clears the binding for that device; Ash can revoke a device ('/profile revoke <name>' clears all bindings for that profile). '/whoami' reports current profile. Passwords hashed with stdlib pbkdf2_hmac + per-profile random salt (no new dependency). The /login message is deleted from the chat after processing. Login attempts are rate-limited (lockout after 5 fails / 10 min) to defeat weak-PIN brute force. Unknown chat_id with no binding gets a 'please /login' prompt.",
+  "severity": "P1",
+  "depends_on": [
+    "T-221"
+  ],
+  "status": "closed",
+  "created": "2026-06-21T00:00:00+00:00",
+  "migration_plan": [
+    "1. agent/profile.py: hash_password(pw, salt)->hash via hashlib.pbkdf2_hmac('sha256', ...) with a sane iteration count; verify_password(); create_profile(name, pw, is_guest); set_password(). Salt via secrets.token_bytes.",
+    "2. Sticky-binding store: chat_id -> profile_name in a 'device_bindings' table (persistent, NO expiry). /login inserts it; /logout deletes the caller's binding; revoke deletes all bindings for a profile.",
+    "3. tools_telegram: resolve_profile_for_chat(chat_id) \u00e2\u20ac\u201d if chat_id==TELEGRAM_CHAT_ID -> 'ash'; else look up the sticky binding; else None (=> reply 'please /login <name> <password>').",
+    "4. /login handler: validate name, verify_password, on success create the permanent binding + delete the user's message (bot.delete_message, best-effort); enforce lockout counter; never reveal whether the name or the password was wrong (uniform error).",
+    "5. Guard: '/login ash ...' from a chat_id != TELEGRAM_CHAT_ID is refused (ash is only reachable via the trusted chat_id on Telegram). Desktop REPL may /login ash with password.",
+    "6. /profile create|list|delete|revoke -> ash-only; reject for guests with a clear message. create takes <display_name> <password> [nickname] \u00e2\u20ac\u201d display_name stored as-is (e.g. 'MasiM'), slug = display_name.lower(). Optional nickname arg sets what Pi calls them (e.g. '/profile create MasiM 1401 Majesty'); defaults to display_name if omitted. Pi addresses the guest by nickname in all responses and in the system prompt context block. Guest can update their own nickname by saying 'call me X'; Ash can also update it via '/profile nickname <slug> <new_nickname>'. revoke clears that profile's device bindings.",
+    "7. Tests: testing/test_profile_auth.py \u00e2\u20ac\u201d correct pw logs in and binds permanently (a second message from that chat_id needs no re-login); wrong pw fails uniformly; lockout after N fails; ash auto-resolves by chat_id; guest cannot /login as ash; guest cannot run /profile create; /logout and revoke clear the binding; login message deletion is attempted."
+  ],
+  "risk_notes": "Never store or log plaintext passwords (scrub from any turn log). pbkdf2_hmac chosen over bcrypt/argon2 to avoid a new dependency while staying secure. Message-deletion is best-effort (may fail in some chat types) \u00e2\u20ac\u201d treat as defense-in-depth, not the only protection.",
+  "closed": "2026-06-26T23:06:38.890034+00:00"
+}

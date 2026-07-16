@@ -1,0 +1,24 @@
+{
+  "id": "T-271",
+  "title": "gmail_send sends real email immediately despite its own docstring promising draft-only + Ash confirmation",
+  "component": "tools/tools_gmail.py (GmailTools.gmail_send)",
+  "severity": "P0",
+  "source": "Claude Fable audit 2026-07-04 (discovered while scoping T-257/T-258 Gmail-Telegram triage flow)",
+  "root_cause_confidence": "verified",
+  "current_state": "tools/tools_gmail.py module docstring (line 18): 'gmail_send(to, subject, body) -> draft-only by default (Ash must confirm)'. The method's own docstring (line 179, pre-fix): 'Send an email. Returns draft info - actual send requires Ash confirmation.' But the implementation called svc.users().messages().send(userId='me', body={'raw': encoded}).execute() directly - a REAL, IMMEDIATE send with no draft, no confirmation step, no human-in-the-loop gate of any kind. No drafts().create() call exists anywhere in the file (confirmed via grep). Any mode/tool-caller (root Claude, sprint.py, a misfired guest-approved action) invoking gmail_send believes - per its own contract - that it is creating a reviewable draft. It is actually sending real email on Ash's behalf immediately. This is a trust-boundary violation discovered while scoping T-258 (Telegram email-triage buttons), which explicitly planned to rely on gmail_send's documented draft-only behavior as its human-in-the-loop safety mechanism - building T-258 on the un-fixed code would have wired a real auto-send path by accident.",
+  "target_state": "gmail_send creates a real Gmail draft via svc.users().drafts().create(userId='me', body={'message': {'raw': encoded}}).execute() and returns {'success', 'draft_id', 'message_id', 'to', 'subject'}. No code path in this method sends email immediately. Ash reviews and sends the draft from Gmail itself (or a future explicit gmail_send_draft(draft_id) confirmation tool, out of scope here). Docstrings now match implementation exactly.",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-07-04T00:00:00+00:00",
+  "migration_plan": [
+    "1. tools/tools_gmail.py gmail_send: replace 'svc.users().messages().send(userId=\"me\", body={\"raw\": encoded}).execute()' with 'svc.users().drafts().create(userId=\"me\", body={\"message\": {\"raw\": encoded}}).execute()'.",
+    "2. Update return dict to draft_id (and message_id from result.get('message', {}).get('id')) instead of a top-level send message_id.",
+    "3. Existing test testing/test_tools_gmail.py::test_gmail_send_graceful only checks the failure path (service unavailable) - unaffected. Add a new test asserting the success path calls drafts().create and NOT messages().send (mock the service, assert call recorded on the drafts mock, assert messages().send was never invoked).",
+    "4. python scripts/verify.py PASS; append solutions/SOLUTIONS.jsonl; close ticket.",
+    "5. Re-check T-258's plan against this fix: the 'Draft reply' button now genuinely creates a Gmail draft with zero auto-send risk."
+  ],
+  "risk_notes": "This changes gmail_send's real-world behavior (was: sends immediately; now: creates draft only) to match what it always claimed to do. Any existing caller that relied on immediate delivery (none found in this codebase - grep shows no other gmail_send callers yet, since T-257/T-258 are the first) would need to switch to an explicit send-confirmation step, which does not exist yet and is intentionally out of scope for this ticket (draft creation is the safe default; a confirm-and-send tool is a separate, deliberate addition if ever needed).",
+  "resolution": "implemented",
+  "solution_id": "S-207",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

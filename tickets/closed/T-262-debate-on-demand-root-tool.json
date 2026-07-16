@@ -1,0 +1,26 @@
+{
+  "id": "T-262",
+  "title": "Debate-on-demand: register research-mode 3-agent debate as a root-mode tool",
+  "component": "core/research_mode.py (reuse), tools/ (owning module TOOLS list)",
+  "severity": "P3",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "current_state": "core/research_mode.py runs a 3-agent Claude/Groq/Gemini debate (2 rounds: independent answers then critique, ~$0.02/run) but only as a separate mode - the user must type 'research mode'. Root mode cannot invoke a debate mid-conversation; complex or contested questions get a single-model answer even when multi-model critique would clearly help. The tool registry pattern (ADR-002) means adding a tool is one ToolSpec entry in the owning module's TOOLS list - no dispatch table edits.",
+  "target_state": "A 'deep_debate' ToolSpec wrapping research_mode's debate: root Claude can call it on questions that warrant multi-model critique and weave the synthesis into its answer without any mode switch. Tool description instructs sparing use (cost note) so it does not fire on every turn.",
+  "depends_on": [
+    "T-272"
+  ],
+  "status": "closed",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. Pick the owning tools module (tools/tools_research.py already exists for deep_research - add there).",
+    "2. Add a deep_debate ToolSpec whose handler calls the existing research_mode debate entry point with the question and returns the synthesis text; one TOOLS list entry per ADR-002.",
+    "3. Description text: 'runs a 3-model debate (Claude/Groq/Gemini), ~2 cents and ~30s - use only for genuinely contested or high-stakes questions'.",
+    "4. Test: testing/test_deep_debate_tool.py - monkeypatch the debate function to return a canned synthesis; assert the tool is registered and its handler returns it (no real API calls).",
+    "5. Run scripts/passive/consciousness_capability_sync.py after adding (new tool must be reflected in consciousness.txt awareness) and python scripts/refresh_pi.py (section 7 tool inventory).",
+    "6. python scripts/verify.py PASS."
+  ],
+  "risk_notes": "Do not build auto-routing heuristics ('detect contested questions') - the model decides when to call the tool from its description; that IS the routing. Post-hackathon priority: nothing in either track needs it.",
+  "resolution": "implemented",
+  "solution_id": "S-201",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

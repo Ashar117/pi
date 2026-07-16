@@ -14,7 +14,6 @@ if hasattr(sys.stdout, "reconfigure"):
 
 import json
 import queue
-import re
 import threading
 import time
 import uuid
@@ -28,11 +27,13 @@ from app.config import (
     GROQ_API_KEY,
     GEMINI_API_KEY,
     CEREBRAS_API_KEY,
+    CEREBRAS_MODEL,
     OPENROUTER_API_KEY,
+    Z_AI_API_KEY,
+    QWEN_API_KEY,
+    QWEN_MODEL,
     SUPABASE_URL,
     SUPABASE_KEY,
-    GOD_SUPABASE_URL,
-    GOD_SUPABASE_KEY,
     DEFAULT_MODE,
     OPENWEATHER_API_KEY,
     ALPHA_VANTAGE_KEY,
@@ -58,19 +59,22 @@ from agent.truncation import (
     truncate_messages_safely, extract_text_from_messages,
     compress_messages_with_groq, CompressionFailed,
 )
+from agent.conversation import message_text as _message_text
 from agent.session import generate_session_summary, on_exit
 from agent.tools import get_tool_definitions, execute_tool
-from agent.prompt import build_system_prompt, build_system_prompt_split, minimal_consciousness
+from agent.prompt import (
+    build_session_state_block,
+    build_system_prompt,
+    build_system_prompt_split,
+    minimal_consciousness,
+)
 from agent.modes import detect_mode_switch, ModeConfig, get_mode_config
 from agent.awareness_shortcut import try_answer_from_awareness
+from agent.awareness_cache import AwarenessCache
 from agent.redaction import safe_error as _safe_error
 from agent.observability import track_silent as _track_silent
 from agent.cost_footer import emit_if_enabled as _emit_cost_footer
 
-# T-082 step 9: agent/god.py was archived to docs/_archive/_private/agent_god_v1.py.
-# God mode now flows through the unified _respond_via_config path with the
-# ModeConfig from agent.modes; no separate import needed.
-GOD_AVAILABLE = True  # availability is determined per-call by the LLM router
 
 # F-007 TTS / F-006 Telegram / F-008 Scheduler — lazy, graceful no-op on missing deps
 try:
@@ -106,35 +110,47 @@ class PiAgent:
     """
     
     def __init__(self):
-        # Load consciousness
-        consciousness_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts", "consciousness.txt")
-        try:
-            with open(consciousness_path, 'r') as f:
-                self.consciousness = f.read()
-        except FileNotFoundError:
-            print(f"[Pi] WARNING: Consciousness file not found at {consciousness_path}")
+        # Load consciousness: private prompt → public default (shipped in repo) → minimal
+        prompts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
+        self.consciousness = None
+        for fname in ("consciousness.txt", "consciousness.default.txt"):
+            try:
+                with open(os.path.join(prompts_dir, fname), 'r', encoding='utf-8') as f:
+                    self.consciousness = f.read()
+                break
+            except FileNotFoundError:
+                continue
+        if self.consciousness is None:
+            print(f"[Pi] WARNING: No consciousness file found in {prompts_dir}")
             print("[Pi] Using minimal consciousness")
             self.consciousness = self._minimal_consciousness()
         
         # State — initialised early so subsystem setup can reference them
         self.mode = DEFAULT_MODE
         self.messages = []   # Persistent API message list (raw content blocks preserved)
-        self.history = []    # Simplified string-only history for research mode context
         self.session_start = datetime.now(timezone.utc)
         self.session_id = uuid.uuid4().hex[:8]  # T-013: short ID for log correlation
         # T-142: a conversation is a thread of short-term context. /newchat starts
         # a fresh one (clears self.messages/history) without wiping L3 long-term
-        # memory. Full per-conversation L3 scoping is a follow-up (T-142 remainder).
+        # memory. conversation_id is stamped on L3 writes + boosts same-conversation recall.
         self.conversation_id = uuid.uuid4().hex[:8]
+        # T-137: optional project/ticket scope for context-cued recall. No UI sets
+        # it yet (stays None → no scope boost); infrastructure is ready for when it does.
+        self.current_scope = None
         # T-037: populated when switching normie→root; injected once into first root prompt
         self._normie_handoff_context: str = ""
+        # T-185: compact repo map cache; None = dirty/needs rebuild
+        self._repo_map_cache: Optional[str] = None
+        # T-183: per-session plan state (set_plan / update_plan tools)
+        from agent.plan_state import PlanState
+        self.plan_state: PlanState = PlanState()
 
         # Initialize systems
         self.memory = MemoryTools(SUPABASE_URL, SUPABASE_KEY)
         # T-082: per-namespace MemoryTools cache. Public memory is the default
-        # entry; private namespaces (god) are built on first access via
-        # _get_memory_for_config(). Cached so a multi-turn god session reuses
-        # one SQLite connection.
+        # entry; a non-default namespace is built on first access via
+        # _get_memory_for_config() and cached so repeated turns share one
+        # SQLite connection.
         self._memory_by_namespace: Dict[str, MemoryTools] = {"pi": self.memory}
         self.execution = ExecutionTools()
         self.evolution = EvolutionTracker()
@@ -155,7 +171,11 @@ class PiAgent:
             groq_key=GROQ_API_KEY or "",
             gemini_key=GEMINI_API_KEY or "",
             cerebras_key=CEREBRAS_API_KEY or "",
+            cerebras_model=CEREBRAS_MODEL or "gpt-oss-120b",
             openrouter_key=OPENROUTER_API_KEY or "",
+            z_ai_key=Z_AI_API_KEY or "",
+            qwen_key=QWEN_API_KEY or "",
+            qwen_model=QWEN_MODEL or "qwen-max",
         )
 
         # Awareness — fetch live world state once at startup, cache 30 min
@@ -164,27 +184,38 @@ class PiAgent:
             alpha_vantage_key=ALPHA_VANTAGE_KEY or "",
             news_api_key=NEWS_API_KEY or "",
         )
-        # T-041: Lazy awareness — snapshot loads on first access.
-        # T-067: Background refresh — TTL expiry triggers a daemon thread refresh
-        # so the next turn is never blocked waiting for weather/news/stocks APIs.
-        self._awareness_snapshot_cache: Optional[str] = None
-        self._awareness_refresh_ttl = 1500  # 25 min (< 30 min TTL so refresh races ahead)
-        self._awareness_last_refresh: Optional[datetime] = None
-        self._awareness_refreshing = False  # True while bg refresh is in flight
-        self._awareness_refresh_lock = threading.Lock()
-        self._awareness_refresh_failures = 0  # consecutive failure count for telemetry
-        if "--eager-awareness" in sys.argv:
-            self._awareness_snapshot_cache = self.awareness.get_awareness_snapshot()
-            self._awareness_last_refresh = datetime.now(timezone.utc)
+        # T-041 / T-067 / T-173: Awareness cache extracted to agent/awareness_cache.py.
+        self._awareness_cache = AwarenessCache(self.awareness)
 
         # T-024: L1 thread UUID — deterministic from session_id; shared by auto-log and tool-path writes
         self.l1_thread_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, self.session_id))
         self.turn_number = 0
+
+        # T-136: idle replay (sleep-consolidation analogue). Default OFF
+        # (PI_IDLE_REPLAY); high cost-risk per the ticket. Built only when
+        # enabled so there is zero overhead/risk by default.
+        self.idle_replay = None
+        try:
+            self._init_idle_replay()
+        except Exception as e:
+            print(f"[Pi] idle-replay init skipped (non-fatal): {e}")
         # T-072: mid-session distillation — fires every N turns so memory doesn't
         # depend on a clean exit. Tracks the last turn we distilled up to so each
         # batch only sees new L1 rows.
         self._last_distilled_turn = 0
         self._distill_every_n_turns = 10
+
+        # T-198: stash turn metadata so process_input can write real values to turns.jsonl
+        # Set at every return path in _respond_via_config (shortcut / error / normal).
+        # TODO(T-162): replace with a proper TurnMeta when Turn object exists.
+        self._last_turn_meta: dict = {"tools_used": [], "cost": 0.0, "model": ""}
+
+        # T-178: True when the last turn was streamed live (run() skips re-printing).
+        self._last_turn_streamed: bool = False
+
+        # T-196: pending research question flag — set by 'research mode' command,
+        # consumed on the next turn so input() is never called mid-turn.
+        self._pending_research: bool = False
 
         # F-007 TTS — offline speech output
         self.tts = _tts_inst
@@ -203,11 +234,15 @@ class PiAgent:
                 telegram=self.telegram,
             )
 
-        # Background watchers — Telegram alerts on file/schedule/url/keyword/price events
+        # Background watchers — Telegram alerts on file/schedule/url/keyword/price/email events
         self.watchers = None
         if _WatcherManager is not None:
-            _tg_send = getattr(self.telegram, "send_message", None) if self.telegram else None
-            self.watchers = _WatcherManager(telegram_send_fn=_tg_send)
+            # T-272 (was T-249): TelegramTools has no send_message attribute (only
+            # .send()) — this getattr always returned None, so watcher alerts have
+            # silently never reached Telegram in production.
+            _tg_send = getattr(self.telegram, "send", None) if self.telegram else None
+            _tg_buttons = getattr(self.telegram, "send_buttons", None) if self.telegram else None
+            self.watchers = _WatcherManager(telegram_send_fn=_tg_send, telegram_buttons_fn=_tg_buttons)
             self.watchers.start()
         
         # T-062: Cache tool definitions once at construction — avoid re-serialising
@@ -250,63 +285,31 @@ class PiAgent:
             print(f"[Pi] Mode: {self.mode}")
             print(f"[Pi] Consciousness loaded: {len(self.consciousness)} chars")
 
+        # T-186: register the initial conversation in SQLite so resume/chats work.
+        try:
+            self.memory.create_conversation(
+                conversation_id=self.conversation_id,
+                mode=self.mode,
+                created_at=self.session_start.isoformat(),
+            )
+        except Exception:
+            pass
+
     @property
     def awareness_snapshot(self) -> str:
-        """Lazy + background-refreshed awareness snapshot (T-041, T-067).
-
-        First call: loads synchronously (unavoidable; guarded by --eager-awareness).
-        Subsequent calls: serves cached value; triggers a background refresh if
-        the TTL is approaching so the NEXT call is never blocked.
-        """
-        now = datetime.now(timezone.utc)
-
-        if self._awareness_snapshot_cache is None:
-            # First ever load — synchronous, unavoidable
-            self._awareness_snapshot_cache = self.awareness.get_awareness_snapshot()
-            self._awareness_last_refresh = now
-            return self._awareness_snapshot_cache
-
-        # Check if TTL is due; if so, kick off a background refresh (non-blocking).
-        # Lock guards the check-and-set so two callers can't both spawn refresh threads.
-        age_s = (now - self._awareness_last_refresh).total_seconds() if self._awareness_last_refresh else 9999
-        if age_s >= self._awareness_refresh_ttl:
-            def _refresh():
-                try:
-                    new_snap = self.awareness.get_awareness_snapshot(force=True)
-                    self._awareness_snapshot_cache = new_snap
-                    self._awareness_last_refresh = datetime.now(timezone.utc)
-                    self._awareness_refresh_failures = 0
-                except Exception as e:
-                    # Don't silently rot — track failure count + log to stderr
-                    # (daemon redirects stderr to logs/daemon.log).
-                    self._awareness_refresh_failures += 1
-                    if self._awareness_refresh_failures in (1, 3, 10):
-                        print(
-                            f"[Pi] awareness bg refresh failed ({self._awareness_refresh_failures}x): {e}",
-                            file=sys.stderr, flush=True,
-                        )
-                finally:
-                    self._awareness_refreshing = False
-
-            with self._awareness_refresh_lock:
-                if not self._awareness_refreshing:
-                    self._awareness_refreshing = True
-                    threading.Thread(target=_refresh, daemon=True).start()
-
-        return self._awareness_snapshot_cache
+        """Delegates to AwarenessCache (T-173). See agent/awareness_cache.py."""
+        return self._awareness_cache.snapshot
 
     @awareness_snapshot.setter
     def awareness_snapshot(self, value: str) -> None:
-        """Allow tools (refresh_awareness) to overwrite the cache."""
-        self._awareness_snapshot_cache = value
-        self._awareness_last_refresh = datetime.now(timezone.utc)
+        self._awareness_cache.snapshot = value
 
     def _minimal_consciousness(self) -> str:
         """Thin wrapper preserving the method API; logic in agent.prompt."""
         return minimal_consciousness()
     
     def _get_system_prompt(self) -> str:
-        """Single-string system prompt — used by normie and god modes."""
+        """Single-string system prompt — used by normie mode."""
         base = build_system_prompt(self.consciousness, self.mode, self.memory)
         if self.awareness_snapshot:
             return base + "\n\n" + self.awareness_snapshot
@@ -404,7 +407,33 @@ class PiAgent:
 
     def _execute_tool(self, tool_name: str, tool_input: Dict, *, memory_override=None) -> Any:
         """Thin wrapper preserving the method API; logic in agent.tools."""
-        return execute_tool(self, tool_name, tool_input, memory_override=memory_override)
+        result = execute_tool(self, tool_name, tool_input, memory_override=memory_override)
+        # T-185: invalidate repo map cache when files change
+        if tool_name in {"modify_file", "create_file", "execute_bash", "execute_python"}:
+            self._repo_map_cache = None
+        # T-229: collect citations for the post-step Sources injection.
+        if isinstance(result, dict):
+            if tool_name in ("grounded_search",):
+                for c in result.get("citations") or []:
+                    if c.get("url"):
+                        self._turn_citations.append(c)
+            elif tool_name in ("deep_research",):
+                for s in result.get("sources") or []:
+                    if s.get("url"):
+                        self._turn_citations.append(s)
+            # Auto-deliver generated images to Telegram so the model doesn't need
+            # to chain a telegram_send call (which it often forgets, outputting
+            # markdown image syntax that Telegram renders as raw text instead).
+            elif tool_name == "image_gen" and result.get("success") and result.get("path"):
+                chat_id = getattr(self, "_current_chat_id", None)
+                if chat_id:
+                    try:
+                        from tools.tools_telegram import send_file
+                        send_file(result["path"], chat_id=chat_id)
+                        result["_tg_sent"] = True
+                    except Exception:
+                        pass
+        return result
     
     def process_input(self, user_input: str) -> str:
         """Main entry point — wraps inner dispatch with universal turn logging.
@@ -413,6 +442,11 @@ class PiAgent:
         logs/turns.jsonl as a durable local record. Never gates on mode.
         """
         from agent.turn_log import append_turn
+
+        # T-136: user activity halts any in-flight idle replay (no-op when the
+        # default-off idle-replay daemon isn't running).
+        if getattr(self, "idle_replay", None) is not None:
+            self.idle_replay.notify_activity()
 
         start_ts = datetime.now(timezone.utc)
         error_str = None
@@ -427,16 +461,23 @@ class PiAgent:
         duration_ms = int((datetime.now(timezone.utc) - start_ts).total_seconds() * 1000)
 
         try:
+            _meta = self._last_turn_meta  # T-198: real values set by _respond_via_config
+            self._last_turn_meta = {"tools_used": [], "cost": 0.0, "model": ""}  # reset
+            _current_profile = getattr(self, "current_profile", None)
+            _profile_name: Optional[str] = None
+            if _current_profile is not None and getattr(_current_profile, "is_guest", False):
+                _profile_name = getattr(_current_profile, "name", None)
             append_turn(
                 session_id=self.session_id,
                 mode=self.mode,
                 user_input=user_input,
                 response=response,
                 duration_ms=duration_ms,
-                tools_used=[],
-                cost=0.0,
-                model="",
+                tools_used=_meta.get("tools_used", []),
+                cost=_meta.get("cost", 0.0),
+                model=_meta.get("model", ""),
                 error=error_str,
+                profile_name=_profile_name,
             )
         except Exception as e:
             _track_silent("logs.turn_append", e)
@@ -504,12 +545,85 @@ class PiAgent:
 
         threading.Thread(target=_run, daemon=True).start()
 
+    def _init_idle_replay(self) -> None:
+        """T-136: build + start the idle-replay daemon iff PI_IDLE_REPLAY is on.
+
+        Collaborators are bound to this agent's (namespace-correct) memory +
+        router. detect_patterns is a conservative stub for now — the full
+        cross-session entity-count query is the soak-phase deliverable; the
+        manager, caps, halt-on-activity, and meta-fact write path are all
+        tested in test_idle_replay.py.
+        """
+        from agent.idle_replay import IdleReplayManager, _env_on
+        if not _env_on("PI_IDLE_REPLAY"):
+            return
+
+        def fetch_episodes():
+            try:
+                return self.memory.memory_read(query="", tier="l1", limit=20) or []
+            except Exception:
+                return []
+
+        def replay_episode(ep):
+            # Rehearsal: re-surface the episode through recall so it can be
+            # re-consolidated by the existing distill path. Best-effort.
+            try:
+                self.memory.memory_read(query=(ep.get("content") or "")[:60], limit=3)
+            except Exception:
+                pass
+
+        def detect_patterns():
+            # T-136: entities recurring across >=3 distinct conversations (last 7d).
+            try:
+                return self.memory.detect_cross_session_patterns()
+            except Exception:
+                return []
+
+        def write_meta_fact(p):
+            try:
+                self.memory.memory_write(
+                    content=p.get("content", ""), tier="l2",
+                    category="pattern_observation", source="replay",
+                    mode=self.mode, conversation_id=self.conversation_id,
+                )
+            except Exception:
+                pass
+
+        tpd = getattr(self.router, "tpd_budget_remaining", None)
+        self.idle_replay = IdleReplayManager(
+            fetch_episodes=fetch_episodes,
+            replay_episode=replay_episode,
+            detect_patterns=detect_patterns,
+            write_meta_fact=write_meta_fact,
+            tpd_remaining=tpd if callable(tpd) else None,
+            enabled=True,
+        )
+        self.idle_replay.start()
+
     def _process_input_inner(self, user_input: str) -> str:
         """Inner dispatch — Claude decides, tools execute, evolution tracks.
 
         Wrapped by ``process_input`` so every turn is logged. Do not call this
         directly from outside the class — go through ``process_input``.
         """
+
+        # T-196: two-step research mode — consume pending question from next turn
+        # so no input() call blocks non-REPL channels (Telegram, voice, daemon).
+        if getattr(self, "_pending_research", False):
+            self._pending_research = False
+            question = user_input.strip()
+            if question:
+                from core.research_mode import run_research_mode
+                context_str = extract_text_from_messages(self.messages, n=10)
+                synthesis = run_research_mode(question, rounds=2, context=context_str)
+                if synthesis:
+                    self.memory.memory_write(
+                        content=f"Research ({datetime.now(timezone.utc).strftime('%Y-%m-%d')}): {question[:80]} | {synthesis[:300]}",
+                        tier="l3", importance=5, category="research_results",
+                    )
+                    print("[Research] Results saved to memory")
+                return "[Research complete. Continue conversation or 'exit']"
+            return "[No research question provided — send your question first]"
 
         # Mode-switch detection (loose matcher, S-010/T-015) — never clear self.messages,
         # session context must survive mode changes (L-001).
@@ -530,21 +644,7 @@ class PiAgent:
                     and self.messages):
                 self._normie_handoff_context = self._build_normie_handoff()
                 self._archive_normie_session_to_vault()
-            # T-082: god→other transitions used to call GodMemory.sync_to_vault().
-            # That god-specific vault writer lived inside the archived agent/god.py.
-            # The auto-sync was dropped intentionally — god_memory.db remains
-            # the source of truth, vault/.god/ is a stale projection. If a
-            # ModeConfig-aware vault writer is wanted, file a new ticket.
             return response
-
-        # God mode activation (handled separately — not in detect_mode_switch so
-        # the trigger stays out of committed modes.py).
-        if user_input.lower().strip() in ("god mode", "god"):
-            ok, reason = self._check_god_mode_available()
-            if not ok:
-                return f"[Pi] God mode unavailable: {reason}"
-            self.mode = "god"
-            return "God mode active (private, no restrictions)"
 
         cmd = user_input.lower().strip()
 
@@ -568,34 +668,37 @@ class PiAgent:
                 "Commands:\n"
                 "  root mode        — switch to Claude (full tools)\n"
                 "  normie mode      — switch to Groq (fast, no tools)\n"
-                "  god mode         — private uncensored layer (gitignored)\n"
                 "  research mode    — 3-agent debate on a question\n"
+                "  deliberate: <q> — careful planner→drafter→critic pipeline\n"
                 "  voice            — start voice mode (PTT by default)\n"
                 "  voice vad        — voice mode with voice-activity detection\n"
                 "  voice wake       — voice mode with wake-word detection\n"
                 "  briefing         — full daily briefing (weather/news/markets/HN/research)\n"
+                "  new chat         — start a fresh conversation (keeps long-term memory)\n"
+                "  chats            — list recent 10 conversations\n"
+                "  resume <id>      — restore a previous conversation by id\n"
                 "  analyze performance  — last 7-day performance report\n"
                 "  exit             — save session and quit"
             )
         elif cmd == "research mode":
+            # T-196: channel-agnostic two-step — set pending flag, consume next message
+            # as the question. Also accept inline: 'research <question>'.
+            # No input() calls — works from Telegram, voice, daemon, brain server.
+            self._pending_research = True
             print("\n" + "="*60)
             print("  PI RESEARCH MODE - 3-Agent Debate")
             print("="*60)
-            question = input("Research question: ").strip()
+            return "Ready for research. Reply with your question."
+        elif cmd.startswith("research ") and len(cmd) > 9:
+            question = user_input[len("research "):].strip()
             if question:
                 from core.research_mode import run_research_mode
-                context_str = "\n".join([
-                    f"{h['role'].upper()}: {h['content'][:200]}"
-                    for h in self.history[-10:]
-                    if h["role"] in ("user", "assistant")
-                ])
+                context_str = extract_text_from_messages(self.messages, n=10)
                 synthesis = run_research_mode(question, rounds=2, context=context_str)
                 if synthesis:
                     self.memory.memory_write(
                         content=f"Research ({datetime.now(timezone.utc).strftime('%Y-%m-%d')}): {question[:80]} | {synthesis[:300]}",
-                        tier="l3",
-                        importance=5,
-                        category="research_results"
+                        tier="l3", importance=5, category="research_results",
                     )
                     print("[Research] Results saved to memory")
                 return "[Research complete. Continue conversation or 'exit']"
@@ -604,12 +707,50 @@ class PiAgent:
             # T-142: reset short-term conversation context without touching L3
             # (durable facts) — like opening a fresh chat in ChatGPT/Claude.
             self.messages = []
-            self.history = []
             self._normie_handoff_context = ""
             self.conversation_id = uuid.uuid4().hex[:8]
+            self.plan_state.clear()  # T-183: plan belongs to the conversation, not the session
+            # T-186: register the new conversation so chats/resume can find it.
+            try:
+                self.memory.create_conversation(
+                    conversation_id=self.conversation_id,
+                    mode=self.mode,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                )
+            except Exception:
+                pass
             return (
                 f"New chat started (conversation {self.conversation_id}). "
                 "Short-term context cleared; long-term memory kept."
+            )
+
+        elif cmd == "chats":
+            # T-186: list recent conversations
+            convs = self.memory.list_conversations(limit=10)
+            if not convs:
+                return "No conversations on record yet."
+            lines = ["Recent conversations (newest first):"]
+            for c in convs:
+                active = " ← current" if c["id"] == self.conversation_id else ""
+                lines.append(f"  {c['id']}  {c['title'][:50]}  [{c['mode']}]  {c['last_active_at'][:16]}{active}")
+            return "\n".join(lines)
+
+        elif cmd.startswith("resume "):
+            # T-186: restore a previous conversation from SQLite
+            target_id = user_input[len("resume "):].strip()
+            if not target_id:
+                return "Usage: resume <conversation-id>"
+            turns = self.memory.load_conversation_turns(target_id, max_turns=40)
+            if not turns:
+                return f"No turns found for conversation '{target_id}'."
+            # Apply budget truncation to stay within context window
+            from agent.truncation import truncate_messages_safely as _tms
+            self.messages = _tms(turns, max_messages=20)
+            self.conversation_id = target_id
+            self.plan_state.clear()
+            return (
+                f"Resumed conversation {target_id} "
+                f"({len(self.messages)} messages loaded). Continue where you left off."
             )
 
         elif cmd == "exit":
@@ -627,6 +768,17 @@ class PiAgent:
             )
             return briefing.generate(save_to_obsidian=True)
 
+        # T-207: 'deliberate:' prefix — careful-answer pipeline (planner→drafter→critic).
+        # Higher-quality than a single pass; uses cheap tiers for planner/critic.
+        if cmd.startswith("deliberate:"):
+            question = user_input[len("deliberate:"):].strip()
+            if question:
+                from core.roles import CAREFUL_ANSWER_PIPELINE
+                print("[Pi] Deliberate mode: planner → drafter → critic…", flush=True)
+                result = CAREFUL_ANSWER_PIPELINE.run(question, self.router)
+                return result["final"]
+            return "[deliberate: prefix requires a question — e.g. 'deliberate: explain X']"
+
         # File attachment detection — if message contains a file path, inject context
         user_input = self._preprocess_file_refs(user_input)
 
@@ -638,12 +790,6 @@ class PiAgent:
             self.mode = "normie"
 
         # T-089 R8 Stage C: all modes route through _respond_via_config.
-        if os.environ.get("PI_GOD_LEGACY") == "1":
-            print(
-                "[Pi] PI_GOD_LEGACY=1 is deprecated since T-082. Unset it.",
-                file=sys.stderr, flush=True,
-            )
-
         interaction_start = datetime.now(timezone.utc)
 
         try:
@@ -651,18 +797,101 @@ class PiAgent:
                 user_input, interaction_start, get_mode_config(self.mode)
             )
         except Exception as e:
+            # T-195: redact before surfacing to user — raw str(e) can carry keys/URLs/paths.
             self.evolution.log_interaction(
                 user_input=user_input,
-                pi_response=f"Error: {str(e)}",
+                pi_response=f"Error: {_safe_error(e, audience='user')}",
                 tool_calls=[],
                 success=False,
                 mode=self.mode,
-                metadata={"error": str(e)},
+                metadata={"error": _safe_error(e, audience="public_log")},
             )
-            return f"[Pi] Error: {str(e)}"
+            return f"[Pi] Error: {_safe_error(e, audience='user')}"
+
+    # T-180: tools that MUST run sequentially (side-effectful or non-thread-safe)
+    _SERIAL_TOOL_NAMES: frozenset = frozenset([
+        # File writes
+        "modify_file", "create_file",
+        # Code execution (state-mutating, process-spawning)
+        "execute_bash", "execute_python",
+        # Computer + browser (single-window singletons)
+        "computer_screenshot", "computer_click", "computer_type", "computer_key",
+        "computer_scroll", "computer_move", "computer_drag", "computer_action",
+        "browser_open", "browser_click", "browser_type", "browser_scroll",
+        "browser_navigate", "browser_close", "browser_screenshot",
+        # Outbound comms (fire-and-forget, no idempotency)
+        "gmail_send", "telegram_send",
+        # Calendar + memory writes (ordering matters)
+        "calendar_create", "calendar_update", "calendar_delete",
+        "memory_write", "memory_delete",
+        # Media gen (expensive, provider-rate-limited)
+        "image_gen", "generate_video",
+        # Obsidian writes
+        "obsidian_write", "obsidian_append",
+    ])
+
+    # T-191: escalation keywords that signal premium-tier routing
+    _PREMIUM_KEYWORDS = frozenset([
+        "think hard", "think deeply", "ultra", "best model", "opus",
+        "use your full capacity", "architect", "design review",
+    ])
+
+    def _is_premium_turn(self, user_input: str) -> bool:
+        """True when the user input signals a task worth premium-tier routing."""
+        lower = user_input.lower()
+        return any(kw in lower for kw in self._PREMIUM_KEYWORDS)
+
+    # T-185: code-shape detection + compact repo map injection
+    _CODE_VERBS = frozenset([
+        "fix", "refactor", "implement", "test", "debug", "edit", "modify",
+        "create", "write", "rename", "break", "error", "bug", "add", "update",
+        "change", "remove", "delete", "import", "function", "class", "method",
+    ])
+    _CODE_MODULES = frozenset([
+        "agent/", "tools/", "scripts/", "testing/", "core/", "pi_agent",
+        "verify", "sprint", "retro", "truncation", "memory", "router",
+    ])
+
+    @staticmethod
+    def _is_code_shaped(user_input: str) -> bool:
+        """True when the message is likely about code — warrants repo map injection."""
+        lower = user_input.lower()
+        # .py path or known module path mentioned
+        if ".py" in lower or any(m in lower for m in PiAgent._CODE_MODULES):
+            return True
+        # code action verb in a short-ish message (long prose is less likely code)
+        words = lower.split()
+        if len(words) <= 30 and any(w in PiAgent._CODE_VERBS for w in words):
+            return True
+        return False
+
+    def _build_compact_repo_map(self, user_input: str) -> str:
+        """Return a ≤1600-char compact repo map block, using a session-level cache."""
+        if self._repo_map_cache is not None:
+            return self._repo_map_cache
+        try:
+            from tools.tools_project import ProjectTools
+            data = ProjectTools().repo_map(
+                query=user_input, max_files=15, symbols_per_file=6
+            )
+            lines = ["── REPO MAP (top files by relevance) ──────────────────────────"]
+            for entry in data.get("files", []):
+                path = entry["path"]
+                syms = ", ".join(entry["symbols"][:6])
+                lines.append(f"  {path}: {syms}")
+            lines.append(f"  ({data.get('total_files', 0)} total files, {data.get('method', '?')})")
+            lines.append("────────────────────────────────────────────────────────────────")
+            text = "\n".join(lines)
+            # Hard cap at ~400 tokens (1600 chars)
+            if len(text) > 1600:
+                text = text[:1597] + "…"
+            self._repo_map_cache = text
+        except Exception:
+            self._repo_map_cache = ""
+        return self._repo_map_cache
 
     def _prefetch_memory(self, user_input: str) -> str:
-        """Extract a keyword from user_input and search L3+L2 memory.
+        """Query-aware memory retrieval for the current turn (T-293).
 
         Only fires on recall questions — statements of fact and small talk are
         skipped entirely to avoid spurious searches ("followed", "planning", etc.).
@@ -672,7 +901,27 @@ class PiAgent:
         try:
             lower = user_input.lower().rstrip(" ?.")
 
-            # Step 1: only prefetch when the message is a recall question.
+            # T-205: episode recall triggers — route to conversation digest search
+            # before fact retrieval so narrative context wins over extracted facts.
+            EPISODE_TRIGGERS = (
+                "what did we decide", "last time we", "remember when",
+                "last session", "last conversation", "last time you", "we discussed",
+                "previously decided", "we agreed",
+            )
+            for trigger in EPISODE_TRIGGERS:
+                if trigger in lower:
+                    hits = self.memory.recall_episode(query=user_input, limit=4)
+                    if hits:
+                        lines = ["[EPISODE RECALL]"]
+                        for ep in hits:
+                            lines.append(
+                                f"  [{ep.get('created_at','')[:10]}] {ep.get('title','?')}: "
+                                f"{ep.get('digest','')[:200]}"
+                            )
+                        return "\n".join(lines)
+                    break
+
+            # Only prefetch when the message is a recall question.
             RECALL_SIGNALS = {
                 "what", "which", "remind", "tell me", "do i", "have i",
                 "show me", "when is", "where is", "who is", "my ",
@@ -684,56 +933,18 @@ class PiAgent:
             if not is_recall:
                 return ""
 
-            # Step 2: extract the most specific non-filler keyword.
-            stop_words = {
-                "the", "a", "an", "is", "are", "was", "were", "be", "been",
-                "have", "has", "had", "do", "does", "did", "will", "would",
-                "can", "could", "should", "may", "might", "shall", "must",
-                "and", "or", "but", "if", "in", "on", "at", "to", "for",
-                "of", "with", "by", "from", "up", "about", "into", "what",
-                "how", "when", "where", "who", "why", "that", "this", "it",
-                "i", "you", "we", "me", "my", "your", "our", "please", "just",
-                "like", "so", "then", "now", "its", "as", "not", "no", "all",
-                # T-027: reject generic nouns that never produce useful hits
-                "location", "things", "stuff", "planning", "going", "good",
-                "great", "okay", "sure", "yeah", "tell", "remind", "show",
-                "have", "give", "know", "need", "want", "think", "said",
-            }
-            words = re.findall(r"\b[a-zA-Z]{4,}\b", user_input.lower())
-            keywords = [w for w in words if w not in stop_words]
-            if not keywords:
-                return ""
-
-            # Step 3 (T-151): semantic search first — it handles paraphrase and
-            # multi-concept questions far better than a single-keyword lexical
-            # lookup. Query the whole keyword phrase, not just keywords[0].
-            phrase = " ".join(keywords[:6])
-            label = phrase
-            try:
-                hits = self.memory.memory_search_semantic(query=phrase, limit=4) or []
-            except Exception:
-                hits = []
-
-            # Fallback: lexical lookup on the top few keywords, merged + deduped.
-            # Covers the cases semantic can't (no GEMINI key / no embeddings /
-            # private namespace), which all return [] gracefully.
-            if not hits:
-                seen = set()
-                merged: List[Dict] = []
-                for kw in keywords[:3]:
-                    q = kw[:-1] if (kw.endswith("s") and len(kw) > 4) else kw
-                    for h in (self.memory.memory_read(query=q, limit=4, current_mode=self.mode) or []):
-                        key = h.get("id") or (h.get("content") or "")[:80]
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        merged.append(h)
-                hits = merged[:4]
-                label = ", ".join(keywords[:3])
+            # T-293: one fused query-time retrieval across L3+L2, dense cosine +
+            # lexical (BM25/context), replacing the old single-keyword-extraction
+            # + two-step (semantic-then-lexical) search.
+            hits = self.memory.retrieve(
+                user_input, k=4, current_mode=self.mode,
+                current_conversation_id=self.conversation_id,
+                current_scope=self.current_scope,
+            ) or []
 
             if not hits:
                 return ""
-            lines = [f"[PREFETCH: '{label}']"]
+            lines = ["[RELEVANT MEMORY]"]
             for h in hits[:4]:
                 tier_label = (h.get("tier") or "L2").upper()
                 content = (h.get("content") or "")[:200]
@@ -741,6 +952,26 @@ class PiAgent:
             return "\n".join(lines)
         except Exception:
             return ""
+
+    @staticmethod
+    def _serialize_tool_result(result: Any, cap: int = 32_000) -> str:
+        """Serialize a tool result to a JSON string safe for LLM consumption (T-197).
+
+        - default=str handles datetime/Path/bytes without TypeError.
+        - Results exceeding `cap` chars are truncated with an explicit notice so
+          the model knows and can re-call with a narrower scope.
+        """
+        if isinstance(result, str):
+            serialized = result
+        else:
+            try:
+                serialized = json.dumps(result, default=str)
+            except Exception:
+                serialized = str(result)
+        if len(serialized) > cap:
+            notice = f" ... [truncated {len(serialized) - cap} chars — re-call with narrower scope]"
+            serialized = serialized[:cap] + notice
+        return serialized
 
     def _build_assistant_content(self, resp: LLMResponse) -> list:
         """Convert LLMResponse into Anthropic canonical assistant content list."""
@@ -756,19 +987,22 @@ class PiAgent:
             })
         return content or [{"type": "text", "text": ""}]
 
-    def _truncate_messages_safely(self, max_messages: int = 20):
-        """Compress or hard-truncate message history depending on length.
+    def _truncate_messages_safely(self, max_messages: int = 20,
+                                    token_budget: Optional[int] = None):
+        """Compress or hard-truncate message history (T-184 extended).
 
-        At 30+ messages, Groq summarises the oldest half into a context block
-        (free, zero Claude cost) so long sessions don't lose earlier context.
-        On CompressionFailed (both LLMs down), hard-truncate to guarantee progress.
-        Below the threshold, use safe hard-truncation logic.
+        T-184: when token_budget is set, compression also triggers when estimated
+        tokens exceed the budget — blind to actual token weight removed. Uses the
+        structured digest format so the file-touch trail survives compression.
         """
-        if len(self.messages) >= 30:
+        from agent.truncation import estimate_tokens
+        over_count = len(self.messages) >= 30
+        over_budget = token_budget is not None and estimate_tokens(self.messages) > token_budget
+        if over_count or over_budget:
             try:
                 self.messages = compress_messages_with_groq(
                     self.messages, self.groq, threshold=30, keep_recent=12,
-                    anthropic_client=self.claude,
+                    anthropic_client=self.claude, token_budget=token_budget,
                 )
             except CompressionFailed as cf:
                 _track_silent("compression.both_llms_failed", cf)
@@ -793,13 +1027,7 @@ class PiAgent:
             lines = [f"# Groq Session — {ts}", ""]
             for msg in self.messages:
                 role = msg.get("role", "")
-                content = msg.get("content", "")
-                if isinstance(content, list):
-                    text_parts = [
-                        b.get("text", "") for b in content
-                        if isinstance(b, dict) and b.get("type") == "text"
-                    ]
-                    content = " ".join(text_parts).strip()
+                content = _message_text(msg)
                 if content:
                     label = "**Ash**" if role == "user" else "**Pi (Groq)**"
                     lines.append(f"{label}: {content}")
@@ -819,14 +1047,7 @@ class PiAgent:
         turns = []
         for msg in self.messages[-24:]:  # up to 12 pairs
             role = msg.get("role", "")
-            content = msg.get("content", "")
-            if isinstance(content, list):
-                # Extract text blocks only; skip tool_use/tool_result blocks
-                text_parts = [
-                    b.get("text", "") for b in content
-                    if isinstance(b, dict) and b.get("type") == "text"
-                ]
-                content = " ".join(text_parts).strip()
+            content = _message_text(msg)
             if not content:
                 continue
             label = "Ash" if role == "user" else "Pi (Groq)"
@@ -845,42 +1066,12 @@ class PiAgent:
 
     # ── T-089 R8: unified response path — all modes ────────────────────────────
 
-    def _check_god_mode_available(self) -> tuple:
-        """T-108: preflight before switching to god mode.
-
-        Returns (True, "") if all conditions pass, or (False, reason) on the
-        first failing condition. Order: DB file, URL set, URL inequality,
-        module importable.
-        """
-        from agent.modes import get_mode_config
-        cfg = get_mode_config("god")
-        db_rel = cfg.memory_db  # "data/god_memory.db"
-        db_path = Path(__file__).parent / db_rel if db_rel else None
-        if db_path is None or not db_path.exists():
-            return False, f"god_memory.db not found at {db_path}"
-
-        god_url = os.environ.get("GOD_SUPABASE_URL", "")
-        if not god_url:
-            return False, "GOD_SUPABASE_URL not set"
-
-        pub_url = os.environ.get("SUPABASE_URL", "")
-        if god_url == pub_url:
-            return False, "GOD_SUPABASE_URL == SUPABASE_URL (would leak)"
-
-        try:
-            import importlib
-            importlib.import_module("agent.god")
-        except ImportError:
-            pass  # module was archived — not required for god mode to function
-
-        return True, ""
-
     def _get_memory_for_config(self, cfg: ModeConfig):
         """Return the MemoryTools instance for cfg.memory_namespace.
 
-        Public namespace returns self.memory. Private namespaces lazily build
-        a MemoryTools(supabase_url="", db_path=cfg.memory_db, namespace=ns)
-        instance and cache it so repeated turns share one SQLite connection.
+        Public namespace returns self.memory. A non-default namespace lazily
+        builds a MemoryTools(db_path=cfg.memory_db, namespace=ns) instance and
+        caches it so repeated turns share one SQLite connection.
         """
         ns = cfg.memory_namespace
         cached = self._memory_by_namespace.get(ns)
@@ -889,18 +1080,9 @@ class PiAgent:
         if cfg.memory_db is None:
             mem = self.memory
         else:
-            # T-095: use separate private Supabase project when creds are set.
-            # Fail loud if someone accidentally points god at the public project.
-            god_url = GOD_SUPABASE_URL or ""
-            god_key = GOD_SUPABASE_KEY or ""
-            if god_url and god_url == (SUPABASE_URL or ""):
-                raise RuntimeError(
-                    "GOD_SUPABASE_URL must not equal SUPABASE_URL — "
-                    "god memory requires a separate private Supabase project."
-                )
             mem = MemoryTools(
-                supabase_url=god_url,
-                supabase_key=god_key,
+                supabase_url="",
+                supabase_key="",
                 db_path=cfg.memory_db,
                 namespace=ns,
             )
@@ -939,13 +1121,12 @@ class PiAgent:
     ) -> str:
         """Single response path for all modes (T-089 R8 Stage B+C).
 
-        Dispatched for root, normie, and god. Behavior is driven entirely by
+        Dispatched for root and normie. Behavior is driven entirely by
         ModeConfig flags — no per-mode branches inside this method.
 
-        Privacy invariant: god (public_logging=False) skips both the public
-        evolution log and the public raw_wiki write. Explicit memory_write
-        tool calls during the turn already persist to god_memory.db via the
-        memory_override, matching agent/god.py parity ("god is a sink").
+        A mode with public_logging=False skips both the public evolution log
+        and the public raw_wiki write; the cfg.ctx_token_budget / allowlist
+        knobs otherwise fully parameterize the path.
         """
         mem = self._get_memory_for_config(cfg)
         allowed_tools = self._filtered_tool_defs(cfg)
@@ -957,8 +1138,6 @@ class PiAgent:
                 duration = (datetime.now(timezone.utc) - interaction_start).total_seconds()
                 self.messages.append({"role": "user", "content": user_input})
                 self.messages.append({"role": "assistant", "content": shortcut})
-                self.history.append({"role": "user", "content": user_input})
-                self.history.append({"role": "assistant", "content": shortcut})
                 self.turn_number += 1
                 if cfg.public_logging:
                     self._async_log(
@@ -975,6 +1154,7 @@ class PiAgent:
                         turn_number=self.turn_number, user_content=user_input,
                         assistant_content=shortcut, mode=cfg.name,
                     )
+                self._last_turn_meta = {"tools_used": [], "cost": 0.0, "model": "shortcut"}  # T-198
                 return shortcut
 
         # ── 2. System prompt ───────────────────────────────────────────
@@ -995,9 +1175,21 @@ class PiAgent:
                     dynamic_p += (
                         f"\n\nSESSION CONTEXT (read-only, from this conversation):\n{session_ctx}"
                     )
+            # T-185: compact repo map for code-shaped turns (root only, cached)
+            if cfg.inject_repo_map and self._is_code_shaped(user_input):
+                repo_map_block = self._build_compact_repo_map(user_input)
+                if repo_map_block:
+                    dynamic_p += "\n\n" + repo_map_block
+            # T-183: inject active plan block (survives compaction in dynamic segment)
+            if not self.plan_state.is_empty():
+                dynamic_p += "\n\n" + self.plan_state.render()
+            # T-194: per-turn honest state block (mode/conversation/tools/refusal)
+            dynamic_p += "\n\n" + build_session_state_block(
+                cfg, self.conversation_id, self.turn_number + 1, len(allowed_tools)
+            )
             system_prompt = (static_p, warm_p, dynamic_p)
         else:
-            # Normie / god: single string prompt
+            # Normie: single string prompt
             system_prompt = self._load_mode_prompt(cfg)
             l3_ctx = mem.get_l3_context(max_tokens=600)
             if l3_ctx:
@@ -1008,10 +1200,14 @@ class PiAgent:
                     system_prompt += (
                         f"\n\nSESSION CONTEXT (read-only, from this conversation):\n{session_ctx}"
                     )
+            # T-194: per-turn honest state block (mode/conversation/tools/refusal)
+            system_prompt += "\n\n" + build_session_state_block(
+                cfg, self.conversation_id, self.turn_number + 1, len(allowed_tools)
+            )
 
         # ── 3. Message history & truncation ───────────────────────────
         self.messages.append({"role": "user", "content": user_input})
-        self._truncate_messages_safely(20)
+        self._truncate_messages_safely(20, token_budget=cfg.ctx_token_budget)
         if cfg.ctx_message_window is not None:
             # T-149: normie sends a real bounded multi-turn history (both sides),
             # safe-sliced so the window never starts mid tool-pair. Providers
@@ -1019,14 +1215,33 @@ class PiAgent:
             llm_messages = truncate_messages_safely(
                 self.messages, max_messages=cfg.ctx_message_window
             )
-        elif cfg.single_message_ctx:  # DEPRECATED path, kept for back-compat
-            llm_messages = [{"role": "user", "content": user_input}]
         else:
             llm_messages = self.messages
 
         # ── 4. First LLM call ─────────────────────────────────────────
         tool_calls_made: List[Dict] = []
         l1_tool_records: List[Dict] = []
+        self._turn_citations: List[Dict] = []  # T-229: collected by _execute_tool
+
+        # T-178: live streaming callback. Prints "\nPi: " on the first delta,
+        # then each text token as it arrives. tool_use rounds emit no text deltas
+        # via the Anthropic SSE protocol, so the prefix never appears mid-tool.
+        _stream_started = False
+
+        def _on_delta(text_chunk: str) -> None:
+            nonlocal _stream_started
+            if not _stream_started:
+                print("\nPi: ", end="", flush=True)
+                _stream_started = True
+            print(text_chunk, end="", flush=True)
+
+        # T-191: per-task escalation to premium tier for hard/code-edit requests.
+        # Default-OFF: premium requires PI_PREMIUM_DAILY_LIMIT env var > 0.
+        actual_tier = cfg.router_tier
+        _premium_limit = float(os.environ.get("PI_PREMIUM_DAILY_LIMIT", "0.0"))
+        if (cfg.name == "root" and _premium_limit > 0.0
+                and self._is_premium_turn(user_input)):
+            actual_tier = "premium"
 
         try:
             resp = self.router.chat(
@@ -1034,23 +1249,35 @@ class PiAgent:
                 system=system_prompt,
                 tools=allowed_tools,
                 max_tokens=cfg.max_tokens,
-                tier=cfg.router_tier,
+                tier=actual_tier,
+                on_delta=_on_delta,
             )
         except RuntimeError as e:
             err_str = str(e).lower()
-            if "rate" in err_str or "429" in err_str:
+            # T-210: surface actionable cause instead of generic fallback
+            if "credit balance" in err_str or "billing" in err_str or "insufficient_quota" in err_str:
                 content = (
-                    "Hit the daily free-tier limit on normie mode. "
+                    "Anthropic credits exhausted — Pi needs a top-up before root mode works. "
+                    "Add credits at console.anthropic.com or set a CEREBRAS_API_KEY fallback."
+                )
+            elif "resource_exhausted" in err_str or "free_tier" in err_str:
+                content = (
+                    "Free-tier quota exhausted on all configured providers. "
+                    "Try again tomorrow or add a paid API key."
+                )
+            elif "rate" in err_str or "429" in err_str:
+                content = (
+                    "Hit the daily free-tier limit. "
                     "Switch to root mode, or check back in an hour."
                 )
+            elif "no key" in err_str or "invalid_api_key" in err_str:
+                content = "API key error — check .env for a missing or invalid key."
             elif "api" in err_str or "status" in err_str:
                 content = "Something went wrong on my end — try again in a moment."
             else:
                 content = "Couldn't reach my language model — try again in a moment."
             print(f"[Pi] {cfg.name} router error: {e}", flush=True)
             self.messages.append({"role": "assistant", "content": content})
-            self.history.append({"role": "user", "content": user_input})
-            self.history.append({"role": "assistant", "content": content})
             self.turn_number += 1
             duration = (datetime.now(timezone.utc) - interaction_start).total_seconds()
             if cfg.public_logging:
@@ -1063,6 +1290,7 @@ class PiAgent:
                               "session_id": self.session_id,
                               "error": _safe_error(e, audience="public_log")},
                 )
+            self._last_turn_meta = {"tools_used": [], "cost": 0.0, "model": "error"}  # T-198
             return content
 
         self.messages.append({"role": "assistant",
@@ -1071,23 +1299,86 @@ class PiAgent:
         t_out = resp.tokens_out
 
         # ── 5. Agentic tool loop ───────────────────────────────────────
+        _interrupted = False
         while resp.stop_reason == "tool_use" and cfg.supports_tools:
             tool_results = []
-            for tc in resp.tool_calls:
-                result = self._execute_tool(tc.name, tc.input, memory_override=mem)
-                tool_calls_made.append({"id": tc.id, "name": tc.name, "input": tc.input})
-                l1_tool_records.append({
-                    "name": tc.name,
-                    "input": dict(tc.input),
-                    "result_summary": str(result)[:500],
-                })
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tc.id,
-                    "content": json.dumps(result) if not isinstance(result, str) else result,
-                })
+            try:
+                # T-180: run independent tools concurrently; serial tools fall back
+                # to sequential. Batch is parallel only when ALL calls are non-serial
+                # and there are 2+ calls — correctness beats speed when writes involved.
+                calls = resp.tool_calls
+                use_parallel = (
+                    len(calls) > 1
+                    and all(tc.name not in self._SERIAL_TOOL_NAMES for tc in calls)
+                )
+                if use_parallel:
+                    import concurrent.futures as _cf
+                    _CALL_TIMEOUT = 60  # per-tool timeout seconds
+                    results_by_id: dict = {}
+                    with _cf.ThreadPoolExecutor(max_workers=4) as pool:
+                        futures = {
+                            pool.submit(
+                                self._execute_tool, tc.name, tc.input,
+                                memory_override=mem
+                            ): tc
+                            for tc in calls
+                        }
+                        for fut, tc in futures.items():
+                            try:
+                                res = fut.result(timeout=_CALL_TIMEOUT)
+                            except _cf.TimeoutError:
+                                res = {"error": "tool_timeout",
+                                       "message": f"{tc.name} exceeded {_CALL_TIMEOUT}s"}
+                            except Exception as exc:
+                                res = {"error": "tool_error", "message": str(exc)}
+                            results_by_id[tc.id] = res
+                    # Reassemble in original order
+                    for tc in calls:
+                        result = results_by_id[tc.id]
+                        tool_calls_made.append({"id": tc.id, "name": tc.name, "input": tc.input})
+                        l1_tool_records.append({
+                            "name": tc.name,
+                            "input": dict(tc.input),
+                            "result_summary": str(result)[:500],
+                        })
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tc.id,
+                            "content": self._serialize_tool_result(result),
+                        })
+                else:
+                    for tc in calls:
+                        result = self._execute_tool(tc.name, tc.input, memory_override=mem)
+                        tool_calls_made.append({"id": tc.id, "name": tc.name, "input": tc.input})
+                        l1_tool_records.append({
+                            "name": tc.name,
+                            "input": dict(tc.input),
+                            "result_summary": str(result)[:500],
+                        })
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tc.id,
+                            "content": self._serialize_tool_result(result),  # T-197
+                        })
+            except KeyboardInterrupt:
+                # T-179: user pressed Ctrl+C mid-turn. Synthesize cancellation
+                # results for any unanswered tool_use blocks so message pairing
+                # stays valid (no orphan tool_use without tool_result).
+                executed_ids = {r["tool_use_id"] for r in tool_results}
+                for tc in resp.tool_calls:
+                    if tc.id not in executed_ids:
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tc.id,
+                            "content": "[cancelled by user]",
+                        })
+                _interrupted = True
 
             self.messages.append({"role": "user", "content": tool_results})
+            if _interrupted:
+                # Append a synthetic assistant turn so history stays well-formed
+                self.messages.append({"role": "assistant", "content": "[Turn cancelled by user interrupt.]"})
+                break
 
             resp = self.router.chat(
                 messages=self.messages,
@@ -1095,6 +1386,7 @@ class PiAgent:
                 tools=allowed_tools,
                 max_tokens=cfg.max_tokens,
                 tier=cfg.router_tier,
+                on_delta=_on_delta,
             )
 
             self.messages.append({"role": "assistant",
@@ -1103,18 +1395,45 @@ class PiAgent:
             t_out += resp.tokens_out
 
         # ── 6. Finalise turn ───────────────────────────────────────────
+        # T-178: if streaming produced output, terminate the live line and mark the
+        # flag so run() skips re-printing the same text.
+        if _stream_started:
+            print("", flush=True)  # newline after last streamed token
+            self._last_turn_streamed = True
+        else:
+            self._last_turn_streamed = False
+
         final_text = resp.text
-        self.history.append({"role": "user", "content": user_input})
-        self.history.append({"role": "assistant", "content": final_text})
+        # T-229: if research tools ran and the model omitted a Sources section, append one.
+        _cites = getattr(self, "_turn_citations", [])
+        if _cites and "**Sources**" not in final_text and "Sources" not in final_text[-200:]:
+            _seen_urls: set = set()
+            _src_lines = []
+            for c in _cites:
+                u = c.get("url", "")
+                if u and u not in _seen_urls:
+                    _seen_urls.add(u)
+                    t = c.get("title", u)
+                    _src_lines.append(f"- [{t}]({u})")
+            if _src_lines:
+                final_text = final_text.rstrip() + "\n\n**Sources**\n" + "\n".join(_src_lines)
+        self._turn_citations = []
 
         duration_s = (datetime.now(timezone.utc) - interaction_start).total_seconds()
         self.turn_number += 1
+        total_cost = self._calculate_cost(t_in, t_out)
+
+        # T-198: stash metadata so process_input can write real values to turns.jsonl
+        self._last_turn_meta = {
+            "tools_used": [tc["name"] for tc in tool_calls_made],
+            "cost": total_cost,
+            "model": f"{resp.provider}/{resp.model}",
+        }
 
         if cfg.public_logging:
-            total_cost = self._calculate_cost(t_in, t_out)
             # T-130: optional inline cost footer (PI_SHOW_COST=on). stderr only;
             # never enters final_text so Telegram/voice paths stay clean.
-            # Gated by cfg.public_logging — god mode (privacy invariant 2) never emits.
+            # Gated by cfg.public_logging — a non-logging mode never emits.
             _emit_cost_footer(
                 total_cost, t_in, t_out,
                 f"{resp.provider}/{resp.model}", duration_s,
@@ -1145,6 +1464,30 @@ class PiAgent:
                 tokens_out=t_out,
                 cost=total_cost,
             )
+            # T-186: persist both sides of the turn to conversation_turns for resume.
+            # idx is 0-based; user = even, assistant = odd within each turn pair.
+            _ts_now = datetime.now(timezone.utc).isoformat()
+            _base_idx = (self.turn_number - 1) * 2
+            self._async_log(
+                mem.persist_turn,
+                conversation_id=self.conversation_id,
+                role="user",
+                content=user_input,
+                idx=_base_idx,
+                ts=_ts_now,
+            )
+            self._async_log(
+                mem.persist_turn,
+                conversation_id=self.conversation_id,
+                role="assistant",
+                content=final_text,
+                idx=_base_idx + 1,
+                ts=_ts_now,
+            )
+            # Lazy title generation on the second turn (first exchange complete)
+            if self.turn_number == 2 and user_input:
+                _title = user_input[:80].strip()
+                self._async_log(mem.title_conversation, self.conversation_id, _title)
 
         return final_text
 
@@ -1190,7 +1533,7 @@ Failed by model:
     
     def _generate_session_summary(self) -> str:
         """Thin wrapper preserving the method API; logic in agent.session."""
-        return generate_session_summary(self.groq, self.messages, self.history, n=12)
+        return generate_session_summary(self.router, self.messages, n=12)
 
     def _daily_briefing(self) -> str:
         """Generate a startup briefing from L3 context + recent session stats.
@@ -1343,9 +1686,12 @@ Failed by model:
                     on_exit(self)
                     break
 
-                if response:
+                # T-178: skip re-printing if streaming already wrote the text live.
+                if not self._last_turn_streamed and response:
                     print(f"\nPi: {response}\n")
+                if self._last_turn_streamed or response:
                     _emit_status_line(self)
+                self._last_turn_streamed = False
 
             except KeyboardInterrupt:
                 # T-082 audit-bug-2: even on Ctrl+C, drain the async log queue

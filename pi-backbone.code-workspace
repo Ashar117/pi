@@ -26,7 +26,7 @@
       "vault/notes/north_star.md",
       "vault/notes/templates/Entity.md",
       "vault/notes/templates/North-Star.md",
-      "vault/.god/**/*",
+      "_god_archive/**/*",
       "docs/_archive/**/*",
       "pi_env/**/*",
       "data/**/*",

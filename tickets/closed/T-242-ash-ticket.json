@@ -1,0 +1,17 @@
+{
+  "id": "T-242",
+  "source": "Pi self-report (session tool call)",
+  "title": "Ash ticket",
+  "component": "core",
+  "what_failed": "something",
+  "where_failed": "",
+  "why_likely": "",
+  "severity": "P3",
+  "suggested_fix": "",
+  "status": "closed",
+  "created": "2026-06-21T17:23:07.592263+00:00",
+  "closed": null,
+  "linked_solution": null,
+  "root_cause_confidence": "hypothesis",
+  "resolution": "test artifact - auto-closed"
+}

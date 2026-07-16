@@ -377,3 +377,23 @@ class TestRunCheck:
             ppg.run_check(root=tmp_path)
 
         assert (reports_dir / "privacy_publish_guard.md").exists()
+
+
+# ── T-158: check_code_in_docs (archive-leak guard) ─────────────────────────────
+
+class TestCheckCodeInDocs:
+    def test_no_py_under_docs_passes(self):
+        status, _ = ppg.check_code_in_docs(["docs/STATUS.md", "README.md"])
+        assert status == Status.PASS
+
+    def test_py_under_docs_fails_when_public(self):
+        status, lines = ppg.check_code_in_docs(
+            ["docs/_archive/evolution_self_modifier_v1.py"], repo_private=False)
+        assert status == Status.FAIL
+        assert any("evolution_self_modifier" in l for l in lines)
+
+    def test_py_under_docs_ok_when_private(self):
+        status, lines = ppg.check_code_in_docs(
+            ["docs/_archive/evolution_self_modifier_v1.py"], repo_private=True)
+        assert status == Status.PASS
+        assert any("private" in l.lower() for l in lines)

@@ -35,6 +35,8 @@ from typing import Dict, List, Optional, Tuple
 # ── Tuning constants ─────────────────────────────────────────────────────────
 
 EMBEDDING_MODEL = "gemini-embedding-001"
+QWEN_EMBEDDING_MODEL = os.getenv("QWEN_EMBEDDING_MODEL", "text-embedding-v3")
+_QWEN_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 COSINE_DUPLICATE_THRESHOLD = 0.90      # >= this: drop as duplicate
 COSINE_BORDERLINE_THRESHOLD = 0.75     # >= this but < duplicate: ask Haiku
 HAIKU_MODEL = "claude-haiku-4-5-20251001"
@@ -63,6 +65,25 @@ def _gemini_client():
         return None
 
 
+_QWEN_CLIENT = None
+
+
+def _qwen_client():
+    """Lazy DashScope (OpenAI-compatible) client. Returns None if no key."""
+    global _QWEN_CLIENT
+    if _QWEN_CLIENT is not None:
+        return _QWEN_CLIENT
+    key = os.getenv("QWEN_API_KEY")
+    if not key:
+        return None
+    try:
+        from openai import OpenAI
+        _QWEN_CLIENT = OpenAI(api_key=key, base_url=_QWEN_BASE_URL, timeout=30.0)
+        return _QWEN_CLIENT
+    except Exception:
+        return None
+
+
 def _anthropic_client():
     """Lazy Anthropic client used for the Haiku tiebreaker."""
     global _ANTHROPIC_CLIENT
@@ -81,8 +102,25 @@ def _anthropic_client():
 
 # ── Embedding ────────────────────────────────────────────────────────────────
 
+def _qwen_embed(text: str) -> Optional[List[float]]:
+    """DashScope text-embedding-v3 via the OpenAI-compatible endpoint.
+
+    Never raises — returns None on any failure (matches get_embedding contract).
+    """
+    client = _qwen_client()
+    if client is None:
+        return None
+    try:
+        resp = client.embeddings.create(model=QWEN_EMBEDDING_MODEL, input=text)
+        return list(resp.data[0].embedding)
+    except Exception as e:
+        print(f"[Dedup] qwen embed failed (non-fatal): {e}")
+        return None
+
+
 def get_embedding(text: str) -> Optional[List[float]]:
-    """Compute a Gemini embedding. Returns None on any failure.
+    """Compute an embedding — Qwen (DashScope) when QWEN_API_KEY is set,
+    else Gemini. Returns None on any failure.
 
     Never raises — failure here just means semantic dedup is skipped for this
     write, lexical dedup still runs, fact is still preserved.
@@ -90,6 +128,10 @@ def get_embedding(text: str) -> Optional[List[float]]:
     text = (text or "").strip()
     if not text:
         return None
+    if os.getenv("QWEN_API_KEY"):
+        emb = _qwen_embed(text)
+        if emb is not None:
+            return emb
     client = _gemini_client()
     if client is None:
         return None

@@ -185,6 +185,27 @@ def check_private_impl(tracked: List[str], repo_private: bool = False) -> Tuple[
     return Status.FAIL, hits
 
 
+def check_code_in_docs(tracked: List[str], repo_private: bool = False) -> Tuple[Status, List[str]]:
+    """T-158: flag tracked docs/**/*.py — the 'archive to docs/' path that once
+    leaked evolution_self_modifier_v1.py into a public repo. In a public repo
+    this is a FAIL (implementation reachable via docs); in a private repo it is
+    expected (PASS-with-note), consistent with check_private_impl.
+    """
+    hits = [f for f in tracked if f.startswith("docs/") and f.endswith(".py")]
+    if not hits:
+        return Status.PASS, ["✅ No Python files tracked under docs/"]
+    if repo_private:
+        return Status.PASS, [
+            f"ℹ Repo private — {len(hits)} docs/*.py tracked is acceptable; "
+            f"would FAIL in a public repo (T-158)."
+        ]
+    return Status.FAIL, [
+        f"`{f}` — Python code under docs/ in a PUBLIC repo "
+        f"*(archive code OUTSIDE the published tree; see T-158)*"
+        for f in hits
+    ]
+
+
 def check_private_data(tracked: List[str]) -> Tuple[Status, List[str]]:
     """FAIL for private data/logs/vault; WARN for data/README.md."""
     hits: List[str] = []
@@ -357,6 +378,8 @@ def run_check(strict: bool = False, root: Path = _DEFAULT_ROOT) -> Status:
          lambda: check_private_impl(tracked, repo_private=private)),
         ("## 2. Private Data / Logs Tracked",
          lambda: check_private_data(tracked)),
+        ("## 2b. Code Under docs/ (archive-leak guard)",
+         lambda: check_code_in_docs(tracked, repo_private=private)),
         ("## 3. Credential Patterns",
          lambda: check_secrets(staged, public_doc_paths)),
         ("## 4. Private-Mode References in Public Docs",

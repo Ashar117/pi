@@ -82,6 +82,27 @@ class PiScheduler:
             "type": "weekly",
         })
 
+        # T-259: rotate logs/turns.jsonl once it passes ~50MB — daily 03:30.
+        # scripts/passive/turns_log_rotate.py is the standalone invocation;
+        # this job runs the same code in-daemon.
+        schedule.every().day.at("03:30").do(self._turns_log_rotate_job)
+        self._jobs.append({
+            "id": "turns_log_rotate",
+            "description": "Rotate logs/turns.jsonl past 50MB, daily 03:30 (T-259)",
+            "type": "daily",
+        })
+
+        # T-285: vault mirror previously only synced at session exit, and the
+        # daemon went ~6 months without a clean exit — per-ticket briefs froze
+        # while tickets/closed/ kept growing. A daily job means it can't rot
+        # silently again even if exit-sync keeps not happening.
+        schedule.every().day.at("03:45").do(self._vault_sync_job)
+        self._jobs.append({
+            "id": "vault_sync",
+            "description": "Sync vault mirror from Supabase/SQLite, daily 03:45 (T-285)",
+            "type": "daily",
+        })
+
         # T-083 R2.3: weekly tool usage audit — Friday 02:00.
         # Files P3 prune tickets for unused tools, P2 fix tickets for high-failure tools.
         schedule.every().friday.at("02:00").do(self._tool_usage_audit_job)
@@ -221,6 +242,30 @@ class PiScheduler:
             logger.exception("PiScheduler: L2 prune failed")
         logger.info("PiScheduler: memory prune done: %s", out)
         return out
+
+    def _turns_log_rotate_job(self) -> Dict:
+        """T-259: gzip-archive logs/turns.jsonl once it exceeds ~50MB."""
+        try:
+            from agent.turn_log import rotate_turns_log
+            archived = rotate_turns_log()
+            if archived:
+                logger.info("PiScheduler: rotated turns.jsonl -> %s", archived)
+                return {"rotated": str(archived)}
+            return {"rotated": None}
+        except Exception as e:
+            logger.exception("PiScheduler: turns.jsonl rotation failed")
+            return {"rotated": None, "error": str(e)}
+
+    def _vault_sync_job(self) -> Dict:
+        """T-285: refresh the vault mirror (incl. per-ticket briefs) daily."""
+        try:
+            from tools.tools_obsidian import sync_vault
+            result = sync_vault(self._agent.memory)
+            logger.info("PiScheduler: vault sync done: %s", result)
+            return result
+        except Exception as e:
+            logger.exception("PiScheduler: vault sync failed")
+            return {"success": False, "error": str(e)}
 
     def _weekly_audit_job(self) -> Dict:
         """T-085 R4: run the weekly memory audit + write digest + Telegram notify."""

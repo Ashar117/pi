@@ -1,0 +1,24 @@
+{
+  "id": "T-223",
+  "batch": "profile-system",
+  "source": "Ash feature request 2026-06-21 \u00e2\u20ac\u201d route each turn through the right profile without cross-bleed or races.",
+  "title": "Profiles: turn-scoped profile switching + concurrency safety",
+  "component": "agent/conversation.py (pattern), agent/profile.py, pi_agent.py, tools/tools_telegram.py, agent/prompt.py",
+  "current_state": "agent/conversation.py::conversation_switch already saves/restores conversation_id + messages around a turn, and the brain server serializes turns with a FIFO asyncio.Lock. There is no equivalent for profile: the agent has one memory, one consciousness, one namespace for all turns.",
+  "target_state": "A profile_switch(agent, profile) context manager (mirroring conversation_switch) sets agent.current_profile, points memory to the per-profile MemoryTools (T-221), selects the per-profile consciousness prompt, and RESTORES all of it in a finally block. Telegram turns wrap process_input in profile_switch(resolved_profile) AND conversation_switch (per-profile conversation_id, e.g. telegram:<chat_id> stored in the profile's own DB). Switching is turn-scoped and runs inside the existing serialization lock, so concurrent Ash+guest turns can't interleave state. Prompt assembly selects the profile's prompt each turn (no cross-profile cache bleed).",
+  "severity": "P1",
+  "depends_on": [
+    "T-221"
+  ],
+  "status": "closed",
+  "created": "2026-06-21T00:00:00+00:00",
+  "migration_plan": [
+    "1. agent/profile.py: profile_switch(agent, profile) contextmanager \u00e2\u20ac\u201d save agent.current_profile + agent.memory ref + active consciousness; set them for the profile; restore in finally (exact shape of conversation_switch).",
+    "2. tools_telegram._process_as_telegram_peer: resolve profile from chat_id (T-222), then `with profile_switch(agent, profile): with conversation_switch(agent, conv_id): process_input(...)`. conv_id resolves within the profile's own DB so guest conversations never touch pi.db.",
+    "3. agent/prompt.py build_system_prompt_split: take the consciousness/prompt from the active profile (ash -> consciousness.txt; guest -> guest prompt from T-224). Ensure the per-profile static segment is what gets cached (no shared static across profiles).",
+    "4. Confirm ordering: profile_switch is OUTERMOST so memory + prompt are correct before conversation context loads.",
+    "5. Tests: testing/test_profile_switching.py \u00e2\u20ac\u201d a guest turn then an ash turn: ash's messages/memory unchanged; guest turn reads/writes only the guest DB; current_profile restored after each turn even on exception; nested switch/restore leaves agent state identical to start."
+  ],
+  "risk_notes": "Order matters (profile outer, conversation inner). Must restore on exception. Rely on the existing FIFO lock for serialization \u00e2\u20ac\u201d do NOT add a second locking scheme. Keep the context managers symmetric and boring.",
+  "closed": "2026-06-26T23:06:39.285423+00:00"
+}

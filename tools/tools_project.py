@@ -12,6 +12,8 @@ Tools:
 import json
 import os
 import re
+import subprocess
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -210,6 +212,7 @@ class ProjectTools:
         severity: str = "P3",
         where_failed: str = "",
         suggested_fix: str = "",
+        _profile=None,  # T-226: guest profile routes ticket to separate directory
     ) -> Dict:
         """File a new self-improvement ticket to tickets/open/.
 
@@ -259,11 +262,23 @@ class ProjectTools:
 
         slug = re.sub(r"[^a-z0-9]+", "-", title.lower())[:60].strip("-")
         filename = f"{ticket_id}-{slug}.json"
-        ticket_path = _ROOT / "tickets" / "open" / filename
 
+        # T-226: guest tickets land in a separate dir; never auto-executed by sprint.py.
+        is_guest = _profile is not None and getattr(_profile, "is_guest", False)
+        if is_guest:
+            profile_name = getattr(_profile, "name", "unknown")
+            ticket["profile"] = profile_name
+            dest_dir = _ROOT / "tickets" / "profiles" / profile_name
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            rel_path = f"tickets/profiles/{profile_name}/{filename}"
+        else:
+            dest_dir = _ROOT / "tickets" / "open"
+            rel_path = f"tickets/open/{filename}"
+
+        ticket_path = dest_dir / filename
         try:
             ticket_path.write_text(json.dumps(ticket, indent=2), encoding="utf-8")
-            return {"id": ticket_id, "path": f"tickets/open/{filename}", "success": True}
+            return {"id": ticket_id, "path": rel_path, "success": True}
         except OSError as e:
             return {"id": ticket_id, "path": "", "success": False, "error": str(e)}
 
@@ -338,6 +353,115 @@ class ProjectTools:
 
         return {"saved_local": saved_local, "saved_l2": saved_l2, "note": note}
 
+    # ── run_verify / run_tests (T-181) ────────────────────────────────────────
+
+    _VERIFY_LOCK = _ROOT / "logs" / "verify.lock"
+
+    def run_verify(self, timeout: int = 600) -> Dict:
+        """Run scripts/verify.py --quiet and return a structured result.
+
+        Returns:
+            {overall, syntax_failed, gate_failures, test_failures, tail, error}
+        """
+        lock = self._VERIFY_LOCK
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        if lock.exists():
+            return {"overall": "BUSY", "error": "Another verify run is in progress (lock exists at logs/verify.lock). Wait or delete the lock if it is stale."}
+
+        lock.write_text(str(os.getpid()), encoding="utf-8")
+        try:
+            result = subprocess.run(
+                [sys.executable, str(_ROOT / "scripts" / "verify.py"), "--quiet"],
+                capture_output=True, text=True, cwd=str(_ROOT), timeout=timeout,
+                env={**os.environ, "PYTHONUTF8": "1"},
+            )
+        except subprocess.TimeoutExpired:
+            return {"overall": "TIMEOUT", "error": f"verify.py exceeded {timeout}s limit"}
+        except Exception as e:
+            return {"overall": "ERROR", "error": str(e)}
+        finally:
+            try:
+                lock.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        stdout = result.stdout or ""
+        lines = stdout.splitlines()
+        overall = "FAIL"
+        for line in lines:
+            if "[verify] PASS" in line:
+                overall = "PASS"
+                break
+
+        # Extract failure lines from stdout
+        syntax_failed: list[str] = [l for l in lines if l.strip().startswith("SYNTAX FAIL")]
+        gate_failures: list[str] = [l for l in lines if "GATE FAIL" in l or "GATE MISSING" in l]
+        test_failures: list[str] = [l for l in lines if l.strip().startswith("FAIL ")]
+
+        return {
+            "overall": overall,
+            "exit_code": result.returncode,
+            "syntax_failed": syntax_failed,
+            "gate_failures": gate_failures,
+            "test_failures": test_failures,
+            "tail": "\n".join(lines[-40:]),
+        }
+
+    def run_tests(self, test_file: str, timeout: int = 120) -> Dict:
+        """Run a single pytest file quickly for iteration feedback.
+
+        Args:
+            test_file: Filename or path under testing/ (e.g. 'test_memory.py').
+            timeout:   Max seconds (default 120).
+
+        Returns:
+            {passed, failed, exit_code, tail, error}
+        """
+        # Normalise: accept 'test_foo.py', 'testing/test_foo.py', full paths
+        p = Path(test_file)
+        if not p.is_absolute():
+            candidate = _ROOT / "testing" / p.name
+            if candidate.exists():
+                p = candidate
+            else:
+                p = _ROOT / p  # relative to root
+        if not p.exists():
+            return {"passed": 0, "failed": 0, "exit_code": -1,
+                    "error": f"Test file not found: {test_file}"}
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pytest", str(p), "-q", "--tb=short",
+                 "-m", "not costly"],
+                capture_output=True, text=True, cwd=str(_ROOT), timeout=timeout,
+                env={**os.environ, "PYTHONUTF8": "1"},
+            )
+        except subprocess.TimeoutExpired:
+            return {"passed": 0, "failed": 0, "exit_code": -1,
+                    "error": f"pytest exceeded {timeout}s"}
+        except Exception as e:
+            return {"passed": 0, "failed": 0, "exit_code": -1, "error": str(e)}
+
+        stdout = result.stdout or ""
+        lines = stdout.splitlines()
+        # Parse "X passed", "Y failed" from pytest summary line
+        passed = failed = 0
+        for line in reversed(lines):
+            m = re.search(r"(\d+) passed", line)
+            if m:
+                passed = int(m.group(1))
+            m = re.search(r"(\d+) failed", line)
+            if m:
+                failed = int(m.group(1))
+            if passed or failed:
+                break
+
+        return {
+            "passed": passed,
+            "failed": failed,
+            "exit_code": result.returncode,
+            "tail": "\n".join(lines[-40:]),
+        }
+
     # ── get_session_stats ─────────────────────────────────────────────────────
 
     def get_session_stats(self, agent) -> Dict:
@@ -404,6 +528,7 @@ def _handle_search_codebase(agent, tool_input, *, memory_override=None):
 
 
 def _handle_create_ticket(agent, tool_input, *, memory_override=None):
+    _profile = getattr(agent, "current_profile", None)
     return ProjectTools().create_ticket(
         title=tool_input["title"],
         what_failed=tool_input["what_failed"],
@@ -411,6 +536,7 @@ def _handle_create_ticket(agent, tool_input, *, memory_override=None):
         severity=tool_input.get("severity", "P3"),
         where_failed=tool_input.get("where_failed", ""),
         suggested_fix=tool_input.get("suggested_fix", ""),
+        _profile=_profile,
     )
 
 
@@ -438,6 +564,43 @@ def _handle_reflect(agent, tool_input, *, memory_override=None):
         turn=agent.turn_number,
         memory_tools=mem,
     )
+
+
+def _handle_run_verify(agent, tool_input, *, memory_override=None):
+    return ProjectTools().run_verify(timeout=tool_input.get("timeout", 600))
+
+
+def _handle_run_tests(agent, tool_input, *, memory_override=None):
+    return ProjectTools().run_tests(
+        test_file=tool_input["test_file"],
+        timeout=tool_input.get("timeout", 120),
+    )
+
+
+# T-183: plan-then-execute handlers
+def _handle_set_plan(agent, tool_input, *, memory_override=None):
+    steps = tool_input.get("steps", [])
+    if not steps:
+        return {"success": False, "error": "steps list is empty"}
+    if not hasattr(agent, "plan_state"):
+        from agent.plan_state import PlanState
+        agent.plan_state = PlanState()
+    agent.plan_state.set(steps)
+    return {"success": True, "steps": len(agent.plan_state), "plan": agent.plan_state.render()}
+
+
+def _handle_update_plan(agent, tool_input, *, memory_override=None):
+    if not hasattr(agent, "plan_state") or agent.plan_state.is_empty():
+        return {"success": False, "error": "no active plan — call set_plan first"}
+    index = tool_input.get("index")
+    status = tool_input.get("status", "done")
+    text = tool_input.get("text")
+    if index is None:
+        return {"success": False, "error": "index is required"}
+    ok = agent.plan_state.update(index, status, text)
+    if not ok:
+        return {"success": False, "error": f"index {index} out of range (plan has {len(agent.plan_state)} steps)"}
+    return {"success": True, "plan": agent.plan_state.render()}
 
 
 TOOLS = [
@@ -540,5 +703,89 @@ TOOLS = [
         },
         handler=_handle_reflect,
         success_predicate=lambda r: r.get("saved_local", False),
+    ),
+    # T-181: self-verification tools
+    ToolSpec(
+        name="run_verify",
+        description=(
+            "Run scripts/verify.py --quiet and return a structured result "
+            "{overall: PASS|FAIL|TIMEOUT|BUSY, syntax_failed, gate_failures, test_failures, tail}. "
+            "Use AFTER making code edits to confirm the change is clean before claiming done. "
+            "Takes up to 10 minutes — prefer run_tests for faster iteration on a single file."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "timeout": {"type": "integer", "default": 600,
+                            "description": "Max seconds to wait (default 600 / 10 min)"},
+            },
+            "required": [],
+        },
+        handler=_handle_run_verify,
+        success_predicate=lambda r: r.get("overall") == "PASS",
+    ),
+    ToolSpec(
+        name="run_tests",
+        description=(
+            "Run a single pytest test file quickly for iteration feedback. "
+            "Returns {passed, failed, exit_code, tail}. "
+            "Use during iteration (fast); use run_verify before claiming a fix is done."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "test_file": {"type": "string",
+                              "description": "Test filename, e.g. 'test_memory.py' or 'testing/test_memory.py'"},
+                "timeout": {"type": "integer", "default": 120,
+                            "description": "Max seconds (default 120)"},
+            },
+            "required": ["test_file"],
+        },
+        handler=_handle_run_tests,
+        success_predicate=lambda r: r.get("failed", 1) == 0 and r.get("exit_code", 1) == 0,
+    ),
+    # T-183: plan-then-execute tools
+    ToolSpec(
+        name="set_plan",
+        description=(
+            "Set an explicit multi-step plan that stays visible in the system prompt "
+            "even after message history is compacted. Use for any task with 3+ distinct steps. "
+            "Call BEFORE starting work; update each step with update_plan as you go."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Ordered list of step descriptions",
+                },
+            },
+            "required": ["steps"],
+        },
+        handler=_handle_set_plan,
+        success_predicate=lambda r: r.get("success", False),
+    ),
+    ToolSpec(
+        name="update_plan",
+        description=(
+            "Update the status of a step in the active plan (set with set_plan). "
+            "Call after completing or failing each step to keep the plan current."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "index":  {"type": "integer",
+                           "description": "Zero-based step index"},
+                "status": {"type": "string",
+                           "enum": ["pending", "done", "failed", "skipped"],
+                           "description": "New status (default: done)"},
+                "text":   {"type": "string",
+                           "description": "Optional updated step description"},
+            },
+            "required": ["index"],
+        },
+        handler=_handle_update_plan,
+        success_predicate=lambda r: r.get("success", False),
     ),
 ]

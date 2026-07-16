@@ -48,7 +48,9 @@ _NEWS_FEEDS = {
     "tech":     ["https://hnrss.org/frontpage?points=50",
                  "https://techcrunch.com/feed/",
                  "https://www.theverge.com/rss/index.xml"],
-    "business": ["https://feeds.reuters.com/reuters/businessNews",
+    "business": ["https://www.cnbc.com/id/10001147/device/rss/rss.html",
+                 "https://www.cnbc.com/id/20910258/device/rss/rss.html",
+                 "https://feeds.reuters.com/reuters/businessNews",
                  "https://feeds.bbci.co.uk/news/business/rss.xml"],
     "science":  ["https://feeds.reuters.com/reuters/scienceNews",
                  "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"],
@@ -627,6 +629,10 @@ def _format_snapshot(r: Dict) -> str:
         f"Time: {t.get('utc', datetime.now(timezone.utc).strftime('%A, %Y-%m-%d %H:%M UTC'))}"
         + (f"  |  {loc_str}" if loc_str else "")
     )
+    # Dedicated Location line so "where am I" resolves to the live geo-IP city
+    # (approximate, network-based) instead of a stale L3 fact (T-160).
+    if loc_str:
+        lines.append(f"Location: {loc_str} (approximate, from network)")
 
     w = r.get("weather") or {}
     if w.get("success") and w.get("temp_c"):

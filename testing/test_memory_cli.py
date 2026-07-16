@@ -8,6 +8,7 @@ import os
 import sqlite3
 import sys
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -21,6 +22,7 @@ from scripts.memory_cli import (
     cmd_forget,
     cmd_pin,
     cmd_why,
+    cmd_forgotten,
     _db_path,
     _find_by_prefix,
 )
@@ -227,26 +229,119 @@ def test_why_unknown_prefix_exits(db):
             cmd_why(SimpleNamespace(god=False, id_prefix="zzzznothere", json=False))
 
 
-# ── god flag guard ────────────────────────────────────────────────────────────
+# ── forgotten (T-301) ─────────────────────────────────────────────────────────
 
-def test_god_flag_without_env_refuses(tmp_path, monkeypatch):
-    monkeypatch.delenv("PI_GOD_CLI", raising=False)
-    with pytest.raises(SystemExit) as exc:
-        _db_path(god=True)
-    assert exc.value.code == 1
+def _seed_forgotten_db(tmp_path):
+    """id_expired (active_until in the past), id_contradicted (invalid_at set),
+    id_merged (superseded_by -> id_winner), id_winner, id_healthy (none set)."""
+    p = tmp_path / "pi.db"
+    con = sqlite3.connect(str(p))
+    con.execute("""
+        CREATE TABLE l3_cache (
+            id TEXT PRIMARY KEY, content TEXT NOT NULL, importance INTEGER,
+            category TEXT, active_until TEXT, created_at TEXT, invalid_at TEXT,
+            superseded_by TEXT
+        )
+    """)
+    now = datetime.now(timezone.utc)
+    rows = [
+        ("id-expired", "the cafe wifi was FISH123", 6, "note",
+         (now - timedelta(hours=2)).isoformat(), None, None),
+        ("id-contradicted", "old address: 12 Elm St", 7, "note",
+         None, (now - timedelta(hours=1)).isoformat(), None),
+        ("id-winner", "current address: 45 Oak Ave", 7, "note",
+         None, None, None),
+        ("id-merged", "current address: 45 Oak Avenue", 5, "note",
+         None, None, "id-winner"),
+        ("id-healthy", "my sister lives in Boston", 6, "note",
+         None, None, None),
+    ]
+    for rid, content, imp, cat, active_until, invalid_at, superseded_by in rows:
+        con.execute(
+            "INSERT INTO l3_cache (id, content, importance, category, "
+            "active_until, created_at, invalid_at, superseded_by) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [rid, content, imp, cat, active_until, "2026-01-01T00:00:00Z",
+             invalid_at, superseded_by],
+        )
+    con.commit()
+    con.close()
+    return p
 
 
-def test_god_flag_with_env_returns_god_db(monkeypatch):
-    monkeypatch.setenv("PI_GOD_CLI", "1")
-    import scripts.memory_cli as mc
-    with patch.object(mc, "_GOD_DB", Path("/fake/god_memory.db")):
-        p = _db_path(god=True)
-    assert "god_memory" in str(p)
+def test_forgotten_classifies_each_reason(tmp_path, capsys):
+    db = _seed_forgotten_db(tmp_path)
+    with patch("scripts.memory_cli._PUBLIC_DB", db):
+        cmd_forgotten(SimpleNamespace(days=7, json=True))
+    data = json.loads(capsys.readouterr().out)
+
+    by_id = {d["id"]: d for d in data}
+    assert by_id["id-expired"]["reason"] == "EXPIRED"
+    assert by_id["id-contradicted"]["reason"] == "CONTRADICTED"
+    assert by_id["id-merged"]["reason"] == "MERGED"
+    assert by_id["id-merged"]["superseded_by_snippet"].startswith("current address: 45 Oak Ave")
+    assert "id-healthy" not in by_id, "a row with no forgetting signal must never appear"
+    assert "id-winner" not in by_id, "the winner itself was never forgotten"
 
 
-def test_god_flag_never_returns_public_db(monkeypatch):
-    monkeypatch.setenv("PI_GOD_CLI", "1")
-    import scripts.memory_cli as mc
-    pub = mc._PUBLIC_DB
-    result = _db_path(god=True)
-    assert result != pub, "god mode must never return public db path"
+def test_forgotten_precedence_invalid_at_beats_expired(tmp_path, capsys):
+    """A row with BOTH invalid_at set and active_until passed must classify
+    as CONTRADICTED, not EXPIRED (documented precedence)."""
+    p = tmp_path / "pi.db"
+    con = sqlite3.connect(str(p))
+    con.execute("""
+        CREATE TABLE l3_cache (
+            id TEXT PRIMARY KEY, content TEXT, importance INTEGER, category TEXT,
+            active_until TEXT, created_at TEXT, invalid_at TEXT, superseded_by TEXT
+        )
+    """)
+    now = datetime.now(timezone.utc)
+    con.execute(
+        "INSERT INTO l3_cache (id, content, active_until, invalid_at) VALUES (?, ?, ?, ?)",
+        ["id-both", "expired and contradicted",
+         (now - timedelta(hours=3)).isoformat(), (now - timedelta(hours=1)).isoformat()],
+    )
+    con.commit()
+    con.close()
+
+    with patch("scripts.memory_cli._PUBLIC_DB", p):
+        cmd_forgotten(SimpleNamespace(days=7, json=True))
+    data = json.loads(capsys.readouterr().out)
+
+    assert len(data) == 1
+    assert data[0]["reason"] == "CONTRADICTED"
+
+
+def test_forgotten_days_window_excludes_old_entries(tmp_path, capsys):
+    db = _seed_forgotten_db(tmp_path)
+    # Push id-contradicted's invalid_at outside a 1-hour window's cutoff
+    # by asking for a window shorter than the 1-hour-ago timestamp seeded.
+    with patch("scripts.memory_cli._PUBLIC_DB", db):
+        cmd_forgotten(SimpleNamespace(days=0, json=True))
+    data = json.loads(capsys.readouterr().out)
+
+    by_id = {d["id"] for d in data}
+    assert "id-contradicted" not in by_id, "1-hour-old entry must fall outside a 0-day window"
+    assert "id-expired" not in by_id
+    # MERGED has no timestamp to window on — always included by design.
+    assert "id-merged" in by_id
+
+
+def test_forgotten_empty_prints_message(tmp_path, capsys):
+    p = tmp_path / "pi.db"
+    con = sqlite3.connect(str(p))
+    con.execute("""
+        CREATE TABLE l3_cache (
+            id TEXT PRIMARY KEY, content TEXT, importance INTEGER, category TEXT,
+            active_until TEXT, created_at TEXT, invalid_at TEXT, superseded_by TEXT
+        )
+    """)
+    con.execute("INSERT INTO l3_cache (id, content) VALUES ('h1', 'healthy fact')")
+    con.commit()
+    con.close()
+
+    with patch("scripts.memory_cli._PUBLIC_DB", p):
+        cmd_forgotten(SimpleNamespace(days=7, json=False))
+    out = capsys.readouterr().out
+
+    assert "Nothing forgotten" in out

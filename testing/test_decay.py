@@ -100,13 +100,31 @@ def test_no_decay_when_access_time_is_none():
     assert eff == 7.0
 
 
-# ── archive policy: env gate ───────────────────────────────────────────────────
+# ── archive policy: env gate (T-300: default-on, opt-out) ─────────────────────
+# Old behavior (pre-T-300) was opt-IN — this test used to assert decay-archive
+# was disabled when the env var was unset. That encoded the experiment gate
+# from T-135's original rollout, not a product invariant; T-300 flips the
+# default so "timely forgetting" doesn't require a manual flag in production.
 
-def test_decay_archive_requires_env_flag(tmp_path, monkeypatch):
+def test_decay_archive_runs_by_default_when_env_unset(tmp_path, monkeypatch):
     monkeypatch.delenv("PI_DECAY_ARCHIVE", raising=False)
     old = (datetime.now(timezone.utc) - timedelta(days=300)).isoformat()
     db = _make_db(tmp_path, [
         {"id": "aa-1", "importance": 1, "decay_rate": 0.5, "last_accessed_at": old},
+    ])
+    result = run_policy(_decay_policy(db))
+    assert result["applied"]
+    conn = sqlite3.connect(str(db))
+    row = conn.execute("SELECT active_until FROM l3_cache WHERE id='aa-1'").fetchone()
+    conn.close()
+    assert row[0] is not None, "decayed row should be archived with the env var unset"
+
+
+def test_decay_archive_can_be_disabled(tmp_path, monkeypatch):
+    monkeypatch.setenv("PI_DECAY_ARCHIVE", "off")
+    old = (datetime.now(timezone.utc) - timedelta(days=300)).isoformat()
+    db = _make_db(tmp_path, [
+        {"id": "aa-2", "importance": 1, "decay_rate": 0.5, "last_accessed_at": old},
     ])
     result = run_policy(_decay_policy(db))
     assert not result["applied"]

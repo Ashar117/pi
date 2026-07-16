@@ -1,0 +1,22 @@
+{
+  "id": "T-247",
+  "title": "Telegram HTML 400 Bad Request: malformed entity crashes message delivery",
+  "component": "tools/tools_telegram.py (_format_for_telegram, _reply_chunks)",
+  "severity": "P1",
+  "source": "Ash live report 2026-06-22 \u00e2\u20ac\u201d Pi error: 'A request to the Telegram API was unsuccessful. Error code: 400. Description: Bad Request: can\\'t parse entities: Can\\'t find end of the entity starting at byte offset 1415'",
+  "current_state": "_format_for_telegram converts Pi markdown to Telegram HTML. It handles **bold** \u00e2\u2020\u2019 <b>, *italic* \u00e2\u2020\u2019 <i>, `code` \u00e2\u2020\u2019 <code>, fenced ``` \u00e2\u2020\u2019 <pre>, [text](url) \u00e2\u2020\u2019 <a href>. Known failure modes: (1) DOTALL regex on **bold** can produce <b>...spanning newlines...</b> that Telegram rejects if the span crosses certain Unicode boundaries. (2) If the LLM outputs an unclosed ** or unmatched *, the regex produces a dangling open tag. (3) Content split across 4096-char chunk boundaries may cut inside an HTML tag. _reply_chunks has a fallback: if HTML parse_mode fails, retry with parse_mode=None. BUT: parse_mode=None on raw markdown text (with *, _, [, etc.) can also fail with Telegram's default parser or produce garbled output.",
+  "target_state": "On Telegram 400 error in _reply_chunks: strip ALL HTML tags from the chunk (re.sub('<[^>]+>', '', chunk)) and resend as plain text with parse_mode=None. This guarantees delivery even when formatting is broken. Additionally, add a pre-send validation step in _format_for_telegram: count open vs closed <b>, <i>, <code>, <pre> tags and close any unclosed ones before returning. This catches the most common unclosed-tag case.",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-06-22T00:00:00+00:00",
+  "migration_plan": [
+    "1. _reply_chunks fallback: change the except clause from `bot.send_message(chat_id, chunk, parse_mode=None)` to `bot.send_message(chat_id, re.sub('<[^>]+>', '', chunk), parse_mode=None)` \u00e2\u20ac\u201d strip all HTML before sending as plain text.",
+    "2. _format_for_telegram: after building the result string, add a tag-balance check. For each of <b>, <i>, <code>, <pre>: count opens and closes; if opens > closes, append the missing close tags. This is O(n) and cheap.",
+    "3. Chunk boundary safety: in _chunk_text, do not cut inside an HTML tag \u00e2\u20ac\u201d scan backwards from the chunk boundary to find a safe split point (after a >, before a <).",
+    "4. Tests: test_telegram_formatting.py (already exists) \u00e2\u20ac\u201d add cases: (a) unclosed **bold produces valid closed <b>...</b>; (b) HTML-with-malformed-tag falls back to stripped plain text; (c) chunk boundary does not split inside a tag."
+  ],
+  "risk_notes": "The HTML stripper (re.sub('<[^>]+>', '', text)) is the nuclear option for the fallback \u00e2\u20ac\u201d it removes all formatting. That is acceptable: a readable plain-text message is strictly better than a 400 error that shows nothing. The pre-send tag balancer handles the common case without stripping formatting at all.",
+  "resolution": "implemented",
+  "solution_id": "S-178",
+  "closed": "2026-06-21T22:02:22+00:00"
+}

@@ -1,0 +1,57 @@
+{
+  "id": "T-158",
+  "source": "Claude session audit (2026-05-29) \u2014 privacy loophole sweep at Ash's request",
+  "title": "PRIVACY INCIDENT \u2014 public GitHub repo leaks architecture/flowcharts, archived code, god-mode design, and vault data",
+  "component": ".gitignore, .git/info/exclude, github.com/Ashar117/pi (public), docs/_archive policy, scripts/passive/privacy_publish_guard.py",
+  "severity": "P0",
+  "status": "closed",
+  "created": "2026-05-29T08:24:09+00:00",
+  "closed": "2026-05-30T09:40:11.136604+00:00",
+  "linked_solution": "S-102",
+  "what_failed": "github.com/Ashar117/pi is PUBLIC ('visibility: public') and has been pushed (origin/main @ 1eb1af3). 131 files are publicly exposed. This violates all three stated privacy requirements: (1) Pi DNA private, (2) all flowcharts/architecture private, (3) Obsidian vault data private.",
+  "exposed_public": {
+    "architecture_flowcharts": [
+      "PI.md (full architecture, memory tiers, mode layer, file map)",
+      "ABOUT.md (architecture + flow diagram)",
+      "README.md (tool/memory/mode tables)",
+      "docs/ARCHITECTURE.md + 4 archived ARCHITECTURE*.md",
+      "docs/adr/001-005 (detailed design)",
+      "docs/STATUS.md",
+      "CHECKPOINTS/phase-0..6 + current (phase-by-phase build flows)"
+    ],
+    "actual_source_code": [
+      "docs/_archive/evolution_self_modifier_v1.py (real SelfModifier source)",
+      "docs/templates/MODULE_TEMPLATE.py (module conventions)"
+    ],
+    "god_mode_design": [
+      "docs/adr/001-god-as-mode-config.md",
+      "tickets T-082, T-086, T-095 (god collapse / sprint isolation / cross-device)"
+    ],
+    "engineering_recipe": [
+      "65 tickets naming files/components/flows",
+      "solutions records with fix detail"
+    ],
+    "vault_obsidian": [
+      "vault/README.md",
+      "vault/notes/status.md",
+      "vault/notes/tickets/{open,closed}.md",
+      "vault/notes/templates/*.md (5)"
+    ]
+  },
+  "protected_good": [
+    "No live code (agent/, tools/, pi_agent.py, core/, prompts/, scripts/, memory/) \u2014 gitignored, never pushed",
+    "god.py source (docs/_archive/_private/agent_god_v1.py) \u2014 .git/info/exclude, NOT public",
+    "No god_memory.db / god_consciousness / logs/ / data/ / .env / app/config.py",
+    "No real secrets in .env.example / SUPABASE_SETUP.sql (placeholders only)"
+  ],
+  "hard_truth": "Git history is permanent and this content has been PUBLIC. Making the repo private or deleting files now REDUCES future exposure but cannot guarantee removal from the world: GitHub caches, existing forks/clones, search-engine + Archive.org indexing, and AI training crawlers may already hold copies. Treat the already-public content as potentially compromised.",
+  "migration_plan": [
+    "1. DONE 2026-05-29: github.com/Ashar117/pi set to PRIVATE via GitHub API (PATCH private=true, HTTP 200; unauthenticated GET now 404) using Ash's stored Git Credential Manager credential. New public access is stopped. NOTE: ~5 weeks of prior public exposure (repo created 2026-04-24) is NOT retractable \u2014 assume scraped/cached/indexed.",
+    "2. Do NOT push the local fix/conversation-coherence commit (f71f20e) \u2014 its tickets are detailed flowcharts. Keep it private-only.",
+    "3. Decide repo model: since DNA + flowcharts + vault are ALL private, effectively nothing in this repo is 'product'. Make this repo the PRIVATE source of truth (track everything incl. code behind a private remote). 'Product available' = the running agent/service, not a public repo. Any public face later = a fresh, tiny, recipe-free marketing repo.",
+    "4. Fix structural cause: 'archive to docs/_archive/ instead of delete' moves private code into PUBLIC docs/. Gitignore docs/_archive/ (or whole-repo-private moots it). privacy_publish_guard must FAIL on any docs/**/*.py and on tracked vault/, CHECKPOINTS/, docs/adr/.",
+    "5. Harden .gitignore (only relevant if any public repo remains): vault/, CHECKPOINTS/, docs/adr/, docs/**/*.py, PI.md, ABOUT.md architecture, ADRs.",
+    "6. Optional after going private: git filter-repo to purge the most sensitive paths from history (god ADR/tickets, archived .py) \u2014 meaningful for limiting collaborator/clone access, not for undoing public exposure."
+  ],
+  "analysis": "PERSPECTIVE: This is the most serious finding of the entire session and it outranks every coherence ticket. The project's #1 stated value is 'sell the product, not the recipe' \u2014 and the recipe (architecture, flowcharts, ADRs, archived code, god-mode design, engineering tickets) has been sitting in a PUBLIC repo. The good news: the live code and god source were correctly protected, and no secrets leaked. The bad news: the entire 'how it works' layer is exactly what you wanted private, and it's been public and likely scraped. Two lessons: (a) privacy-by-gitignore only works if the repo's default is private \u2014 a public repo with an allowlist mindset is one archive-to-docs/ away from leaking; flip it to private-by-default. (b) The privacy_publish_guard checks for tracked IMPL files and secrets but NOT for architecture docs / flowcharts / vault being public \u2014 it passed Sections 1-2 while the recipe was wide open. The guard's threat model was too narrow. Make the repo private first, then redesign the public/private split from a private-by-default baseline."
+}

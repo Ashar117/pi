@@ -1,0 +1,24 @@
+{
+  "id": "T-252",
+  "title": "Triage analysis/candidate_tickets.jsonl: 7 untriaged auto-mined candidates",
+  "component": "analysis/candidate_tickets.jsonl, scripts/passive/ticket_candidate_miner.py, tickets/open/",
+  "severity": "P0",
+  "source": "Claude Fable audit 2026-07-02 (hackathon prep)",
+  "current_state": "scripts/passive/ticket_candidate_miner.py has mined 7 candidate tickets into analysis/candidate_tickets.jsonl and its passive check FAILs because they sit unreviewed. Before the T-249..T-269 batch, tickets/open/ was empty, so the sprint runner had zero input - untriaged candidates are exactly the pipeline gap that left sprint.py unproven (see T-256).",
+  "target_state": "Each of the 7 candidates is either promoted to a real tickets/open/T-NNN-*.json (schema per tickets/closed/T-247-*.json, with root_cause_confidence set honestly: 'verified' only if the diagnosis was reproduced) or rejected with a one-line reason recorded in the report/row. ticket_candidate_miner passive returns PASS. Any small verified promotion in a SAFE component (scripts/, testing/, docs/, vault/) is flagged as a T-256 sprint candidate.",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-07-03T00:00:00+00:00",
+  "migration_plan": [
+    "1. Read analysis/candidate_tickets.jsonl (7 rows).",
+    "2. For each candidate: reproduce or verify the claim in code; decide promote vs reject.",
+    "3. Promote: write tickets/open/T-NNN-slug.json continuing the ID sequence after T-269; set root_cause_confidence honestly.",
+    "4. Reject: record a one-line reason (append to the candidate row or the miner report - follow whatever convention the miner already uses).",
+    "5. Rerun: python scripts/passive/ticket_candidate_miner.py - expect PASS.",
+    "6. python scripts/refresh_pi.py so PI.md section 8 lists any promotions."
+  ],
+  "risk_notes": "Do not bulk-promote - the miner produces hypotheses, and hypothesis-confidence tickets correctly cannot auto-run in sprint (T-154). The value here is the honest verified/rejected sort, not the count.",
+  "resolution": "implemented",
+  "solution_id": "S-193",
+  "closed": "2026-07-06T00:00:00+00:00"
+}

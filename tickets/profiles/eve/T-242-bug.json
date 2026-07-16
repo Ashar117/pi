@@ -1,0 +1,17 @@
+{
+  "id": "T-242",
+  "source": "Pi self-report (session tool call)",
+  "title": "Bug",
+  "component": "y",
+  "what_failed": "x",
+  "where_failed": "",
+  "why_likely": "",
+  "severity": "P3",
+  "suggested_fix": "",
+  "status": "open",
+  "created": "2026-06-21T17:23:07.579296+00:00",
+  "closed": null,
+  "linked_solution": null,
+  "root_cause_confidence": "hypothesis",
+  "profile": "eve"
+}

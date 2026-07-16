@@ -1,0 +1,21 @@
+{
+  "id": "T-181",
+  "source": "Claude gap analysis 2026-06-11 (Track B \u2014 single biggest agentic upgrade)",
+  "title": "Self-verification: root gets a run_verify tool and uses it after code edits",
+  "component": "tools/tools_project.py (new ToolSpec), prompts/consciousness.txt (behavior rule)",
+  "current_state": "Pi can edit its own code (modify_file/create_file) but cannot test its own edits \u2014 only the human-run scripts/verify.py or sprint.py do. Pi claims fixes it never verified, which is the LOG1/LOG2 honesty class applied to code.",
+  "target_state": "A run_verify ToolSpec executes 'python scripts/verify.py --quiet' in a subprocess (10-min timeout) and returns {overall: PASS|FAIL, syntax_failed: [...], gate_failures: [...], test_failures: [...], tail: last-40-lines}. A scoped variant run_tests(file) runs one pytest file for fast iteration. Consciousness gains one rule: after any tool edit to a .py file, run run_tests on the nearest test (or run_verify before claiming done) \u2014 never report a code fix without a green result in the same turn.",
+  "severity": "P1",
+  "depends_on": [],
+  "status": "closed",
+  "created": "2026-06-11T15:00:00+00:00",
+  "migration_plan": [
+    "1. ToolSpec run_verify in tools_project.py: subprocess verify.py --quiet, parse docs/STATUS.md Overall + failure blocks into the structured dict.",
+    "2. ToolSpec run_tests: subprocess 'python -m pytest testing/<file> -q --tb=short', 120s timeout, return code + tail.",
+    "3. Guard: refuse to run if another verify subprocess is already live (lock file).",
+    "4. Consciousness rule (one paragraph, in the existing honesty section): edit\u2192test before claiming success.",
+    "5. Tests: mock subprocess \u2014 PASS and FAIL parse correctly; timeout returns structured error; lock prevents concurrent runs."
+  ],
+  "risk_notes": "consciousness.txt is RISK_FLAGGED \u2192 interactive. Token cost: verify takes minutes \u2014 instruct the model to prefer scoped run_tests during iteration, full run_verify once at the end.",
+  "closed": "2026-06-12T18:44:46.032838+00:00"
+}

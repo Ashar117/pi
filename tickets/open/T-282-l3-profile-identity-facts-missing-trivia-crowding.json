@@ -1,0 +1,21 @@
+{
+  "id": "T-282",
+  "title": "L3 permanent_profile is trivia-heavy and identity-poor: no F-1/gender/GSU-CS facts injected, subway orders compete for the 800-token budget",
+  "component": "scripts/seed_profile.py, tools/tools_memory.py, memory/",
+  "severity": "P1",
+  "source": "Claude Fable diagnosis 2026-07-07, queried data/pi.db l3_cache live after the scholarship failure",
+  "current_state": "Query of l3_cache (2026-07-07): profile-category rows contain Subway/McDonald's orders, manhwa/anime favorites, an Instagram handle - while the identity facts that decide real-world eligibility are absent or vague: no 'F-1 visa / international student' fact, no gender, no 'CS undergrad at GSU', no GPA; the closest is 'User is a Pakistani student'. get_l3_context(max_tokens=800) shares its budget across all categories, so even present identity facts compete with food trivia (the known importance-competition limitation, docs/ARCHITECTURE.md section 4 invariants). Consequence: the scholarship ask (see T-281) ran with essentially no usable profile in the prompt. Additional finding from the same query: l3_cache held exactly 1000 rows - the old Supabase page cap - proving the RUNNING daemon predates the T-270 order/cap fix; newest L3 rows are being silently dropped in production until the daemon restarts on post-branch-landing code.",
+  "target_state": "(a) The ~10 identity facts that decide eligibility (male; F-1 international student from Pakistan; CS undergrad at GSU; GNN researcher; halal; budget-conscious student) exist in permanent_profile at importance 10, stated-not-inferred - extend/reuse scripts/seed_profile.py rather than hand-inserting. (b) Food orders and entertainment preferences move out of permanent_profile into a lower-importance category (preferences) so they stop competing for the identity budget - use the existing caretaker/dedup machinery, do not hand-delete. (c) A test proves the seeded identity facts actually appear in get_l3_context() output under the 800-token budget with realistic row competition. (d) Operational: after the branch lands, restart the daemon and confirm l3_cache row count exceeds 1000 (proves T-270 code is live).",
+  "depends_on": [],
+  "status": "open",
+  "created": "2026-07-07T00:00:00+00:00",
+  "root_cause_confidence": "verified",
+  "migration_plan": [
+    "1. Read scripts/seed_profile.py (already exists) - extend its fact list with the identity facts above at importance 10, category permanent_profile, metadata stated=true.",
+    "2. Test (testing/test_profile_in_l3_context.py): with an InMemory/tmp store containing the seeded identity facts PLUS 20 importance-5 trivia rows, assert get_l3_context(max_tokens=800) output contains 'F-1' and 'GSU' - the budget must not crowd out importance-10 rows.",
+    "3. Recategorize the trivia rows (permanent_profile -> preferences, importance <=6): prefer a small one-shot script in scripts/ (SAFE component) that updates Supabase + lets _sync_l3 propagate; log what moved.",
+    "4. Run the seed against production Supabase (Ash-gated - it writes real memory), then verify via a live memory_read that the facts round-trip.",
+    "5. python scripts/verify.py must print PASS (never pipe, T-214); SOLUTIONS.jsonl; close; refresh_pi.py. Post-landing: restart daemon, confirm l3_cache > 1000 rows."
+  ],
+  "risk_notes": "Step 4 writes to production memory - Ash gates it. Do NOT delete trivia rows (never-delete applies to memory too - recategorize/demote). The exactly-1000-rows finding is evidence the live daemon runs pre-T-270 code; no code change needed for that part, just the restart after T-272 lands. Related: the memory-pollution passive skill should start flagging identity-category trivia - one line in its heuristics if cheap, else skip (YAGNI)."
+}

@@ -19,6 +19,7 @@ import socket
 import sys
 import threading
 import time
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -244,11 +245,73 @@ def _install_signal_handlers() -> None:
         pass  # not main thread or platform-unsupported — graceful no-op
 
 
+HTTP_PORT = int(os.environ.get("PI_HTTP_PORT", "7712"))
+
+
+def _start_http_server() -> None:
+    """Launch FastAPI brain server on 127.0.0.1:7712 in a daemon thread."""
+    try:
+        import uvicorn
+        from app.server import app as _http_app, mount_agent as _mount, SERVER_HOST as _HTTP_HOST, SERVER_PORT as _HTTP_PORT_CFG
+
+        _mount(_get_agent())
+
+        def _run():
+            uvicorn.run(
+                _http_app,
+                host=_HTTP_HOST,
+                port=_HTTP_PORT_CFG,
+                log_level="warning",
+                access_log=False,
+            )
+
+        t = threading.Thread(target=_run, daemon=True, name="pi-http")
+        t.start()
+        print(f"[Daemon] HTTP brain server started on 127.0.0.1:{HTTP_PORT}", flush=True)
+    except ImportError:
+        print("[Daemon] fastapi/uvicorn not installed — HTTP server skipped.", flush=True)
+    except Exception as e:
+        print(f"[Daemon] HTTP server failed to start (non-fatal): {e}", flush=True)
+
+
+def _write_daemon_info() -> None:
+    """T-284: record which code this daemon is running, so staleness after a
+    repo update (silent for months — l3_cache truncation, real email sends,
+    unauthorized button taps all shipped this way) can be detected instead
+    of discovered by luck.
+    """
+    import subprocess
+    from agent.observability import track_silent
+
+    info = {"started_at": datetime.now(timezone.utc).isoformat(), "git_rev": None, "dirty_file_count": None}
+    try:
+        root = os.path.dirname(os.path.abspath(__file__))
+        rev = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root,
+                             capture_output=True, text=True, timeout=5)
+        if rev.returncode == 0:
+            info["git_rev"] = rev.stdout.strip()
+        status = subprocess.run(["git", "status", "--porcelain"], cwd=root,
+                                capture_output=True, text=True, timeout=5)
+        if status.returncode == 0:
+            info["dirty_file_count"] = len([l for l in status.stdout.splitlines() if l.strip()])
+    except Exception as e:
+        track_silent("daemon.write_daemon_info", e)
+
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "daemon_info.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(info, f, indent=2)
+    except Exception as e:
+        track_silent("daemon.write_daemon_info", e)
+
+
 def serve():
     global _start_time
     _start_time = time.time()
 
     _write_pid()
+    _write_daemon_info()
     _install_signal_handlers()
 
     # Redirect daemon's own stdout/stderr to log file so client terminal stays clean
@@ -266,6 +329,9 @@ def serve():
         print(f"[Daemon] Agent init failed: {e}", flush=True)
         _clear_pid()
         sys.exit(1)
+
+    # T-187: start HTTP+SSE server on 7712 in a background thread (non-blocking).
+    _start_http_server()
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

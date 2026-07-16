@@ -1,0 +1,24 @@
+{
+  "id": "T-245",
+  "title": "Telegram quote-reply context not injected into Pi dispatch \u00e2\u20ac\u201d Pi ignores what Ash is replying to",
+  "component": "tools/tools_telegram.py (_dispatch_bubble), agent/bubble.py",
+  "severity": "P1",
+  "source": "Ash live report 2026-06-22 \u00e2\u20ac\u201d when Ash quote-replies to Pi's message, Pi responds as if it has no idea which message is being referenced.",
+  "current_state": "BubbleMessage.reply_to_text captures the quoted text from message.reply_to_message.text. bubble.reply_targets exposes these as a list. _dispatch_bubble's _do_recall thread searches L3/L2 memory semantically for these texts. However: (1) L3/L2 only contains distilled durable facts, NOT recent conversation turns \u00e2\u20ac\u201d a Pi reply from 30 seconds ago has not been distilled yet, so recall_referenced finds nothing. (2) Even when recall fires, the quoted text itself is never injected into the dispatched message \u00e2\u20ac\u201d it goes through a semantic lookup that usually returns empty. (3) bubble.joined_text() only joins m.text, dropping m.reply_to_text entirely. Result: Pi has no idea which of its own messages Ash is replying to.",
+  "target_state": "When a bubble message has reply_to_text set, prepend a '[Replying to: \"...\"]' context line directly into the joined text that is dispatched to Pi. No semantic lookup needed \u00e2\u20ac\u201d we already have the exact text. This gives Pi unambiguous context about which message is being quoted. The existing _do_recall path can remain as a supplemental L3 lookup but is not the primary mechanism.",
+  "depends_on": [
+    "T-244"
+  ],
+  "status": "closed",
+  "created": "2026-06-22T00:00:00+00:00",
+  "migration_plan": [
+    "1. In _dispatch_bubble, replace the single line `joined = bubble.joined_text()` with a loop that builds joined text including reply context: for each BubbleMessage, if reply_to_text is set prepend '[Replying to: \"<reply_to_text[:300]>\"]' before the message text.",
+    "2. Keep the existing _do_recall semantic search as a best-effort supplement (it may find relevant L3 facts when the quoted text matches a durable memory). Do not remove it.",
+    "3. Also handle the case where reply_to_text comes from a Pi message that was a button or action result \u00e2\u20ac\u201d strip leading formatting markers before injecting.",
+    "4. Tests: test_telegram_quote_reply.py \u00e2\u20ac\u201d (a) a BubbleMessage with reply_to_text produces a joined string that includes the '[Replying to: ...]' prefix; (b) a BubbleMessage without reply_to_text produces unchanged joined text; (c) multiple messages in a bubble, one with reply, one without \u00e2\u20ac\u201d only the one with reply gets the prefix."
+  ],
+  "risk_notes": "Keep the injected quote short (300 chars) to avoid prompt bloat. The '[Replying to: ...]' marker is already used in the callback handler ('[Button selected: ...]') so Pi already understands bracketed context markers \u00e2\u20ac\u201d no prompt change needed.",
+  "resolution": "implemented",
+  "solution_id": "S-178",
+  "closed": "2026-06-21T22:02:22+00:00"
+}

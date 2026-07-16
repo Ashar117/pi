@@ -72,55 +72,6 @@ RISK_FLAGGED = [
     ".env",
 ]
 
-# T-086 (R5): god-mode paths the sprint runner MUST NOT touch under any
-# circumstance. Sprint runs unattended — autonomy × privacy is a footgun.
-# A ticket like "search private intel weekly and auto-write god_memory"
-# picked up by sprint = uncensored content generated under autonomous
-# code path, violating the "user must explicitly opt in" invariant.
-#
-# Enforcement: tickets touching these paths are excluded from the picked-up
-# set before any LLM call. Tickets living in tickets/god/ are excluded
-# unconditionally (sprint doesn't even glob that directory).
-GOD_FORBIDDEN_PATHS = (
-    "tickets/god/",
-    "vault/.god/",
-    "prompts/god_consciousness.txt",
-    "data/god_memory.db",
-    "agent/god.py",                              # archived in T-082; the path stays forbidden
-    "docs/_archive/_private/agent_god_v1.py",    # the archived god.py — still forbidden
-)
-
-
-def _ticket_touches_god_paths(ticket: Dict) -> Optional[str]:
-    """Return the first GOD_FORBIDDEN path mentioned in a ticket's text, or None.
-
-    Scans `component`, `files_affected`, `current_state`, `target_state`,
-    and any string-ish field for a literal match against GOD_FORBIDDEN_PATHS.
-    Conservative — false positives just escalate the ticket, which is fine.
-    """
-    haystack_parts: List[str] = []
-
-    def _collect(v):
-        if isinstance(v, str):
-            haystack_parts.append(v)
-        elif isinstance(v, (list, tuple)):
-            for item in v:
-                _collect(item)
-        elif isinstance(v, dict):
-            for item in v.values():
-                _collect(item)
-
-    for field in ("component", "files_affected", "current_state",
-                  "target_state", "structural_problem", "migration_plan",
-                  "title", "risk_notes"):
-        _collect(ticket.get(field))
-
-    haystack = " ".join(haystack_parts).lower()
-    for path in GOD_FORBIDDEN_PATHS:
-        if path.lower() in haystack:
-            return path
-    return None
-
 # Component prefixes safe for auto-implement
 SAFE_COMPONENTS = [
     "scripts/",
@@ -154,31 +105,16 @@ def load_ticket(path: Path) -> Optional[Dict]:
 
 
 def list_open_tickets() -> List[Dict]:
-    """Return all parseable open tickets, sorted by severity then created.
-
-    T-086 (R5): tickets touching any GOD_FORBIDDEN_PATHS are excluded
-    unconditionally. Sprint never picks up god work — that path requires
-    explicit interactive entry per ADR-001's privacy invariants.
-    """
+    """Return all parseable open tickets, sorted by severity then created."""
     if not TICKETS_OPEN.exists():
         return []
 
     tickets: List[Tuple[Path, Dict]] = []
     for p in TICKETS_OPEN.glob("*.json"):
-        # T-086: tickets/god/ is never globbed because it's a subdirectory
-        # gitignored locally — TICKETS_OPEN.glob doesn't recurse, so god
-        # tickets are already physically inaccessible to this loop. This
-        # check is belt-and-suspenders for the case where someone
-        # accidentally lands a god-pathed ticket inside tickets/open/ itself.
         data = load_ticket(p)
         if not data:
             continue
         if data.get("status") == "escalated":
-            continue
-        hit = _ticket_touches_god_paths(data)
-        if hit:
-            print(f"[sprint] excluding {p.name}: touches god-forbidden path {hit!r}",
-                  file=sys.stderr)
             continue
         data["_path"] = str(p)
         tickets.append((p, data))
@@ -304,14 +240,18 @@ a final "### Questions" section instead of guessing."""
 
 def generate_plan(client, ticket: Dict) -> Tuple[str, float]:
     """Use Claude to draft the plan. Returns (plan_text, cost_usd)."""
+    # T-279: these are the fields every current ticket actually carries; the
+    # old what_failed/where_failed/why_likely/suggested_fix schema died in
+    # 2026-05 and rendered the evidence lines empty for every plan.
+    plan_steps = "\n".join(f"- {s}" for s in ticket.get("migration_plan", []))
     user = (
         f"# Ticket {ticket.get('id', '?')}: {ticket.get('title', '')}\n\n"
         f"**Severity:** {ticket.get('severity', 'P3')}\n"
         f"**Component:** {ticket.get('component', '')}\n"
-        f"**What failed:** {ticket.get('what_failed', '')}\n"
-        f"**Where failed:** {ticket.get('where_failed', '')}\n"
-        f"**Why likely:** {ticket.get('why_likely', '')}\n"
-        f"**Suggested fix (from filer):** {ticket.get('suggested_fix', '')}\n\n"
+        f"**Current state (evidence):** {ticket.get('current_state', '')}\n"
+        f"**Target state:** {ticket.get('target_state', '')}\n"
+        f"**Filer's migration plan:**\n{plan_steps}\n"
+        f"**Risk notes:** {ticket.get('risk_notes', '')}\n\n"
         "Produce the plan now."
     )
 
@@ -478,6 +418,9 @@ def auto_implement(client, ticket: Dict, plan: str, deadline_ts: float) -> Dict:
 
     user_first = (
         f"# Ticket {ticket.get('id')}: {ticket.get('title')}\n\n"
+        f"**Current state (evidence):** {ticket.get('current_state', '')}\n"
+        f"**Target state:** {ticket.get('target_state', '')}\n"
+        f"**Risk notes:** {ticket.get('risk_notes', '')}\n\n"
         f"## Plan\n\n{plan}\n\n"
         f"Now implement. Begin."
     )
@@ -788,20 +731,6 @@ def main() -> int:
                     help="Force a specific ticket id (e.g. T-042)")
     args = ap.parse_args()
 
-    # T-086 (R5): fail-fast assertion. If tickets/god/ accidentally lives
-    # under tickets/open/ (operator error), refuse to start. Sprint must
-    # never see god paths in scope. The path-string filter in
-    # list_open_tickets is a second line of defence; this is the first.
-    god_open_dir = TICKETS_OPEN / "god"
-    if god_open_dir.exists():
-        print(
-            f"[sprint] REFUSING TO START: {god_open_dir} exists. God tickets "
-            f"must live in tickets/god/ (gitignored), not tickets/open/god/. "
-            f"Move the directory and retry. See PI.md §10 god-path forbidden list.",
-            file=sys.stderr,
-        )
-        return 3
-
     SPRINT_LOG_DIR.mkdir(parents=True, exist_ok=True)
     cumulative_cost = 0.0
     completed = 0
@@ -827,6 +756,20 @@ def main() -> int:
 
     print(f"\n[sprint] done — processed {completed} ticket(s), "
           f"cost ${cumulative_cost:.4f}, statuses: {statuses}")
+
+    # T-169: one-liner run log so "did sprint run" is always answerable.
+    run_log = SPRINT_LOG_DIR / "runs.jsonl"
+    run_entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "tickets_processed": completed,
+        "cost_usd": round(cumulative_cost, 4),
+        "statuses": statuses,
+        "dry_run": args.dry_run,
+        "auto_implement": args.auto_implement,
+    }
+    with run_log.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(run_entry) + "\n")
+
     return 0
 
 
