@@ -20,6 +20,14 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Failure output uses a few Unicode glyphs (⛔ etc.). Windows CI runners (and
+# many local Windows shells) default stdout to the legacy ANSI codepage, not
+# UTF-8 — printing those glyphs then raises UnicodeEncodeError and replaces
+# the actual failure report with an unrelated traceback. Force UTF-8 so a
+# gate failure is always legible instead of masked by an encoding crash.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = Path(__file__).parent.parent
 TESTING_DIR = ROOT / "testing"
 STATUS_OUT = ROOT / "docs" / "STATUS.md"

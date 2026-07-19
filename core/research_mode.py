@@ -16,11 +16,23 @@ from app.config import (
 
 # Initialise clients
 claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-groq_client = Groq(api_key=GROQ_API_KEY)
-google_client = google_genai.Client(api_key=GEMINI_API_KEY)
+# Groq raises eagerly at construction (unlike anthropic/genai, which validate
+# lazily) when api_key is falsy — a fresh checkout with no .env crashed this
+# whole module on import, taking down every caller (deep_debate, research
+# mode) before any test or real usage ever touched Groq.
+groq_client = Groq(api_key=GROQ_API_KEY or "")
+# google-genai's client is stricter still — it rejects even an empty string,
+# not just None, so a real placeholder is needed (Groq/anthropic both accept "").
+google_client = google_genai.Client(api_key=GEMINI_API_KEY or "not-set")
 
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SYSTEM_BASE = open(os.path.join(_project_root, "prompts", "system.txt")).read()
+try:
+    with open(os.path.join(_project_root, "prompts", "system.txt"), encoding="utf-8") as f:
+        SYSTEM_BASE = f.read()
+except FileNotFoundError:
+    # prompts/system.txt is private/gitignored (the identity "recipe") — a
+    # public/CI checkout only has the tracked default prompts.
+    SYSTEM_BASE = "You are Pi, a personal AI agent participating in a multi-agent research debate."
 
 AGENT_PERSONAS = {
     "claude": "You are Claude, representing Anthropic's perspective. You are rigorous, nuanced, and careful. You must directly address and critique other agents' points.",

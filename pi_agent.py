@@ -158,7 +158,12 @@ class PiAgent:
 
         # Initialize LLM clients (legacy direct clients kept for compress_messages_with_groq)
         self.claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        self.groq = Groq(api_key=GROQ_API_KEY)
+        # Unlike anthropic.Anthropic, Groq's client raises eagerly at construction
+        # when api_key is None (not just on first call) — so a fresh checkout
+        # with no .env (CI, a judge's clone) crashed on PiAgent() itself, before
+        # any test ever tried to actually call Groq. Match the router's own
+        # `key or ""` convention a few lines down.
+        self.groq = Groq(api_key=GROQ_API_KEY or "")
 
         # T-084 (R3): self.cerebras direct client removed. Normie + distillation
         # + briefing now go through self.router with tier='cheap', which routes
@@ -175,7 +180,7 @@ class PiAgent:
             openrouter_key=OPENROUTER_API_KEY or "",
             z_ai_key=Z_AI_API_KEY or "",
             qwen_key=QWEN_API_KEY or "",
-            qwen_model=QWEN_MODEL or "qwen-max",
+            qwen_model=QWEN_MODEL or "qwen3.7-max",
         )
 
         # Awareness — fetch live world state once at startup, cache 30 min

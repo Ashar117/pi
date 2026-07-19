@@ -41,6 +41,13 @@ def test_002_l3_context_loads():
     Expected: get_l3_context() returns at least the permanent profile
     """
     memory = MemoryTools(SUPABASE_URL, SUPABASE_KEY)
+    # A genuinely fresh checkout has no L3 rows yet; seed one so the context
+    # has something to inject (an empty context is legitimate on a truly
+    # blank slate, not what this test is checking).
+    memory.memory_write(
+        content="Ash is testing session persistence (ticket 002)",
+        tier="l3", importance=8, category="permanent_profile",
+    )
     context = memory.get_l3_context()
 
     print(f"  L3 context length: {len(context)} chars")

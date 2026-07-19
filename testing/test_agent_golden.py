@@ -20,6 +20,8 @@ import builtins
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Suppress monthly-review prompt before importing PiAgent
@@ -96,6 +98,12 @@ def test_exit_command():
 
 def test_analyze_performance_command():
     a = _fresh_agent()
+    # A genuinely fresh checkout has no logs/evolution.jsonl yet; seed one
+    # entry so the report has something to summarize (the "no logs" case is
+    # a legitimate, separately-honest response, not what this test checks).
+    a.evolution.log_interaction(
+        user_input="hello", pi_response="hi", tool_calls=[], success=True, mode="root"
+    )
     out = a.process_input("analyze performance")
     assert isinstance(out, str), f"want str, got {type(out)}"
     assert len(out) > 50, f"report too short: {out!r}"
@@ -128,6 +136,12 @@ def test_get_system_prompt_includes_consciousness_text():
     Both must include some identifiable consciousness text — the prompt
     builder must never strip the consciousness entirely.
     """
+    consciousness_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "prompts", "consciousness.txt"
+    )
+    if not os.path.exists(consciousness_path):
+        pytest.skip("prompts/consciousness.txt is private/gitignored — not present in this checkout")
+
     a = _fresh_agent()
     a.mode = "root"
     p_root = a._get_system_prompt()

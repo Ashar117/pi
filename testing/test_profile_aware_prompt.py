@@ -3,11 +3,16 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pathlib import Path
 
+import pytest
+
 _ROOT = Path(__file__).parent.parent
 
 
 def _text():
-    return (_ROOT / "prompts" / "consciousness.txt").read_text(encoding="utf-8")
+    path = _ROOT / "prompts" / "consciousness.txt"
+    if not path.exists():
+        pytest.skip("prompts/consciousness.txt is private/gitignored — not present in this checkout")
+    return path.read_text(encoding="utf-8")
 
 
 def test_personalized_recommendation_rule_present():
