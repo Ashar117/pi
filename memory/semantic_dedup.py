@@ -35,7 +35,7 @@ from typing import Dict, List, Optional, Tuple
 # ── Tuning constants ─────────────────────────────────────────────────────────
 
 EMBEDDING_MODEL = "gemini-embedding-001"
-QWEN_EMBEDDING_MODEL = os.getenv("QWEN_EMBEDDING_MODEL", "text-embedding-v3")
+QWEN_EMBEDDING_MODEL = os.getenv("QWEN_EMBEDDING_MODEL", "text-embedding-v4")
 _QWEN_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 COSINE_DUPLICATE_THRESHOLD = 0.90      # >= this: drop as duplicate
 COSINE_BORDERLINE_THRESHOLD = 0.75     # >= this but < duplicate: ask Haiku
@@ -103,7 +103,7 @@ def _anthropic_client():
 # ── Embedding ────────────────────────────────────────────────────────────────
 
 def _qwen_embed(text: str) -> Optional[List[float]]:
-    """DashScope text-embedding-v3 via the OpenAI-compatible endpoint.
+    """DashScope text-embedding-v4 via the OpenAI-compatible endpoint.
 
     Never raises — returns None on any failure (matches get_embedding contract).
     """

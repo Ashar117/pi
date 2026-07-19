@@ -21,7 +21,7 @@ with real write/read/forget lifecycle:
 - **L1 — raw log**: every conversation turn, archived (pruned at ~30 days).
 - **L2 — durable facts**: at session end, **Qwen distills** the conversation into
   discrete facts with importance scores and categories. Semantic dedup (cosine over
-  **Qwen `text-embedding-v3`** vectors) stops the same fact accumulating as paraphrases.
+  **Qwen `text-embedding-v4`** vectors) stops the same fact accumulating as paraphrases.
 - **L3 — hot cache**: the facts that matter now, injected into the system prompt every
   turn under a **hard token budget** — recall within a *limited* context window is the
   design constraint, not an accident.
@@ -43,10 +43,10 @@ context boosts retrieval of memories encoded in similar contexts.
 
 ## How Qwen Cloud powers it
 
-- **qwen-max** (DashScope OpenAI-compatible API) is first in every routing tier — it
+- **qwen3.7-max** (DashScope OpenAI-compatible API) is first in every routing tier — it
   runs the conversation, the session summaries, and the L2 fact distillation.
   *Qwen writes the memories, Qwen recalls them.*
-- **text-embedding-v3** embeds every memory and every query for the dense half of the
+- **text-embedding-v4** embeds every memory and every query for the dense half of the
   hybrid retriever and semantic dedup.
 - The router enforces a **per-provider daily token budget** with automatic brownout +
   failover — production cost discipline, not a demo loop.

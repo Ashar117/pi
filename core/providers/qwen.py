@@ -1,7 +1,7 @@
 """core/providers/qwen.py — Qwen provider via Alibaba Cloud Model Studio (DashScope).
 
 Base URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-Models: qwen-max (flagship reasoning), qwen-plus (balanced), qwen-turbo (fast/cheap).
+Models: qwen3.7-max (flagship reasoning, confirmed live 2026-07-19), qwen-plus (balanced), qwen-turbo (fast/cheap).
 
 This file is also the Alibaba Cloud proof-of-use for the Qwen Cloud hackathon
 submission: all calls go to Alibaba Cloud's DashScope OpenAI-compatible endpoint.
@@ -26,7 +26,7 @@ class QwenProvider:
     def __init__(
         self,
         api_key: str,
-        model: str = "qwen-max",
+        model: str = "qwen3.7-max",
     ):
         from openai import OpenAI
         self._client = OpenAI(

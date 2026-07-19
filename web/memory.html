@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pi — Memory</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: monospace; font-size: 13px; background: #0d0d0d; color: #d4d4d4;
+         min-height: 100vh; padding: 16px; }
+
+  #header { display: flex; align-items: center; gap: 10px; padding-bottom: 14px;
+            border-bottom: 1px solid #222; margin-bottom: 16px; }
+  #header h1 { font-size: 15px; color: #e8e8e8; letter-spacing: .02em; }
+  #header a { color: #7eb8f7; font-size: 11px; text-decoration: none; }
+  #header a:hover { text-decoration: underline; }
+  #token-input { margin-left: auto; padding: 3px 6px; background: #1a1a1a;
+                 border: 1px solid #333; color: #aaa; font-family: monospace;
+                 font-size: 11px; width: 140px; }
+  #token-input::placeholder { color: #444; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel { background: #111; border: 1px solid #222; border-radius: 4px; padding: 14px;
+           overflow-x: auto; }
+  .panel h2 { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: .05em;
+              margin-bottom: 10px; }
+  .panel.wide { grid-column: 1 / -1; }
+
+  .counts { display: flex; gap: 14px; margin-bottom: 10px; font-size: 11px; }
+  .count-badge { padding: 3px 8px; border-radius: 3px; background: #1a1a1a; }
+  .count-badge b { color: #e8e8e8; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: #666; font-weight: normal; font-size: 10px;
+       text-transform: uppercase; letter-spacing: .04em; padding: 4px 8px;
+       border-bottom: 1px solid #222; }
+  td { padding: 5px 8px; border-bottom: 1px solid #191919; color: #ccc; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .mono-id { color: #666; font-size: 11px; }
+  .pin { color: #f7cf7e; }
+
+  .score-bar-track { width: 60px; height: 8px; background: #1a1a1a; border-radius: 2px;
+                      display: inline-block; vertical-align: middle; overflow: hidden; }
+  .score-bar-fill { height: 100%; background: #4a7abf; }
+  .score-val { font-size: 10px; color: #7eb8f7; margin-left: 6px; }
+
+  .badge { padding: 2px 7px; border-radius: 3px; font-size: 10px; letter-spacing: .03em; }
+  .badge.EXPIRED { background: #4a3a1a; color: #f7cf7e; }
+  .badge.DECAYED { background: #3a1a4a; color: #cf9ef7; }
+  .badge.CONTRADICTED { background: #4a1a1a; color: #f78e8e; }
+  .badge.MERGED { background: #1e3a5f; color: #7eb8f7; }
+
+  #retrieve-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  #retrieve-q { flex: 1; padding: 6px 8px; background: #1a1a1a; border: 1px solid #333;
+                color: #d4d4d4; font-family: monospace; font-size: 12px; }
+  #retrieve-q:focus { outline: none; border-color: #4a7abf; }
+  #retrieve-btn { padding: 0 14px; background: #1e3a5f; color: #7eb8f7; border: none;
+                  cursor: pointer; font-family: monospace; font-size: 12px; }
+  #retrieve-btn:hover { background: #2a4e7f; }
+
+  .empty { color: #555; font-style: italic; font-size: 11px; padding: 6px 0; }
+  .stale { opacity: .5; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>Pi — Memory</h1>
+  <a href="/">chat</a>
+  <input id="token-input" type="password" placeholder="Bearer token (optional)">
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <h2>Memory state — hot L3 (top 12 by importance)</h2>
+    <div class="counts" id="counts">
+      <span class="count-badge">EXPIRED <b id="c-expired">–</b></span>
+      <span class="count-badge">DECAYED <b id="c-decayed">–</b></span>
+      <span class="count-badge">CONTRADICTED <b id="c-contradicted">–</b></span>
+      <span class="count-badge">MERGED <b id="c-merged">–</b></span>
+      <span style="color:#555;">(last 7 days)</span>
+    </div>
+    <table id="state-table">
+      <thead><tr><th>id</th><th>imp</th><th>category</th><th>content</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty" id="state-empty" style="display:none;">No active L3 facts yet.</div>
+  </div>
+
+  <div class="panel">
+    <h2>Forgetting ledger</h2>
+    <table id="ledger-table">
+      <thead><tr><th>id</th><th>reason</th><th>when</th><th>content</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty" id="ledger-empty" style="display:none;">Nothing forgotten in the last 7 days.</div>
+  </div>
+
+  <div class="panel wide">
+    <h2>Live retrieval — dense cosine + BM25 fusion</h2>
+    <div id="retrieve-row">
+      <input id="retrieve-q" placeholder="e.g. what organism do we study? (try a paraphrase of a stored fact)">
+      <button id="retrieve-btn">Retrieve</button>
+    </div>
+    <table id="retrieve-table">
+      <thead><tr><th>score</th><th>tier</th><th>category</th><th>content</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty" id="retrieve-empty">Run a query to see fused retrieval scores.</div>
+  </div>
+</div>
+
+<script>
+const BRAIN_URL = "http://127.0.0.1:7712";
+</script>
+<script src="/static/chat.js"></script>
+<script>
+const tokenInput = document.getElementById("token-input");
+tokenInput.value = getToken();
+tokenInput.addEventListener("change", () => setToken(tokenInput.value.trim()));
+
+function esc(s) {
+  return (s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+function short(id) { return (id || "").slice(0, 8); }
+function trunc(s, n) { s = s || ""; return s.length > n ? s.slice(0, n) + "…" : s; }
+
+// ── Memory state ──────────────────────────────────────────────────────────
+async function loadState() {
+  try {
+    const r = await fetch(BRAIN_URL + "/memory/state", { headers: authHeaders() });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    const counts = d.forgotten_counts || {};
+    document.getElementById("c-expired").textContent = counts.EXPIRED ?? 0;
+    document.getElementById("c-decayed").textContent = counts.DECAYED ?? 0;
+    document.getElementById("c-contradicted").textContent = counts.CONTRADICTED ?? 0;
+    document.getElementById("c-merged").textContent = counts.MERGED ?? 0;
+
+    const rows = d.l3 || [];
+    const tbody = document.querySelector("#state-table tbody");
+    tbody.innerHTML = "";
+    document.getElementById("state-empty").style.display = rows.length ? "none" : "block";
+    rows.forEach(row => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td class="mono-id">${short(row.id)}</td>` +
+        `<td>${row.importance ?? "–"}</td>` +
+        `<td>${esc(row.category || "")}</td>` +
+        `<td>${esc(trunc(row.content, 90))}</td>`;
+      tbody.appendChild(tr);
+    });
+  } catch (e) { /* non-fatal — agent may not be ready yet */ }
+}
+
+// ── Forgetting ledger ─────────────────────────────────────────────────────
+async function loadLedger() {
+  try {
+    const r = await fetch(BRAIN_URL + "/memory/forgotten?days=7", { headers: authHeaders() });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    const rows = d.forgotten || [];
+    const tbody = document.querySelector("#ledger-table tbody");
+    tbody.innerHTML = "";
+    document.getElementById("ledger-empty").style.display = rows.length ? "none" : "block";
+    rows.forEach(row => {
+      const when = row.when ? row.when.slice(0, 19).replace("T", " ") : "—";
+      let content = esc(trunc(row.content, 70));
+      if (row.reason === "MERGED" && row.superseded_by_snippet) {
+        content += ` <span style="color:#555;">→ merged into: ${esc(row.superseded_by_snippet)}</span>`;
+      }
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td class="mono-id">${short(row.id)}</td>` +
+        `<td><span class="badge ${row.reason}">${row.reason}</span></td>` +
+        `<td style="color:#666;font-size:11px;">${when}</td>` +
+        `<td>${content}</td>`;
+      tbody.appendChild(tr);
+    });
+  } catch (e) { /* non-fatal */ }
+}
+
+// ── Live retrieval ────────────────────────────────────────────────────────
+async function runRetrieve() {
+  const q = document.getElementById("retrieve-q").value.trim();
+  if (!q) return;
+  try {
+    const r = await fetch(BRAIN_URL + "/memory/retrieve?q=" + encodeURIComponent(q), { headers: authHeaders() });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    const hits = d.hits || [];
+    const tbody = document.querySelector("#retrieve-table tbody");
+    tbody.innerHTML = "";
+    document.getElementById("retrieve-empty").style.display = hits.length ? "none" : "block";
+    if (!hits.length) document.getElementById("retrieve-empty").textContent = "No matches above the score floor.";
+    hits.forEach(h => {
+      const pct = Math.max(0, Math.min(100, Math.round((h.score || 0) * 100)));
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td><span class="score-bar-track"><span class="score-bar-fill" style="width:${pct}%"></span></span>` +
+        `<span class="score-val">${(h.score ?? 0).toFixed(2)}</span></td>` +
+        `<td>${esc(h.tier || "")}</td>` +
+        `<td>${esc(h.category || "")}</td>` +
+        `<td>${esc(trunc(h.content, 90))}</td>`;
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    document.getElementById("retrieve-empty").style.display = "block";
+    document.getElementById("retrieve-empty").textContent = "Retrieval failed: " + e.message;
+  }
+}
+document.getElementById("retrieve-btn").addEventListener("click", runRetrieve);
+document.getElementById("retrieve-q").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") runRetrieve();
+});
+
+// ── Init + auto-refresh ───────────────────────────────────────────────────
+loadState();
+loadLedger();
+setInterval(loadState, 10000);
+setInterval(loadLedger, 10000);
+</script>
+</body>
+</html>

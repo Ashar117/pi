@@ -75,11 +75,11 @@ When closed: move into §6 of `CHECKPOINTS/current.md` and §9 of this file (aut
 
 <!-- BEGIN AUTO §4 -->
 - **Phase:** Hackathon-prep refinement → doc truth pass (fix/conversation-coherence)
-- **Last verify:** PASS · 312/312 files clean · 161 tests · 0 failures
+- **Last verify:** PASS · 315/315 files clean · 163 tests · 0 failures
 - **Open tickets:** 16
-- **Closed tickets:** 330
-- **Solutions logged:** 222
-- **Turns today:** 204
+- **Closed tickets:** 333
+- **Solutions logged:** 225
+- **Turns today:** 196
 - **Last session end:** 2026-07-07
 <!-- END AUTO §4 -->
 
@@ -191,6 +191,9 @@ For every meaningful change:
 <!-- BEGIN AUTO §9 -->
 | Solution | Ticket | Title |
 |---|---|---|
+| S-230 | T-309 | Ash asked where decayed memories actually go, expecting 'archived, never permane |
+| S-229 | T-306 | MemoryTools._sync_l3() reconciled the local L3 cache with Supabase every 300s by |
+| S-228 | T-304 | Pi's strongest Track-1 assets were invisible: three-tier memory state lived in S |
 | S-227 | T-303 | The caretaker's lexical contradiction scan (scan_contradictions) groups rows by  |
 | S-226 | T-301 | Every forgetting mechanism (expiry, contradiction, dedup-merge) left a queryable |
 | S-225 | T-302 | Both forgetting entry points (MemoryTools.memory_delete, memory_cli cmd_forget)  |
@@ -198,9 +201,6 @@ For every meaningful change:
 | S-223 | T-299 | active_until was only set when the caller passed an explicit expiry, and the mem |
 | S-222 | T-298 | MemoryTools.retrieve()'s dense-cosine L3 query (tools_memory.py) had no active_u |
 | S-221 | T-297 | T-291 shipped backfill_l3_embeddings() as the deliberate fill mechanism for L3 e |
-| S-220 | T-296 | Residual after T-295: (1) 'eth' was not in _MARKET_SIGNALS (only 'btc'), so 'wha |
-| S-219 | T-295 | In normie mode the awareness markets shortcut (_extract_markets in agent/awarene |
-| S-218 | T-294 | agent/session.py::generate_session_summary took a bare Groq client and called gr |
 <!-- END AUTO §9 -->
 
 ---

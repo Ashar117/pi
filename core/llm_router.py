@@ -103,7 +103,7 @@ class LLMRouter:
         cerebras_model: str = "gpt-oss-120b",  # updated 2026-06; CEREBRAS_MODEL env overrides
         openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free",
         z_ai_model: str = "glm-4.7-flash",
-        qwen_model: str = "qwen-max",
+        qwen_model: str = "qwen3.7-max",
         ollama_host: str = "http://localhost:11434",
         ollama_model: str = "dolphin-mistral",
         enable_ollama: bool = True,

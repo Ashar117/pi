@@ -25,7 +25,7 @@ _BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 
 class QwenProvider:
     name = "qwen"
-    def __init__(self, api_key, model="qwen-max"):
+    def __init__(self, api_key, model="qwen3.7-max"):
         from openai import OpenAI
         self._client = OpenAI(api_key=api_key, base_url=_BASE_URL, timeout=30.0)
 ```
@@ -36,7 +36,7 @@ nothing changes locally. The whole diff was ~40 lines plus tests. Multi-provider
 architecture pays for itself the day a hackathon hands you a new provider.
 
 The part I didn't expect to be this smooth: **embeddings**. Pi used Gemini embeddings
-for semantic dedup. DashScope's `text-embedding-v3` slots into the same
+for semantic dedup. DashScope's `text-embedding-v4` slots into the same
 OpenAI-compatible client, so the embedding function became "try Qwen, fall back to
 Gemini" — and suddenly the *entire* memory stack (think, summarize, embed) runs on
 Alibaba Cloud.
@@ -90,7 +90,7 @@ A memory agent that can't forget is a hoarder; one that deletes is a liar.
 
 - The OpenAI-compatible endpoint is genuinely compatible — chat, tools, and
   embeddings all worked with the `openai` SDK unmodified.
-- `qwen-max` handled the unglamorous jobs (summarize this session into 2–3 sentences;
+- `qwen3.7-max` handled the unglamorous jobs (summarize this session into 2–3 sentences;
   extract discrete facts as JSON) reliably, which is exactly what a memory pipeline
   needs — those calls run unattended at session exit.
 - Free-tier + budget pressure was a feature: my router's per-provider daily token

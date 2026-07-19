@@ -119,6 +119,44 @@ async def health(_: None = Depends(_verify_token)):
     return {"status": "ok", "mode": ag.mode, "turn_number": ag.turn_number}
 
 
+# ── T-304: memory dashboard (read-only) ───────────────────────────────────────
+
+@app.get("/memory", response_class=HTMLResponse, include_in_schema=False)
+async def serve_memory_dashboard():
+    page = _WEB_DIR / "memory.html"
+    if page.exists():
+        return HTMLResponse(page.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>Pi Memory</h1><p>web/memory.html not found.</p>")
+
+
+@app.get("/memory/state")
+async def memory_state(_: None = Depends(_verify_token)):
+    """Hot L3 rows (importance-ordered) + forgetting counts for the last week."""
+    ag = _get_agent()
+    rows = ag.memory.memory_read("", tier="l3", limit=12) or []
+    counts = {"EXPIRED": 0, "CONTRADICTED": 0, "MERGED": 0}
+    for entry in ag.memory.forgotten_ledger(days=7):
+        counts[entry["reason"]] = counts.get(entry["reason"], 0) + 1
+    return {"l3": rows, "forgotten_counts": counts}
+
+
+@app.get("/memory/retrieve")
+async def memory_retrieve(q: str, _: None = Depends(_verify_token)):
+    """Live hybrid retrieval (dense cosine + BM25 fusion) with fused scores."""
+    ag = _get_agent()
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="q must not be empty")
+    hits = ag.memory.retrieve(q, k=8) or []
+    return {"query": q, "hits": hits}
+
+
+@app.get("/memory/forgotten")
+async def memory_forgotten(days: int = 7, _: None = Depends(_verify_token)):
+    """The forgetting ledger — what died, when, and why."""
+    ag = _get_agent()
+    return {"days": days, "forgotten": ag.memory.forgotten_ledger(days=days)}
+
+
 @app.get("/conversations")
 async def list_conversations(_: None = Depends(_verify_token)):
     ag = _get_agent()

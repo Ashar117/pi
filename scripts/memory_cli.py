@@ -29,6 +29,12 @@ from pathlib import Path
 _ROOT = Path(__file__).parent.parent
 _PUBLIC_DB = _ROOT / "data" / "pi.db"
 
+# Run-as-script support: `python scripts/memory_cli.py ...` puts scripts/ first
+# on sys.path — repo root must be added for `from tools.tools_memory import ...`
+# (cmd_forget's semantic path and cmd_forgotten both need it).
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
 
@@ -255,87 +261,25 @@ def cmd_why(args: argparse.Namespace) -> None:
         print(f"  Formula     : {d.get('formula') or '-'}")
 
 
-def _parse_iso(s: str | None):
-    """Parse an ISO timestamp that may use 'Z' or '+00:00' suffix. None on failure."""
-    if not s:
-        return None
-    try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
 def cmd_forgotten(args: argparse.Namespace) -> None:
     """T-301: the forgetting ledger — recently forgotten rows, classified by why.
 
-    Precedence (a row is classified exactly once, never shown twice):
-      1. CONTRADICTED — invalid_at is set (a newer fact superseded it)
-      2. EXPIRED      — active_until has passed (scheduled/inferred expiry, or
-                         decay-archive) and invalid_at is NOT set
-      3. MERGED       — superseded_by is set (semantic-dedup merge loser) and
-                         neither of the above applies
-
-    SQL stays dumb (pulls every row carrying any of the three signals);
-    classification and the --days window are applied in Python since the
-    three timestamp columns aren't uniformly formatted across write paths.
-
-    Caveat: dedup-merge (T-125b) does not record a merge timestamp, so MERGED
-    rows are always included regardless of --days — there is nothing to window on.
+    T-304: classification lives in MemoryTools.forgotten_ledger (single shared
+    implementation with the dashboard's /memory/forgotten endpoint); this
+    command is rendering only. Precedence and the --days window semantics are
+    documented on that method.
     """
-    con = _connect()
+    if not _PUBLIC_DB.exists():
+        print(f"[memory_cli] DB not found: {_PUBLIC_DB}", file=sys.stderr)
+        sys.exit(1)
+
     days = getattr(args, "days", None)
     if days is None:
         days = 7
-    now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=days)
 
-    rows = con.execute(
-        "SELECT id, content, importance, category, active_until, invalid_at, superseded_by "
-        "FROM l3_cache WHERE invalid_at IS NOT NULL "
-        "   OR active_until IS NOT NULL "
-        "   OR (superseded_by IS NOT NULL AND superseded_by != '')"
-    ).fetchall()
-
-    classified = []
-    for rid, content, imp, cat, active_until, invalid_at, superseded_by in rows:
-        invalid_dt = _parse_iso(invalid_at)
-        active_dt = _parse_iso(active_until)
-
-        if invalid_dt is not None:
-            reason, when_dt, pointer_id = "CONTRADICTED", invalid_dt, None
-        elif active_dt is not None and active_dt < now:
-            reason, when_dt, pointer_id = "EXPIRED", active_dt, None
-        elif superseded_by:
-            reason, when_dt, pointer_id = "MERGED", None, superseded_by
-        else:
-            continue
-
-        if when_dt is not None and when_dt < cutoff:
-            continue
-
-        classified.append({
-            "id": rid, "content": content, "importance": imp, "category": cat,
-            "reason": reason, "when": when_dt.isoformat() if when_dt else None,
-            "pointer_id": pointer_id,
-        })
-
-    # Resolve MERGED pointer content snippets in one batch query.
-    pointer_ids = [c["pointer_id"] for c in classified if c["pointer_id"]]
-    winners = {}
-    if pointer_ids:
-        ph = ",".join("?" * len(pointer_ids))
-        winners = dict(con.execute(
-            f"SELECT id, content FROM l3_cache WHERE id IN ({ph})", pointer_ids
-        ).fetchall())
-    con.close()
-
-    for c in classified:
-        if c["pointer_id"]:
-            c["superseded_by_snippet"] = (winners.get(c["pointer_id"]) or "")[:60]
-
-    with_time = sorted((c for c in classified if c["when"]), key=lambda c: c["when"], reverse=True)
-    without_time = [c for c in classified if not c["when"]]
-    classified = with_time + without_time
+    from tools.tools_memory import MemoryTools
+    mt = MemoryTools(supabase_url="", supabase_key="", sqlite_path=str(_PUBLIC_DB))
+    classified = mt.forgotten_ledger(days=days)
 
     if args.json:
         print(json.dumps(classified, indent=2, ensure_ascii=False))
@@ -345,7 +289,8 @@ def cmd_forgotten(args: argparse.Namespace) -> None:
         print(f"[memory_cli] Nothing forgotten in the last {days} day(s).")
         return
 
-    counts = {"EXPIRED": 0, "CONTRADICTED": 0, "MERGED": 0}
+    from collections import Counter
+    counts = Counter()
     print(f"[memory_cli] Forgotten in the last {days} day(s):")
     for c in classified:
         counts[c["reason"]] += 1
@@ -355,7 +300,7 @@ def cmd_forgotten(args: argparse.Namespace) -> None:
             line += f"  -> merged into: {c.get('superseded_by_snippet', '')!r}"
         print(line)
     print(
-        f"[memory_cli] {counts['EXPIRED']} expired, "
+        f"[memory_cli] {counts['EXPIRED']} expired, {counts['DECAYED']} decayed, "
         f"{counts['CONTRADICTED']} contradicted, {counts['MERGED']} merged"
     )
 

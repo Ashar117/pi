@@ -271,8 +271,13 @@ def _handle_l3_decay_archive(policy: Policy, dry_run: bool) -> Dict[str, Any]:
     (importance * exp(-decay_rate * days_since_access)) drops below 1.0.
     Conservative by construction: an importance-5 row at the default 0.01/day
     rate needs ~160 untouched days to cross the threshold. Pinned rows and
-    already-invalid rows are skipped. 'Archive' means setting active_until=now
-    — soft, recoverable via --include-archived, never a hard delete.
+    already-invalid rows are skipped.
+
+    T-309: 'archive' means moving the row to l3_archive (memory.archive) —
+    physically out of l3_cache, so no production read path can ever surface
+    it again, not just setting active_until=now in place (which used to get
+    hard-deleted by the very next daily prune_l3_expired sweep — the exact
+    'archived means deleted tomorrow' bug this ticket fixes).
     """
     if os.environ.get("PI_DECAY_ARCHIVE", "").lower() in ("0", "off", "false", "no"):
         return {"applied": False, "reason": "PI_DECAY_ARCHIVE=off", "stats": {"archived": 0}}
@@ -285,6 +290,7 @@ def _handle_l3_decay_archive(policy: Policy, dry_run: bool) -> Dict[str, Any]:
 
     try:
         from memory.salience import effective_importance
+        from memory.archive import archive_l3_row
     except ImportError as exc:
         return {"applied": False, "reason": f"memory.salience unavailable: {exc}", "stats": stats}
 
@@ -313,10 +319,7 @@ def _handle_l3_decay_archive(policy: Policy, dry_run: bool) -> Dict[str, Any]:
 
         if not dry_run:
             for row_id in to_archive:
-                conn.execute(
-                    "UPDATE l3_cache SET active_until = ? WHERE id = ?",
-                    [now_iso, row_id],
-                )
+                archive_l3_row(conn, row_id, "decay", now_iso)
             conn.commit()
 
         stats["archived"] = len(to_archive)

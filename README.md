@@ -38,8 +38,8 @@ flowchart LR
     end
 
     subgraph qwen [Alibaba Cloud Model Studio]
-        QC[Qwen chat<br/>qwen-max]
-        QE[Qwen embeddings<br/>text-embedding-v3]
+        QC[Qwen chat<br/>qwen3.7-max]
+        QE[Qwen embeddings<br/>text-embedding-v4]
     end
 
     CLI & WEB & EXT & TG --> API --> AGENT
@@ -114,7 +114,7 @@ Three tiers backed by Supabase + SQLite:
 
 `memory_read` default: checks L3 first — returns immediately on hit. Falls back to L2 only if L3 has nothing. Every turn (all modes, all paths) also logs locally to `logs/turns.jsonl` — durable, offline-safe.
 
-**Retrieval:** `MemoryTools.retrieve()` fuses dense cosine similarity (Qwen `text-embedding-v3` / Gemini embeddings) with BM25 lexical ranking across L3+L2, wired directly into the turn loop — every recall-shaped question runs it automatically, not just when the model chooses to call a tool. Proven on a paraphrase case with zero lexical overlap that keyword search misses entirely (`testing/test_hybrid_retriever.py`).
+**Retrieval:** `MemoryTools.retrieve()` fuses dense cosine similarity (Qwen `text-embedding-v4` / Gemini embeddings) with BM25 lexical ranking across L3+L2, wired directly into the turn loop — every recall-shaped question runs it automatically, not just when the model chooses to call a tool. Proven on a paraphrase case with zero lexical overlap that keyword search misses entirely (`testing/test_hybrid_retriever.py`).
 
 **Forgetting** is four soft, recoverable mechanisms — never a hard delete: scheduled expiry (explicit or auto-inferred from phrasing like "just for today"), neglect-based decay (daily, unpinned facts fade with disuse, access resets the clock), contradiction detection (lexical topic-matching **and** an LLM-adjudicated pass for implication-level conflicts an LLM alone can catch, e.g. "moved to Boston" vs. "apartment in Atlanta"), and semantic dedup. The whole lifecycle is visible in one command:
 

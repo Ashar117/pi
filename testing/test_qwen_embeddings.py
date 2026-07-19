@@ -42,7 +42,7 @@ def test_qwen_embed_hits_dashscope_base_url(monkeypatch):
 
     assert vec == [0.1, 0.2, 0.3]
     assert captured["init_kwargs"]["base_url"] == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-    assert captured["model"] == "text-embedding-v3"
+    assert captured["model"] == "text-embedding-v4"
 
 
 def test_get_embedding_prefers_qwen_when_key_set(monkeypatch):

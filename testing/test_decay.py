@@ -115,9 +115,11 @@ def test_decay_archive_runs_by_default_when_env_unset(tmp_path, monkeypatch):
     result = run_policy(_decay_policy(db))
     assert result["applied"]
     conn = sqlite3.connect(str(db))
-    row = conn.execute("SELECT active_until FROM l3_cache WHERE id='aa-1'").fetchone()
+    row = conn.execute("SELECT id FROM l3_cache WHERE id='aa-1'").fetchone()
+    archived = conn.execute("SELECT archive_reason FROM l3_archive WHERE id='aa-1'").fetchone()
     conn.close()
-    assert row[0] is not None, "decayed row should be archived with the env var unset"
+    assert row is None, "decayed row should be moved out of l3_cache (T-309)"
+    assert archived is not None and archived[0] == "decay"
 
 
 def test_decay_archive_can_be_disabled(tmp_path, monkeypatch):
@@ -129,6 +131,10 @@ def test_decay_archive_can_be_disabled(tmp_path, monkeypatch):
     result = run_policy(_decay_policy(db))
     assert not result["applied"]
     assert "PI_DECAY_ARCHIVE" in result["reason"]
+    conn = sqlite3.connect(str(db))
+    row = conn.execute("SELECT id FROM l3_cache WHERE id='aa-2'").fetchone()
+    conn.close()
+    assert row is not None, "disabled policy must not move any row"
 
 
 # ── archive policy: below-threshold rows archived ────────────────────────────
@@ -144,12 +150,11 @@ def test_decay_archive_moves_low_eff_importance(tmp_path, monkeypatch):
     ])
     run_policy(_decay_policy(db))
     conn = sqlite3.connect(str(db))
-    rows = {r[0]: r[1] for r in conn.execute(
-        "SELECT id, active_until FROM l3_cache"
-    ).fetchall()}
+    remaining = {r[0] for r in conn.execute("SELECT id FROM l3_cache").fetchall()}
+    archived = {r[0] for r in conn.execute("SELECT id FROM l3_archive").fetchall()}
     conn.close()
-    assert rows["bb-1"] is not None, "decayed row should be archived"
-    assert rows["bb-2"] is None, "healthy row should remain active"
+    assert "bb-1" not in remaining and "bb-1" in archived, "decayed row should be archived"
+    assert "bb-2" in remaining and "bb-2" not in archived, "healthy row should remain active"
 
 
 def test_decay_archive_spares_pinned_rows(tmp_path, monkeypatch):
@@ -180,7 +185,7 @@ def test_decay_archive_dry_run_no_writes(tmp_path, monkeypatch):
     assert row[0] is None, "dry_run must not modify rows"
 
 
-def test_archived_rows_have_valid_active_until(tmp_path, monkeypatch):
+def test_archived_rows_have_valid_archived_at(tmp_path, monkeypatch):
     monkeypatch.setenv("PI_DECAY_ARCHIVE", "on")
     old = (datetime.now(timezone.utc) - timedelta(days=300)).isoformat()
     db = _make_db(tmp_path, [
@@ -188,12 +193,12 @@ def test_archived_rows_have_valid_active_until(tmp_path, monkeypatch):
     ])
     run_policy(_decay_policy(db))
     conn = sqlite3.connect(str(db))
-    active_until = conn.execute(
-        "SELECT active_until FROM l3_cache WHERE id='ee-1'"
+    archived_at = conn.execute(
+        "SELECT archived_at FROM l3_archive WHERE id='ee-1'"
     ).fetchone()[0]
     conn.close()
-    assert active_until is not None
-    parsed = datetime.fromisoformat(active_until.replace("Z", "+00:00"))
+    assert archived_at is not None
+    parsed = datetime.fromisoformat(archived_at.replace("Z", "+00:00"))
     assert parsed <= datetime.now(timezone.utc) + timedelta(seconds=5)
 
 

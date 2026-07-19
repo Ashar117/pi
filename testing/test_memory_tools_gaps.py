@@ -150,10 +150,15 @@ def test_prune_l3_expired_deletes_from_supabase_and_sqlite():
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM l3_cache ORDER BY id")
     remaining = [r[0] for r in cursor.fetchall()]
+    # T-309: "gone" means archived, not destroyed.
+    archived = cursor.execute(
+        "SELECT id, archive_reason FROM l3_archive WHERE id = 'expired-1'"
+    ).fetchone()
     conn.close()
     assert "expired-1" not in remaining
     assert "active-1" in remaining
     assert "permanent" in remaining
+    assert archived == ("expired-1", "expired")
     os.unlink(db)
 
 

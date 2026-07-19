@@ -1349,6 +1349,117 @@ class MemoryTools:
         finally:
             conn.close()
 
+    def forgotten_ledger(self, days: int = 7) -> list:
+        """T-301/T-304/T-309: the forgetting ledger — recently forgotten L3
+        rows, classified by why. Single shared implementation consumed by both
+        `memory_cli forgotten` and the dashboard's /memory/forgotten endpoint
+        (one classifier = no write/read divergence between the two views).
+
+        Precedence for rows still in l3_cache (a row is classified exactly
+        once, never shown twice):
+          1. CONTRADICTED — invalid_at is set (a newer fact superseded it)
+          2. EXPIRED      — active_until has passed and invalid_at is NOT set
+          3. MERGED       — superseded_by is set and neither of the above applies
+
+        Rows already moved to l3_archive (T-309: prune_l3_expired / decay
+        archive no longer flag rows in place, they relocate them) are read
+        separately and classified by archive_reason:
+          - 'expired' -> EXPIRED
+          - 'decay'   -> DECAYED (distinct from EXPIRED: forgotten for being
+                         unused, not for a timed-out active_until)
+
+        SQL stays dumb (pulls every row carrying any of the relevant signals);
+        classification and the days window are applied in Python since the
+        timestamp columns aren't uniformly formatted across write paths.
+        MERGED rows carry no merge timestamp, so they are always included.
+
+        Returns dicts: {id, content, importance, category, reason, when,
+        pointer_id, superseded_by_snippet? (MERGED only)} — newest first,
+        timeless MERGED rows last.
+        """
+        def _parse_iso(s):
+            if not s:
+                return None
+            try:
+                return datetime.fromisoformat(s.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=days)
+
+        conn = sqlite3.connect(self.sqlite_path)
+        try:
+            rows = conn.execute(
+                "SELECT id, content, importance, category, active_until, invalid_at, superseded_by "
+                "FROM l3_cache WHERE invalid_at IS NOT NULL "
+                "   OR active_until IS NOT NULL "
+                "   OR (superseded_by IS NOT NULL AND superseded_by != '')"
+            ).fetchall()
+
+            classified = []
+            for rid, content, imp, cat, active_until, invalid_at, superseded_by in rows:
+                invalid_dt = _parse_iso(invalid_at)
+                active_dt = _parse_iso(active_until)
+
+                if invalid_dt is not None:
+                    reason, when_dt, pointer_id = "CONTRADICTED", invalid_dt, None
+                elif active_dt is not None and active_dt < now:
+                    reason, when_dt, pointer_id = "EXPIRED", active_dt, None
+                elif superseded_by:
+                    reason, when_dt, pointer_id = "MERGED", None, superseded_by
+                else:
+                    continue
+
+                if when_dt is not None and when_dt < cutoff:
+                    continue
+
+                classified.append({
+                    "id": rid, "content": content, "importance": imp, "category": cat,
+                    "reason": reason, "when": when_dt.isoformat() if when_dt else None,
+                    "pointer_id": pointer_id,
+                })
+
+            # T-309: rows already moved to l3_archive by prune_l3_expired /
+            # decay-archive — surface them too so the ledger doesn't go blank
+            # the day after a row is actually forgotten.
+            try:
+                arows = conn.execute(
+                    "SELECT id, content, importance, category, archived_at, archive_reason "
+                    "FROM l3_archive"
+                ).fetchall()
+            except sqlite3.OperationalError:
+                arows = []  # l3_archive doesn't exist yet — nothing archived so far
+
+            for rid, content, imp, cat, archived_at, archive_reason in arows:
+                when_dt = _parse_iso(archived_at)
+                if when_dt is not None and when_dt < cutoff:
+                    continue
+                reason = "DECAYED" if archive_reason == "decay" else "EXPIRED"
+                classified.append({
+                    "id": rid, "content": content, "importance": imp, "category": cat,
+                    "reason": reason, "when": when_dt.isoformat() if when_dt else None,
+                    "pointer_id": None,
+                })
+
+            pointer_ids = [c["pointer_id"] for c in classified if c["pointer_id"]]
+            winners = {}
+            if pointer_ids:
+                ph = ",".join("?" * len(pointer_ids))
+                winners = dict(conn.execute(
+                    f"SELECT id, content FROM l3_cache WHERE id IN ({ph})", pointer_ids
+                ).fetchall())
+        finally:
+            conn.close()
+
+        for c in classified:
+            if c["pointer_id"]:
+                c["superseded_by_snippet"] = (winners.get(c["pointer_id"]) or "")[:60]
+
+        with_time = sorted((c for c in classified if c["when"]), key=lambda c: c["when"], reverse=True)
+        without_time = [c for c in classified if not c["when"]]
+        return with_time + without_time
+
     def log_turn(
         self,
         thread_id: str,
@@ -2221,12 +2332,19 @@ class MemoryTools:
             pass
 
     def prune_l3_expired(self) -> Dict:
-        """Delete L3 entries whose active_until has passed from both Supabase and SQLite.
+        """Archive L3 entries whose active_until has passed (SQLite) and delete
+        them from Supabase's durable l3_active_memory.
 
         Entries past their expiry are already invisible in get_l3_context() queries,
         but they accumulate in storage indefinitely without this cleanup (T-026).
+        T-309: the local copy is moved to l3_archive (memory.archive), not hard-
+        deleted — 'expired' is a forgetting reason, not data loss. The remote
+        Supabase row is still hard-deleted; that tier is out of this ticket's
+        scope (archiving is a local hot-cache concept, same as T-135/T-300).
         Best-effort — errors are caught and returned in the result dict.
         """
+        from memory.archive import archive_l3_row
+
         now = datetime.now(timezone.utc).isoformat()
         supabase_deleted = 0
         sqlite_deleted = 0
@@ -2246,11 +2364,15 @@ class MemoryTools:
         try:
             conn = sqlite3.connect(self.sqlite_path)
             cursor = conn.cursor()
-            cursor.execute(
-                "DELETE FROM l3_cache WHERE active_until IS NOT NULL AND active_until < ?",
-                [now],
-            )
-            sqlite_deleted = cursor.rowcount
+            expired_ids = [
+                row[0] for row in cursor.execute(
+                    "SELECT id FROM l3_cache WHERE active_until IS NOT NULL AND active_until < ?",
+                    [now],
+                ).fetchall()
+            ]
+            for rid in expired_ids:
+                archive_l3_row(conn, rid, "expired", now)
+            sqlite_deleted = len(expired_ids)
             conn.commit()
             conn.close()
         except Exception as e:
@@ -2587,6 +2709,16 @@ class MemoryTools:
         cache on the very next sync (write-then-immediate-read returned
         empty). Ordering by created_at desc guarantees new rows are always
         included; the explicit limit makes any truncation intentional.
+
+        T-306: UPSERT, not DELETE+reinsert. l3_cache has 16 local-only columns
+        (embedding, decay_rate, pinned, last_accessed_at, mode, conversation_id,
+        scope, source_l2_id, kind, source_id, recompute_after, formula,
+        superseded_by, surprise_score, goal_alignment, affect_tag) that
+        Supabase's l3_active_memory doesn't carry — a full wipe silently reset
+        all of them to defaults on every sync. Only the 7 Supabase-owned
+        columns are overwritten here; everything else survives untouched.
+        kind='derived' rows (agent/caretaker.py) never have a Supabase
+        counterpart at all and are excluded from the reconciling delete below.
         """
         try:
             with self._supa_lock:
@@ -2596,17 +2728,25 @@ class MemoryTools:
 
             conn = sqlite3.connect(self.sqlite_path)
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM l3_cache")
 
+            fetched_ids = []
             if response.data:
                 for entry in response.data:
                     # T-078: copy invalid_at from metadata JSONB into SQLite column
                     # so local search/ambient queries can filter on it.
                     meta = entry.get("metadata") or {}
                     invalid_at_val = meta.get("invalid_at") if isinstance(meta, dict) else None
+                    fetched_ids.append(entry["id"])
                     cursor.execute("""
                         INSERT INTO l3_cache (id, content, importance, category, active_until, created_at, invalid_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            content = excluded.content,
+                            importance = excluded.importance,
+                            category = excluded.category,
+                            active_until = excluded.active_until,
+                            created_at = excluded.created_at,
+                            invalid_at = excluded.invalid_at
                     """, [
                         entry["id"],
                         entry["content"],
@@ -2617,6 +2757,22 @@ class MemoryTools:
                         invalid_at_val,
                     ])
 
+            # Reconcile deletions: a row missing from the fetch was genuinely
+            # removed remotely (e.g. hard-deleted by prune_l3_expired) — except
+            # derived rows, which are SQLite-only by design and never appear
+            # in any Supabase fetch.
+            if fetched_ids:
+                placeholders = ",".join("?" * len(fetched_ids))
+                cursor.execute(
+                    f"DELETE FROM l3_cache WHERE id NOT IN ({placeholders}) "
+                    f"AND (kind IS NULL OR kind != 'derived')",
+                    fetched_ids,
+                )
+            else:
+                cursor.execute(
+                    "DELETE FROM l3_cache WHERE (kind IS NULL OR kind != 'derived')"
+                )
+
             conn.commit()
             conn.close()
             self._last_sync = datetime.now(timezone.utc)  # T-011: mark sync time
@@ -2624,7 +2780,15 @@ class MemoryTools:
             print(f"[Memory] L3 sync error: {e}")
 
     def _verify_write(self, entry_id: str, content: str, tier: str) -> Dict:
-        """Verify write succeeded in both SQLite and Supabase (T-014)."""
+        """Verify write succeeded in both SQLite and Supabase (T-014).
+
+        Supabase is optional (README: "L3 runs on local SQLite without it").
+        In offline/noop mode (_NoopSupabase — no SUPABASE_URL/KEY configured)
+        there is no remote to verify against; requiring supabase_ok anyway
+        meant every L3 write reported success=False on any Supabase-less
+        checkout even though the SQLite write fully succeeded. Verification
+        then rests on SQLite alone.
+        """
 
         # Check SQLite cache
         conn = sqlite3.connect(self.sqlite_path)
@@ -2634,6 +2798,9 @@ class MemoryTools:
         conn.close()
 
         sqlite_ok = row is not None and row[0] == content
+
+        if isinstance(self._supabase_client, _NoopSupabase):
+            return {"id": entry_id, "success": sqlite_ok, "verified": sqlite_ok, "tier": tier}
 
         # Check Supabase — only true persistence matters
         supabase_ok = False

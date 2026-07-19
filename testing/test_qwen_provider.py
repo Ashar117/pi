@@ -29,7 +29,7 @@ def test_provider_name_model_and_base_url(monkeypatch):
     from core.providers.qwen import QwenProvider
     p = QwenProvider("fake-key")
     assert p.name == "qwen"
-    assert p.model == "qwen-max"
+    assert p.model == "qwen3.7-max"
     # DashScope OpenAI-compatible endpoint — the Alibaba Cloud proof-of-use
     assert captured["base_url"] == "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 
@@ -55,4 +55,4 @@ def test_qwen_has_daily_token_budget():
 def test_router_qwen_model_default():
     from core.llm_router import LLMRouter
     default = inspect.signature(LLMRouter.__init__).parameters["qwen_model"].default
-    assert default == "qwen-max"
+    assert default == "qwen3.7-max"

@@ -345,3 +345,49 @@ def test_forgotten_empty_prints_message(tmp_path, capsys):
     out = capsys.readouterr().out
 
     assert "Nothing forgotten" in out
+
+
+# ── T-304: MemoryTools.forgotten_ledger — the shared classifier itself ───────
+# cmd_forgotten is now a thin renderer over this method (dashboard's
+# /memory/forgotten endpoint calls the same method) — this test exercises the
+# API directly, not through the CLI wrapper.
+
+def test_forgotten_ledger_classifies_directly(tmp_path):
+    from tools.tools_memory import MemoryTools
+    db = _seed_forgotten_db(tmp_path)
+    mt = MemoryTools(supabase_url="", supabase_key="", sqlite_path=str(db))
+
+    ledger = mt.forgotten_ledger(days=7)
+    by_id = {d["id"]: d for d in ledger}
+
+    assert by_id["id-expired"]["reason"] == "EXPIRED"
+    assert by_id["id-contradicted"]["reason"] == "CONTRADICTED"
+    assert by_id["id-merged"]["reason"] == "MERGED"
+    assert by_id["id-merged"]["superseded_by_snippet"].startswith("current address: 45 Oak Ave")
+    assert "id-healthy" not in by_id
+    assert "id-winner" not in by_id
+
+
+def test_forgotten_ledger_classifies_decayed_from_archive(tmp_path):
+    """T-309: rows already moved to l3_archive by decay-archive must still
+    surface in the ledger, tagged DECAYED (not EXPIRED — different reason)."""
+    from tools.tools_memory import MemoryTools
+    from memory.archive import ensure_l3_archive_table
+
+    db = _seed_forgotten_db(tmp_path)
+    mt = MemoryTools(supabase_url="", supabase_key="", sqlite_path=str(db))
+
+    con = sqlite3.connect(str(db))
+    ensure_l3_archive_table(con)
+    con.execute(
+        "INSERT INTO l3_archive (id, content, importance, category, archived_at, archive_reason) "
+        "VALUES ('id-decayed', 'unused zebrafish fact', 3, 'note', ?, 'decay')",
+        [datetime.now(timezone.utc).isoformat()],
+    )
+    con.commit()
+    con.close()
+
+    ledger = mt.forgotten_ledger(days=7)
+    by_id = {d["id"]: d for d in ledger}
+
+    assert by_id["id-decayed"]["reason"] == "DECAYED"

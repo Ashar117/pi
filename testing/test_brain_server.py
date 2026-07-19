@@ -35,6 +35,19 @@ def _make_agent(conversation_id="conv-1", mode="root", turn=1, memory=None):
              "last_active_at": "2026-06-01T00:01:00+00:00"}
         ]
         memory.load_conversation_turns.return_value = []
+        memory.memory_read.return_value = [
+            {"id": "aaaa0001", "content": "Ash studies at GSU",
+             "importance": 9, "category": "permanent_profile"},
+        ]
+        memory.forgotten_ledger.return_value = [
+            {"id": "bbbb0002", "content": "old wifi note", "importance": 5,
+             "category": "note", "reason": "EXPIRED", "when": "2026-07-17T00:00:00+00:00",
+             "pointer_id": None},
+        ]
+        memory.retrieve.return_value = [
+            {"id": "cccc0003", "content": "the lab uses zebrafish", "importance": 8,
+             "category": "note", "tier": "l3", "score": 0.87},
+        ]
     ag.memory = memory
     ag.process_input = MagicMock(return_value="Hello back!")
     return ag
@@ -153,6 +166,80 @@ def test_auth_rejected_with_wrong_bearer(client, monkeypatch):
     c, _ = client
     resp = c.get("/health", headers={"Authorization": "Bearer wrong"})
     assert resp.status_code == 401
+
+
+# ── T-304: memory dashboard ───────────────────────────────────────────────────
+
+def test_memory_page_served(client):
+    c, _ = client
+    resp = c.get("/memory")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+
+
+def test_memory_state_returns_l3_rows_and_forgotten_counts(client):
+    c, ag = client
+    resp = c.get("/memory/state")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["l3"][0]["content"] == "Ash studies at GSU"
+    assert body["forgotten_counts"]["EXPIRED"] == 1
+    assert body["forgotten_counts"]["CONTRADICTED"] == 0
+    ag.memory.memory_read.assert_called_with("", tier="l3", limit=12)
+
+
+def test_memory_retrieve_returns_scored_hits(client):
+    c, ag = client
+    resp = c.get("/memory/retrieve", params={"q": "what organism do we study"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["query"] == "what organism do we study"
+    assert body["hits"][0]["score"] == 0.87
+    ag.memory.retrieve.assert_called_once_with("what organism do we study", k=8)
+
+
+def test_memory_retrieve_empty_query_returns_400(client):
+    c, _ = client
+    resp = c.get("/memory/retrieve", params={"q": "   "})
+    assert resp.status_code == 400
+
+
+def test_memory_forgotten_returns_ledger(client):
+    c, ag = client
+    resp = c.get("/memory/forgotten", params={"days": 3})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["days"] == 3
+    assert body["forgotten"][0]["reason"] == "EXPIRED"
+    ag.memory.forgotten_ledger.assert_called_once_with(days=3)
+
+
+def test_memory_forgotten_default_days_is_7(client):
+    c, ag = client
+    c.get("/memory/forgotten")
+    ag.memory.forgotten_ledger.assert_called_once_with(days=7)
+
+
+def test_memory_state_requires_auth(client, monkeypatch):
+    import app.server as srv
+    monkeypatch.setattr(srv, "_SERVER_TOKEN", "secret-token")
+    c, _ = client
+    assert c.get("/memory/state").status_code == 401
+    assert c.get("/memory/state", headers={"Authorization": "Bearer secret-token"}).status_code == 200
+
+
+def test_memory_retrieve_requires_auth(client, monkeypatch):
+    import app.server as srv
+    monkeypatch.setattr(srv, "_SERVER_TOKEN", "secret-token")
+    c, _ = client
+    assert c.get("/memory/retrieve", params={"q": "x"}).status_code == 401
+
+
+def test_memory_forgotten_requires_auth(client, monkeypatch):
+    import app.server as srv
+    monkeypatch.setattr(srv, "_SERVER_TOKEN", "secret-token")
+    c, _ = client
+    assert c.get("/memory/forgotten").status_code == 401
 
 
 # ── Module structure ──────────────────────────────────────────────────────────

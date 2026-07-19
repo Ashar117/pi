@@ -26,7 +26,7 @@ pip install -r requirements.txt
 
 cat > .env <<'EOF'
 QWEN_API_KEY=sk-your-dashscope-key
-QWEN_MODEL=qwen-max
+QWEN_MODEL=qwen3.7-max
 # Server exposure — token is MANDATORY when binding beyond localhost;
 # the server refuses to start without it.
 PI_SERVER_HOST=0.0.0.0
