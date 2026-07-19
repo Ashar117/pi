@@ -8,9 +8,12 @@
 .env
 .env.local
 *.env
-app/config.py
 .mcp.json
 pi_dna.txt
+# app/config.py: tracked deliberately — every value is os.getenv() reading
+# from .env (which stays ignored above); no hardcoded secret has ever lived
+# here. Untracking it broke every fresh checkout (judges' clone, CI) since
+# pi_agent.py imports it unconditionally at module load.
 
 # Identity prompts — the recipe; never expose publicly.
 # (prompts/* not prompts/ so the one public default below can be re-included —
