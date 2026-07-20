@@ -22,7 +22,10 @@ OpenAI-compatible endpoint (`https://dashscope-intl.aliyuncs.com/compatible-mode
 sudo apt update && sudo apt install -y python3 python3-pip python3-venv git
 git clone https://github.com/Ashar117/pi.git && cd pi
 python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-server.txt   # trimmed: skips torch/deepface/playwright/etc.
+                                          # for the full tool set use requirements.txt instead
+
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"   # → paste as PI_SERVER_TOKEN below
 
 cat > .env <<'EOF'
 QWEN_API_KEY=sk-your-dashscope-key
@@ -30,7 +33,7 @@ QWEN_MODEL=qwen3.7-max
 # Server exposure — token is MANDATORY when binding beyond localhost;
 # the server refuses to start without it.
 PI_SERVER_HOST=0.0.0.0
-PI_SERVER_TOKEN=generate-a-long-random-string
+PI_SERVER_TOKEN=paste-the-generated-token-here
 PI_HTTP_PORT=7712
 # T-300: composite salience (recency/surprise/affect-aware retrieval) — run the
 # full forgetting/ranking stack on the deploy box. Decay-archive is on by default.
@@ -71,7 +74,7 @@ curl -H "Authorization: Bearer $PI_SERVER_TOKEN" http://<ecs-public-ip>:7712/hea
 curl -X POST http://<ecs-public-ip>:7712/chat \
   -H "Authorization: Bearer $PI_SERVER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"message": "Remember: my favorite color is teal."}'
+  -d '{"text": "Remember: my favorite color is teal."}'
 ```
 
 ## Cost guardrails
