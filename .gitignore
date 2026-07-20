@@ -79,3 +79,6 @@ tickets/
 CHECKPOINTS/
 docs/_archive/
 solutions/SOLUTIONS.jsonl
+
+# Local-only demo runbook (references the demo, not part of the public repo)
+VIDEO_RUNBOOK.md
