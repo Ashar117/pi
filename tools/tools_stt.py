@@ -64,16 +64,14 @@ def _get_local_model():
             ) from e
 
         model_name = os.getenv("STT_MODEL", "base")
+        # CPU/int8 always — an opportunistic `import torch` here to probe for
+        # CUDA previously ran unconditionally on every first transcription.
+        # torch's native extension can hard-crash (access violation, not a
+        # catchable ImportError/Exception) on machines its build doesn't
+        # support, taking down the whole process. Not worth the risk for an
+        # optional GPU speedup this project doesn't depend on.
         device = "cpu"
         compute_type = "int8"
-
-        try:
-            import torch
-            if torch.cuda.is_available():
-                device = "cuda"
-                compute_type = "float16"
-        except ImportError:
-            pass
 
         _local_model = WhisperModel(model_name, device=device, compute_type=compute_type)
         return _local_model

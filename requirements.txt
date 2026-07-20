@@ -37,3 +37,4 @@ fastapi>=0.110.0
 uvicorn>=0.29.0
 openai>=1.50.0
 pytest>=8.0.0
+jsonschema>=4.20.0
