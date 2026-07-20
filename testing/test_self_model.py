@@ -63,6 +63,13 @@ def test_build_self_model_includes_solution_count(tmp_path):
 
 
 def test_build_self_model_includes_standing_commitments():
+    # solutions/SOLUTIONS.jsonl is local-only/untracked (it accumulated personal
+    # facts as example content). With no solutions file, build_self_model() short-
+    # circuits to "(No solutions recorded yet.)" and the standing-commitments block
+    # isn't emitted — skip on a fresh public checkout where the file is absent.
+    sol = Path(__file__).resolve().parent.parent / "solutions" / "SOLUTIONS.jsonl"
+    if not sol.exists():
+        pytest.skip("solutions/SOLUTIONS.jsonl is local-only/untracked — not present in this checkout")
     result = build_self_model()
     assert "verify.py" in result
     assert "mime" in result.lower() or "tool" in result.lower()
