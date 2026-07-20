@@ -50,7 +50,7 @@ The daemon (`pi_daemon.py`) also starts the HTTP brain server automatically.
 |---|---|---|---|---|
 | **root** (default working mode) | Claude Sonnet 4.6 | all (~75) | ~$0.003–0.01/msg | anything that touches state: memory, files, code, email, calendar |
 | **normie** | Groq Llama 3.3 70B | minimal | free | quick chat, drafts |
-| **research** | Claude + Groq + Gemini | debate only | ~$0.02/run | hard questions needing multiple perspectives |
+| **research** | Claude + Groq + Gemini + Qwen | debate only | ~$0.02/run | hard questions needing multiple perspectives |
 
 Switch by typing `root mode`, `normie`, `research mode` — the matcher is deliberately loose (`go root`, `switch to normie` also work). When the daily cost cap (`app/config.py`, default $0.50) is hit, root auto-downgrades to normie for the rest of the day.
 
