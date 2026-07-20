@@ -41,6 +41,12 @@ stays hot.
 without being re-stated, project facts recall across restarts, and mode/conversation
 context boosts retrieval of memories encoded in similar contexts.
 
+**Live dashboard, not just claims.** `GET /memory` renders all of the above on screen:
+hot L3 rows by importance, a query box showing the fused dense+BM25 score for any
+question you type, and a color-coded forgetting ledger (expired / decayed /
+contradicted / merged) — the same classifier the CLI uses, so the two views can't
+diverge.
+
 ## How Qwen Cloud powers it
 
 - **qwen3.7-max** (DashScope OpenAI-compatible API) is first in every routing tier — it

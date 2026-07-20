@@ -14,16 +14,16 @@ def _offline_mt(tmp_path):
 
 
 def test_seed_writes_all_facts_at_importance_10(tmp_path):
-    # Offline, _verify_write checks the (no-op) Supabase replica and reports
-    # success=False even when the SQLite l3_cache row landed — the contract
-    # is the read-back, same convention as test_memory_roundtrip_contract.py.
+    # Offline (no Supabase configured), _verify_write now reports success
+    # from the SQLite write alone (T-309) — Supabase-less checkouts aren't
+    # penalized for lacking a remote tier they were never configured to have.
     mt = _offline_mt(tmp_path)
     results = seed(mt)
     assert len(results) == len(IDENTITY_FACTS)
     assert all(r["result"].get("id") for r in results)
     context = mt.get_l3_context(max_tokens=800)
-    assert "F-1" in context
-    assert "Georgia State" in context or "GSU" in context
+    for fact in IDENTITY_FACTS:
+        assert fact in context
 
 
 def test_seeded_facts_survive_token_budget_against_trivia(tmp_path):
@@ -39,5 +39,5 @@ def test_seeded_facts_survive_token_budget_against_trivia(tmp_path):
         )
 
     context = mt.get_l3_context(max_tokens=800)
-    assert "F-1" in context, "F-1 status must survive the token budget"
-    assert "Georgia State" in context or "GSU" in context, "GSU fact must survive the token budget"
+    for fact in IDENTITY_FACTS:
+        assert fact in context, f"identity fact must survive the token budget: {fact!r}"

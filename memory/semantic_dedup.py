@@ -3,7 +3,7 @@
 Catches semantic paraphrases that the lexical dedup in tools_memory misses.
 Example failure modes the lexical check misses:
     "I like dogs"          vs "I'm a dog person"      (0 shared stopword-stripped tokens)
-    "I study at GSU"       vs "I'm a Georgia State student"
+    "I study at MIT"       vs "I'm an MIT student"
 
 Pipeline on each L2 write:
     1. Compute Gemini embedding for the new fact (cheap, ~$0.00002).

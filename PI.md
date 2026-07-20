@@ -9,7 +9,7 @@
 
 ## §1 Identity & preferences
 
-**Ash** — CS undergrad at Georgia State University, GNN researcher, builder of Project Pi. Senior-level engineering judgment despite undergrad status. Communicates terse, lower-case, fast. Wants honest pushback, not agreement-by-default.
+**Ash** — CS undergrad, GNN researcher, builder of Project Pi. Senior-level engineering judgment despite undergrad status. Communicates terse, lower-case, fast. Wants honest pushback, not agreement-by-default.
 
 **Hard preferences (apply every session):**
 
@@ -79,7 +79,7 @@ When closed: move into §6 of `CHECKPOINTS/current.md` and §9 of this file (aut
 - **Open tickets:** 16
 - **Closed tickets:** 333
 - **Solutions logged:** 225
-- **Turns today:** 196
+- **Turns today:** 98
 - **Last session end:** 2026-07-07
 <!-- END AUTO §4 -->
 

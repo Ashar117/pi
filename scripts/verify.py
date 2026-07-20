@@ -428,18 +428,26 @@ def check_about_drift() -> list[str]:
         m = _re.search(rf"<!--\s*AUTO:{key}\s*-->(\d+)<!--\s*/AUTO:{key}\s*-->", text)
         return int(m.group(1)) if m else None
 
-    actual_closed = sum(1 for _ in (ROOT / "tickets" / "closed").glob("*.json"))
-    actual_solutions = sum(1 for line in (ROOT / "solutions" / "SOLUTIONS.jsonl")
-                           .read_text(encoding="utf-8").splitlines() if line.strip())
+    # tickets/ and solutions/SOLUTIONS.jsonl are untracked (kept local-only —
+    # they accumulated real personal facts as test/example content over
+    # months of development). Absent entirely on a fresh public checkout;
+    # skip the comparison rather than false-reporting drift or crashing.
+    tickets_dir = ROOT / "tickets" / "closed"
+    solutions_file = ROOT / "solutions" / "SOLUTIONS.jsonl"
+    actual_closed = sum(1 for _ in tickets_dir.glob("*.json")) if tickets_dir.exists() else None
+    actual_solutions = (
+        sum(1 for line in solutions_file.read_text(encoding="utf-8").splitlines() if line.strip())
+        if solutions_file.exists() else None
+    )
 
     doc_closed = _extract("closed_tickets")
     doc_solutions = _extract("solutions")
 
-    if doc_closed is not None and abs(doc_closed - actual_closed) > 5:
+    if doc_closed is not None and actual_closed is not None and abs(doc_closed - actual_closed) > 5:
         warnings.append(
             f"ABOUT.md closed_tickets={doc_closed} but tickets/closed/ has {actual_closed}"
         )
-    if doc_solutions is not None and abs(doc_solutions - actual_solutions) > 5:
+    if doc_solutions is not None and actual_solutions is not None and abs(doc_solutions - actual_solutions) > 5:
         warnings.append(
             f"ABOUT.md solutions={doc_solutions} but SOLUTIONS.jsonl has {actual_solutions}"
         )

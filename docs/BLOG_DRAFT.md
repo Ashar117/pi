@@ -86,6 +86,13 @@ that's the most product-minded line in the whole hackathon. Two mechanisms in Pi
 
 A memory agent that can't forget is a hoarder; one that deletes is a liar.
 
+One bug this bet exposed on its own terms: an early version "archived" decayed facts by
+flagging them in place, but the daily prune job then hard-deleted anything with that flag
+within a day — archived meant deleted tomorrow. The fix was a real `l3_archive` table that
+decay and expiry actually move rows into, so nothing in any retrieval path can ever surface
+them again. You can watch the whole lifecycle live at `/memory` — hot rows, live retrieval
+scores, and a forgetting ledger that says exactly what died and why.
+
 ## What Qwen Cloud got right
 
 - The OpenAI-compatible endpoint is genuinely compatible — chat, tools, and

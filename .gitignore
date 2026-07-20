@@ -71,3 +71,11 @@ reports/
 
 # God-mode migration tooling (god boundary)
 scripts/migrate_god_memory.py
+
+# Untracked from public repo (kept locally, never deleted): historical
+# engineering artifacts that accumulated real personal facts as test/example
+# content over months of development against a real memory agent.
+tickets/
+CHECKPOINTS/
+docs/_archive/
+solutions/SOLUTIONS.jsonl

@@ -85,6 +85,8 @@ def test_system_introspect_total_interactions_nonzero(root_agent):
 def test_system_introspect_closed_ticket_count_nonzero(root_agent):
     """closed_ticket_count must reflect actual closed/ directory."""
     closed_dir = os.path.join(ROOT, "tickets", "closed")
+    if not os.path.isdir(closed_dir):
+        pytest.skip("tickets/ is untracked/local-only — not present in this checkout")
     expected = len([f for f in os.listdir(closed_dir) if f.endswith(".json")])
     assert expected > 0, "No closed tickets found — test data issue"
 

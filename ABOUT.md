@@ -142,6 +142,6 @@ Continuous evolution enabled. Phase 9 (distributed) complete. Sprint runner buil
 
 ## Author
 
-Built by **Ashar** — CS undergrad at Georgia State University, researching graph neural networks, building Pi in the hours that aren't class or research.
+Built by **Ash** — a CS undergrad and graph neural network researcher, building Pi in the hours that aren't class or research.
 
-Pi is MIT licensed. Use it, fork it, learn from it.
+Pi is Apache-2.0 licensed. Use it, fork it, learn from it.

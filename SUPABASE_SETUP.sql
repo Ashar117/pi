@@ -108,7 +108,7 @@ INSERT INTO l3_active_memory (
     editable,
     auto_demote
 ) VALUES (
-    'Ash: CS undergraduate at Georgia State University. AI research assistant working on graph neural networks under Dr. Esra Akbas. Building Project Pi - personal intelligence system. Values: Islamic conduct filter, direct communication style, cost-conscious, competitive mindset. Works on Windows 11, Python, E:\pi project directory.',
+    'Example profile row — replace with your own facts. Building Project Pi, a personal intelligence system. Values: direct communication style, cost-conscious. Works on Windows, Python.',
     10,
     'permanent_profile',
     NOW(),

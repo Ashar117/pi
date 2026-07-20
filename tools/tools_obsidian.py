@@ -888,7 +888,7 @@ def render_hot_file(project_root: str, vault_root: str) -> dict:
         f"*Synced {_now_utc()} · Load only this file at session start; query vault/* on demand.*",
         "",
         "## Identity",
-        "Ash · CS undergrad GSU · GNN researcher · Project Pi = continuous engineering loop",
+        "Ash · CS undergrad · GNN researcher · Project Pi = continuous engineering loop",
         "",
     ]
 

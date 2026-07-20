@@ -88,7 +88,7 @@ Full setup: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
 | --- | --- | --- | --- |
 | **root** | Claude Sonnet 4.6 | ~$0.003–0.01/msg | Code edits, file ops, full tool loop (~75 tools) |
 | **normie** | Groq Llama 3.3 70B | Free | Fast chat, no tools |
-| **research** | Claude + Groq + Gemini | ~$0.02/run | Hard questions, multi-agent debate |
+| **research** | Claude + Groq + Gemini + Qwen | ~$0.02/run | Hard questions, multi-agent debate |
 
 Switch by typing: `root mode`, `normie`, `research mode`.
 
@@ -121,6 +121,12 @@ Three tiers backed by Supabase + SQLite:
 ```bash
 python scripts/memory_cli.py forgotten --days 7   # what was forgotten, when, and why
 ```
+
+**Dashboard:** `GET /memory` (served by the brain server, `app/server.py`) is a live view of
+all three tiers — hot L3 rows by importance, the fused dense+BM25 retrieval score for any
+query you type, and the forgetting ledger color-coded by reason (expired / decayed /
+contradicted / merged). Same data the CLI shows, one shared classifier
+(`MemoryTools.forgotten_ledger`) so the two views can't drift apart.
 
 ---
 
@@ -181,16 +187,16 @@ Structural refactor between Phase 8 (Voice) and Phase 9 (Distributed). All 10 R-
 
 | R# | Ticket | What |
 | --- | --- | --- |
-| R1 | [T-082](tickets/closed/T-082-r1-god-mode-collapse.json) | Parallel mode fork collapsed into one `ModeConfig` + unified `_respond_via_config`. ADR-001 |
-| R2 | [T-083](tickets/closed/T-083-r2-tool-registry-and-consolidation.json) | 64 tools migrated to `ToolSpec` registry; `agent/tools.py` slimmed. [ADR-002](docs/adr/002-tool-registry-pattern.md) |
-| R3 | [T-084](tickets/closed/T-084-r3-router-tier-and-tpd-budget.json) | `LLMRouter` tier matrix + per-provider TPD-budget brownout. [ADR-003](docs/adr/003-router-tier-and-tpd-budget.md) |
-| R4 | [T-085](tickets/closed/T-085-r4-resumable-session-exit.json) | Session exit ≤3 ops, resumable via `data/session_exit_state.json`. [ADR-005](docs/adr/005-resumable-exit.md) |
-| R5 | [T-086](tickets/closed/T-086-r5-sprint-god-isolation.json) | `sprint.py` private-path ticket isolation (mechanism since retired with the private mode) |
-| R6 | [T-087](tickets/closed/T-087-r6-partition-recovery-prework.json) | Partition-recovery pre-work |
-| R7 | [T-088](tickets/closed/T-088-r7-archive-selfmodifier.json) | Phase-5 SelfModifier class archived |
-| R8 | [T-089](tickets/closed/T-089-r8-modeconfig-dataclass.json) | `ModeConfig` dataclass drives all 3 response paths. [ADR-004](docs/adr/004-modeconfig-unifies-response-paths.md) |
-| R9 | [T-090](tickets/closed/T-090-r9-dropped-log-local-fallback.json) | Dropped-turn local fallback → `logs/dropped_turns.jsonl` |
-| R10 | [T-091](tickets/closed/T-091-r10-l3-prompt-cache-segment.json) | 3-segment prompt cache: static / warm (L3) / dynamic |
+| R1 | T-082 | Parallel mode fork collapsed into one `ModeConfig` + unified `_respond_via_config`. ADR-001 |
+| R2 | T-083 | 64 tools migrated to `ToolSpec` registry; `agent/tools.py` slimmed. [ADR-002](docs/adr/002-tool-registry-pattern.md) |
+| R3 | T-084 | `LLMRouter` tier matrix + per-provider TPD-budget brownout. [ADR-003](docs/adr/003-router-tier-and-tpd-budget.md) |
+| R4 | T-085 | Session exit ≤3 ops, resumable via `data/session_exit_state.json`. [ADR-005](docs/adr/005-resumable-exit.md) |
+| R5 | T-086 | `sprint.py` private-path ticket isolation (mechanism since retired with the private mode) |
+| R6 | T-087 | Partition-recovery pre-work |
+| R7 | T-088 | Phase-5 SelfModifier class archived |
+| R8 | T-089 | `ModeConfig` dataclass drives all 3 response paths. [ADR-004](docs/adr/004-modeconfig-unifies-response-paths.md) |
+| R9 | T-090 | Dropped-turn local fallback → `logs/dropped_turns.jsonl` |
+| R10 | T-091 | 3-segment prompt cache: static / warm (L3) / dynamic |
 
 The durable record of these decisions is the ADR set in [docs/adr/](docs/adr/).
 
@@ -198,13 +204,16 @@ The durable record of these decisions is the ADR set in [docs/adr/](docs/adr/).
 
 ## Engineering loop
 
+Tickets, solutions, and per-session checkpoints are kept local-only (`tickets/`,
+`solutions/`, `CHECKPOINTS/` — gitignored) rather than tracked in the public repo:
+months of real development against a personal memory agent means that history
+accumulated real personal facts as test/example content. The counts are still
+real and auto-verified — see [PI.md](PI.md) and [ABOUT.md](ABOUT.md) for the
+current ticket/solution totals — just not the raw files.
+
 | Stage | Location |
 | --- | --- |
-| Open tickets | [tickets/open/](tickets/open/) |
-| Closed tickets | [tickets/closed/](tickets/closed/) |
-| Solutions (S-NNN) | [solutions/SOLUTIONS.jsonl](solutions/SOLUTIONS.jsonl) |
 | Current sprint + state | [PI.md](PI.md) |
-| Last session exit | [CHECKPOINTS/current.md](CHECKPOINTS/current.md) |
 | CI | `python scripts/verify.py` |
 
 ---
@@ -223,13 +232,12 @@ The durable record of these decisions is the ADR set in [docs/adr/](docs/adr/).
 | [web/](web/) | `index.html` + `chat.js` — shared web chat UI |
 | [extension/](extension/) | Chrome MV3 extension (side panel + context menu) |
 | [scripts/](scripts/) | `sprint.py`, `plan_sprint.py`, `retro.py`, `refresh_pi.py`, `verify.py` |
-| [vault/](vault/) | Obsidian-compatible knowledge base |
-| [CHECKPOINTS/](CHECKPOINTS/) | Per-session exit states |
-| [tickets/](tickets/) | Open + closed ticket queue |
-| [solutions/SOLUTIONS.jsonl](solutions/SOLUTIONS.jsonl) | Append-only solution record |
+| `vault/` | Obsidian-compatible knowledge base (local-only) |
+| `CHECKPOINTS/` | Per-session exit states (local-only) |
+| `tickets/` | Open + closed ticket queue (local-only — see Engineering loop above) |
+| `solutions/SOLUTIONS.jsonl` | Append-only solution record (local-only) |
 | [testing/](testing/) | 80+ test files across all components |
 | [docs/](docs/) | Architecture, ADRs, user guide, feature list, changelog |
-| [docs/_archive/](docs/_archive/) | Superseded phase-0 artifacts |
 | [SUPABASE_SETUP.sql](SUPABASE_SETUP.sql) | Cloud schema |
 
 ---

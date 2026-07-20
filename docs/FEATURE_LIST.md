@@ -113,11 +113,11 @@
 | A-003 | daily_briefing tool | ✅ | — | |
 | A-004 | refresh_awareness tool | ✅ | — | |
 | A-005 | Awareness snapshot shortcircuit (answer from cache before LLM call) | ✅ | — | T-030 closed |
-| A-006 | **"What did I miss?" morning briefing** | 💡 | P1 | One command at day start: emails since last session, ArXiv papers matching GNN interests, news, background Pi jobs that completed, calendar for today, open tickets. Uses existing tools — needs orchestration wrapper. Output in 15 lines max. |
-| A-007 | **Prayer time integration** | 💡 | P1 | Adhan API for Fajr/Dhuhr/Asr/Maghrib/Isha. Location-aware (Lawrenceville). Telegram reminder 5 min before. Pi pauses non-urgent sprint tasks around prayer windows. Non-negotiable filter alignment. |
-| A-008 | **Halal food radar** | 💡 | P2 | Google Maps API + filter logic. Understands Ash's standard: hand-cut slaughtered halal, not just "halal certified label." "Find me dinner" → ranked list by distance, open now, with halal method noted. |
-| A-009 | **Flight deal watcher** | 💡 | P2 | Background job (APScheduler) watching Lawrenceville/ATL → Lahore/Islamabad. Price threshold alert via Telegram. Relevant for F-1 visa + Pakistan trips. |
-| A-010 | **Academic opportunity radar** | 💡 | P1 | Monitors: GNN/graph learning conference deadlines (NeurIPS, ICML, ICLR, KDD, WWW), OPT/CPT windows, GSU semester dates. Pi files calendar events and sends Telegram alerts 30 days out. Undergrad researchers constantly miss these. |
+| A-006 | **"What did I miss?" morning briefing** | 💡 | P1 | One command at day start: emails since last session, papers matching research interests, news, background Pi jobs that completed, calendar for today, open tickets. Uses existing tools — needs orchestration wrapper. Output in 15 lines max. |
+| A-007 | **Prayer time integration** | 💡 | P1 | Adhan API for Fajr/Dhuhr/Asr/Maghrib/Isha, location-aware. Telegram reminder 5 min before. Pi pauses non-urgent sprint tasks around prayer windows. Non-negotiable filter alignment. |
+| A-008 | **Dietary-preference food radar** | 💡 | P2 | Google Maps API + filter logic for user-configured dietary constraints (e.g. specific halal certification standards). "Find me dinner" → ranked list by distance, open now, with method noted. |
+| A-009 | **Flight deal watcher** | 💡 | P2 | Background job (APScheduler) watching user-configured home/destination routes. Price threshold alert via Telegram. |
+| A-010 | **Academic opportunity radar** | 💡 | P1 | Monitors: research-area conference deadlines (NeurIPS, ICML, ICLR, KDD, WWW), visa/work-authorization windows, semester dates. Pi files calendar events and sends Telegram alerts 30 days out. Undergrad researchers constantly miss these. |
 | A-011 | **Budget tracker** | 💡 | P2 | Pi tracks spending mentioned in conversation. Student-focused: flight deals, textbooks, ATM fees. Monthly summary in retro. Always checks for student discounts first (already a stored preference). |
 | A-012 | **Mood-aware responses** | 💡 | P3 | From session patterns (message length, response speed, word choice), Pi infers stress level. If overloaded, Pi suggests a break or prayer before diving into a task. Stored as session-ephemeral state, not persisted to L3. |
 
